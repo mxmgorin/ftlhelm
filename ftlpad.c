@@ -128,6 +128,7 @@
 #define WEAPON_BLUEPRINT 32
 #define DRONE_BLUEPRINT 32
 #define BLUEPRINT_TITLE 16
+#define BLUEPRINT_SHORT_TITLE 32
 #define TEXTSTRING_LITERAL 8
 #define TEXTLIB_LANGUAGE 0x60
 #define DRONE_POWERED 16
@@ -239,15 +240,17 @@
 #define CONE_WIDE_DEG 60.0f
 #define BADGE_FONT 12
 #define BADGE_W 150.0f
-#define BADGE_H 24.0f
+#define BADGE_H 30.0f
 #define BADGE_MARGIN 8.0f
 /* Plates sit on an ellipse, wider than tall, so neighbours do not touch. */
-#define WHEEL_RADIUS_X 150.0f
+#define WHEEL_RADIUS_X 176.0f
 #define WHEEL_RADIUS_Y 96.0f
-#define WHEEL_PLATE_W 118.0f
-#define WHEEL_PLATE_H 24.0f
+#define WHEEL_PLATE_W 156.0f
+#define WHEEL_PLATE_H 30.0f
 #define WHEEL_MARGIN 8.0f
-#define WHEEL_FONT 12
+/* The game's outlined header font, as on its own buttons. */
+#define WHEEL_FONT 62
+#define WHEEL_BEVEL 2
 /* Text baseline sits this far below a plate's top edge. */
 #define WHEEL_TEXT_DY 5.0f
 #define LINE_LEN 256
@@ -302,6 +305,7 @@ static struct {
     void (*request_exit)(void *);
     void (*draw_rect_outline)(int, int, int, int, GL_Color, float);
     void (*draw_rect)(float, float, float, float, GL_Color);
+    void (*set_color)(GL_Color);
     int (*selected_room)(void *, int, int, bool);
     void (*string_ctor)(void *, const char *, const void *);
     void (*string_dtor)(void *);
@@ -346,6 +350,7 @@ static const struct {
     {"_ZN8CSurface18GL_DrawRectOutlineEiiii8GL_Colorf", (void **)&game.draw_rect_outline},
     {"_ZN4Ship17GetSelectedRoomIdEiib", (void **)&game.selected_room},
     {"_ZN8CSurface11GL_DrawRectEffff8GL_Color", (void **)&game.draw_rect},
+    {"_ZN8CSurface11GL_SetColorE8GL_Color", (void **)&game.set_color},
     {"_ZNSsC1EPKcRKSaIcE", (void **)&game.string_ctor},
     {"_ZNSsD1Ev", (void **)&game.string_dtor},
     {"_ZN8freetype16easy_printCenterEiffRKSs", (void **)&game.print_center},
@@ -430,6 +435,7 @@ static const char *const wheel_kind_names[] = {"action", "power", "crew", "syste
 struct plate {
     bool bound;
     bool available;
+    bool powered;
     struct binding bind;
     char label[LABEL_LEN];
     char badge[LABEL_LEN];
@@ -466,9 +472,18 @@ static const char default_layout[] =
 
 static const GL_Color overlay_color = {0.3f, 0.9f, 1.0f, 0.9f};
 static const GL_Color focus_color = {1.0f, 0.85f, 0.2f, 0.9f};
-static const GL_Color plate_color = {0.05f, 0.1f, 0.12f, 0.85f};
-static const GL_Color plate_selected_color = {0.2f, 0.45f, 0.5f, 0.95f};
-static const GL_Color plate_edge_color = {0.5f, 0.8f, 0.85f, 0.9f};
+/* The game's palette: dark teal panels, pale green frames, yellow for the selection,
+ * green for powered items. */
+static const GL_Color plate_color = {0.05f, 0.11f, 0.1f, 0.9f};
+static const GL_Color plate_powered_color = {0.12f, 0.36f, 0.2f, 0.92f};
+static const GL_Color plate_selected_color = {0.42f, 0.38f, 0.1f, 0.95f};
+static const GL_Color plate_edge_color = {0.63f, 0.9f, 0.76f, 0.95f};
+static const GL_Color plate_selected_edge_color = {0.96f, 0.84f, 0.28f, 1.0f};
+static const GL_Color plate_bevel_color = {0.0f, 0.05f, 0.05f, 0.9f};
+static const GL_Color plate_disabled_color = {0.08f, 0.09f, 0.09f, 0.8f};
+static const GL_Color plate_disabled_edge_color = {0.3f, 0.34f, 0.33f, 0.8f};
+static const GL_Color text_color = {1.0f, 1.0f, 1.0f, 1.0f};
+static const GL_Color text_disabled_color = {0.42f, 0.46f, 0.45f, 1.0f};
 
 /* mov 0x10(%rdi),%eax; movzbl 0x49(%rdi),%r8d */
 static const unsigned char button_move_prologue[] = {0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47, 0x49};
@@ -501,6 +516,8 @@ static struct {
 static bool debug;
 static void *app;
 static int cmd_fd = -1;
+/* Fonts and colours of the overlay; the plate font is tunable from the command channel. */
+static int plate_font = WHEEL_FONT;
 
 static struct state states[MAX_STATES];
 static int nstates;
@@ -1562,6 +1579,14 @@ static void plate_center(int slot, float *cx, float *cy)
     *cy = oy - cosf(angle) * WHEEL_RADIUS_Y;
 }
 
+/* A panel in the game's style: a dark bevel around a framed fill. */
+static void draw_panel(float x, float y, float w, float h, GL_Color fill, GL_Color edge)
+{
+    game.draw_rect(x - WHEEL_BEVEL, y - WHEEL_BEVEL, w + 2 * WHEEL_BEVEL, h + 2 * WHEEL_BEVEL, plate_bevel_color);
+    game.draw_rect(x, y, w, h, fill);
+    game.draw_rect_outline((int)x, (int)y, (int)w, (int)h, edge, OVERLAY_LINE);
+}
+
 static void draw_wheel(void)
 {
     const struct wheel *w = &wheels[wheel_open];
@@ -1572,17 +1597,16 @@ static void draw_wheel(void)
         float cx, cy;
         plate_center(i, &cx, &cy);
         float x = cx - WHEEL_PLATE_W / 2, y = cy - WHEEL_PLATE_H / 2;
-        GL_Color fill = i == wheel_sel ? plate_selected_color : plate_color;
-        GL_Color edge = i == wheel_sel ? focus_color : plate_edge_color;
-        if (!pl->available) {
-            fill.a *= 0.5f;
-            edge.a *= 0.4f;
-        }
-        game.draw_rect(x, y, WHEEL_PLATE_W, WHEEL_PLATE_H, fill);
-        game.draw_rect_outline((int)x, (int)y, (int)WHEEL_PLATE_W, (int)WHEEL_PLATE_H, edge, OVERLAY_LINE);
+        GL_Color fill = !pl->available ? plate_disabled_color : i == wheel_sel ? plate_selected_color
+                        : pl->powered ? plate_powered_color : plate_color;
+        GL_Color edge = !pl->available ? plate_disabled_edge_color
+                        : i == wheel_sel ? plate_selected_edge_color : plate_edge_color;
+        draw_panel(x, y, WHEEL_PLATE_W, WHEEL_PLATE_H, fill, edge);
         char text[LABEL_LEN * 2];
         snprintf(text, sizeof text, "%s%s%s", pl->label, pl->badge[0] ? " " : "", pl->badge);
-        draw_text_center(WHEEL_FONT, cx, y + WHEEL_TEXT_DY, text);
+        game.set_color(pl->available ? text_color : text_disabled_color);
+        draw_text_center(plate_font, cx, y + WHEEL_TEXT_DY, text);
+        game.set_color(text_color);
     }
 }
 
@@ -1600,7 +1624,8 @@ static void wheel_point(float lx, float ly, float rx, float ry)
     if (angle < 0)
         angle += 2.0f * (float)M_PI;
     int slot = (int)lroundf(angle / ((float)M_PI / 4.0f)) % WHEEL_SLOTS;
-    if (wheels[wheel_open].plates[slot].bound && slot != wheel_sel) {
+    const struct plate *pl = &wheels[wheel_open].plates[slot];
+    if (pl->bound && pl->available && slot != wheel_sel) {
         wheel_sel = slot;
         buzz();
     }
@@ -1613,7 +1638,7 @@ static void wheel_step(int dir)
     int slot = wheel_sel < 0 ? (dir > 0 ? -1 : 0) : wheel_sel;
     for (int n = 0; n < WHEEL_SLOTS; n++) {
         slot = (slot + dir + WHEEL_SLOTS) % WHEEL_SLOTS;
-        if (w->plates[slot].bound) {
+        if (w->plates[slot].bound && w->plates[slot].available) {
             wheel_sel = slot;
             buzz();
             return;
@@ -1752,6 +1777,7 @@ static void refresh_wheel(void)
             struct plate *pl = &w->plates[slot];
             pl->bound = true;
             pl->available = false;
+            pl->powered = false;
             strncpy(pl->label, system_name(slot_types[slot][0]), LABEL_LEN - 1);
             pl->bind = (struct binding){ACT_KEY, system_key(slot_types[slot][0]), false, 0, NULL};
             for (size_t i = 0; i < n; i++) {
@@ -1761,6 +1787,7 @@ static void refresh_wheel(void)
                 if (type < 0 || (type != slot_types[slot][0] && type != slot_types[slot][1]))
                     continue;
                 pl->available = true;
+                pl->powered = read_int(sys, SYSTEM_POWER) > 0;
                 strncpy(pl->label, system_name(type), LABEL_LEN - 1);
                 snprintf(pl->badge, LABEL_LEN, "%d/%d", read_int(sys, SYSTEM_POWER), read_int(sys, SYSTEM_POWER + 4));
                 break;
@@ -1771,6 +1798,7 @@ static void refresh_wheel(void)
     for (int i = 0; i < WHEEL_SLOTS; i++) {
         struct plate *pl = &w->plates[i];
         pl->badge[0] = '\0';
+        pl->powered = false;
         if (!pl->bound || pl->bind.kind != ACT_KEY)
             continue;
         int key = pl->bind.key;
@@ -1780,21 +1808,19 @@ static void refresh_wheel(void)
             const char *bp = weapon ? deref(weapon, WEAPON_BLUEPRINT) : NULL;
             pl->available = weapon != NULL;
             if (bp)
-                display_text(bp + BLUEPRINT_TITLE, pl->label, LABEL_LEN);
+                display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
             else
                 strncpy(pl->label, "Empty", LABEL_LEN - 1);
-            if (weapon && *(weapon + WEAPON_POWERED))
-                strncpy(pl->badge, "on", LABEL_LEN - 1);
+            pl->powered = weapon && *(weapon + WEAPON_POWERED);
         } else if (w->kind == WK_POWER && key >= '5' && key < '5' + DRONE_SLOTS) {
             const char *drone = drone_control() ? armament_item(drone_control(), key - '5') : NULL;
             const char *bp = drone ? deref(drone, DRONE_BLUEPRINT) : NULL;
             pl->available = drone != NULL;
             if (bp)
-                display_text(bp + BLUEPRINT_TITLE, pl->label, LABEL_LEN);
+                display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
             else
                 strncpy(pl->label, "Empty", LABEL_LEN - 1);
-            if (drone && *(drone + DRONE_POWERED))
-                strncpy(pl->badge, "on", LABEL_LEN - 1);
+            pl->powered = drone && *(drone + DRONE_POWERED);
         } else if (w->kind == WK_ACTION && ability_system(key) >= 0) {
             pl->available = has_system(ability_system(key));
         }
@@ -2404,6 +2430,8 @@ static void run_command(char *line)
         dump_targets();
     } else if (strncmp(line, "state", 5) == 0) {
         dump_state();
+    } else if (sscanf(line, "font %d", &key) == 1) {
+        plate_font = key;
     } else {
         logmsg("unknown command: %s", line);
     }
@@ -2489,9 +2517,8 @@ static void mouse_render_hook(void *self)
         snprintf(text, sizeof text, "%s%s%s", mode, cfg.precision ? " / doors" : "",
                  fast_forward ? " / fast" : "");
         float x = GAME_W - BADGE_MARGIN - BADGE_W, y = BADGE_MARGIN;
-        game.draw_rect(x, y, BADGE_W, BADGE_H, plate_color);
-        game.draw_rect_outline((int)x, (int)y, (int)BADGE_W, (int)BADGE_H, plate_edge_color, OVERLAY_LINE);
-        draw_text_center(BADGE_FONT, x + BADGE_W / 2, y + WHEEL_TEXT_DY, text);
+        draw_panel(x, y, BADGE_W, BADGE_H, plate_color, plate_edge_color);
+        draw_text_center(WHEEL_FONT, x + BADGE_W / 2, y + WHEEL_TEXT_DY, text);
     }
     mouse_render_orig(self);
 }
@@ -2529,7 +2556,7 @@ static void draw_help(void)
     int lines = 0;
     for (int in = 0; in < SIL_BUTTONS; in++)
         lines += base->bound[in];
-    game.draw_rect(HELP_X, y - HELP_LINE, HELP_W, HELP_LINE * (lines + 1), plate_color);
+    draw_panel(HELP_X, y - HELP_LINE, HELP_W, HELP_LINE * (lines + 1), plate_color, plate_edge_color);
     for (int in = 0; in < SIL_BUTTONS; in++) {
         if (!base->bound[in])
             continue;
