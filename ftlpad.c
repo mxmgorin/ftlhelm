@@ -70,6 +70,10 @@
 #define CONFIG_ENV "FTLPAD_CONFIG"
 #define LAYOUT_ENV "FTLPAD_LAYOUT"
 #define CMD_ENV "FTLPAD_CMD"
+/* PortMaster's per-device SDL mapping; its button indices match SIL's for pads whose
+ * buttons all sit in the gamepad key range. */
+#define SDL_MAP_ENV "SDL_GAMECONTROLLERCONFIG"
+#define SDL_MAP_UNSET -1
 #define FILE_POLL_S 1.0
 #define EXE_FALLBACK "/proc/self/exe"
 #define MAPS "/proc/self/maps"
@@ -243,8 +247,8 @@
 #define BADGE_H 30.0f
 #define BADGE_MARGIN 8.0f
 /* Plates sit on an ellipse, wider than tall, so neighbours do not touch. */
-#define WHEEL_RADIUS_X 176.0f
-#define WHEEL_RADIUS_Y 96.0f
+#define WHEEL_RADIUS_X 190.0f
+#define WHEEL_RADIUS_Y 128.0f
 #define WHEEL_PLATE_W 156.0f
 #define WHEEL_PLATE_H 30.0f
 #define WHEEL_MARGIN 8.0f
@@ -511,7 +515,15 @@ static struct {
     int speed_level;
     bool rumble;
     bool help;
-} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false};
+    /* Face buttons by label: -1 from the SDL mapping, Nintendo-style without one; 1
+     * Nintendo-style (A east, B south, X north, Y west), 0 Xbox-style. */
+    int nintendo;
+} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1};
+
+/* SIL button index per face label from the SDL mapping, or SDL_MAP_UNSET. */
+static int sdl_face[4] = {SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET};
+static const char *const sdl_face_names[4] = {"a", "b", "x", "y"};
+static const enum input sdl_face_inputs[4] = {IN_FACE_DOWN, IN_FACE_RIGHT, IN_FACE_LEFT, IN_FACE_UP};
 
 static bool debug;
 static void *app;
@@ -776,6 +788,8 @@ static void load_config(const char *path)
             cfg.speed_level = (int)clampf(value, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX);
         else if (strcmp(key, "rumble") == 0)
             cfg.rumble = value != 0;
+        else if (strcmp(key, "nintendo_labels") == 0)
+            cfg.nintendo = (int)value;
         else
             logmsg("config: unknown key %s", key);
     }
@@ -2205,6 +2219,22 @@ static void stick_directions(float x, float y, bool out[4], const bool was[4])
 
 static int pad_index = -1;
 
+/* Reads a:bN .. y:bN out of the SDL mapping string. */
+static void load_sdl_map(void)
+{
+    const char *map = getenv(SDL_MAP_ENV);
+    if (!map)
+        return;
+    for (int i = 0; i < 4; i++) {
+        char token[8];
+        snprintf(token, sizeof token, ",%s:b", sdl_face_names[i]);
+        const char *at = strstr(map, token);
+        if (at)
+            sdl_face[i] = atoi(at + strlen(token));
+    }
+    logmsg("sdl map: a=%d b=%d x=%d y=%d", sdl_face[0], sdl_face[1], sdl_face[2], sdl_face[3]);
+}
+
 static void buzz(void)
 {
     if (cfg.rumble && pad_index >= 0)
@@ -2231,6 +2261,17 @@ static void read_pad(int dev, struct pad *p)
     for (int b = 0; b < SIL_BUTTONS; b++) {
         int idx = joy.button_mapping(dev, b);
         p->down[b] = idx >= 0 && joy.button_state(dev, idx);
+    }
+    bool mapped = cfg.nintendo < 0 && sdl_face[0] >= 0 && sdl_face[1] >= 0 && sdl_face[2] >= 0 && sdl_face[3] >= 0;
+    if (mapped) {
+        for (int i = 0; i < 4; i++)
+            p->down[sdl_face_inputs[i]] = joy.button_state(dev, sdl_face[i]);
+    } else if (cfg.nintendo != 0) {
+        bool south = p->down[IN_FACE_DOWN], west = p->down[IN_FACE_LEFT];
+        p->down[IN_FACE_DOWN] = p->down[IN_FACE_RIGHT];
+        p->down[IN_FACE_RIGHT] = south;
+        p->down[IN_FACE_LEFT] = p->down[IN_FACE_UP];
+        p->down[IN_FACE_UP] = west;
     }
     if (joy.num_sticks(dev) > TRIGGER_STICK) {
         float l2, r2;
@@ -2621,6 +2662,7 @@ __attribute__((constructor)) static void init(void)
     memcpy(text, default_layout, sizeof text);
     load_layout_text(text, "built-in default");
     poll_files(now_s());
+    load_sdl_map();
     const char *cmd = getenv(CMD_ENV);
     if (cmd) {
         cmd_fd = open(cmd, O_RDONLY | O_NONBLOCK);
