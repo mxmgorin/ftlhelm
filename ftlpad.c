@@ -1682,21 +1682,31 @@ static void refresh_wheel(void)
         return;
     }
     if (w->kind == WK_SYSTEMS) {
+        /* Fixed plates in power-bar order; a slot takes the medbay or the clone bay. */
+        static const int slot_types[WHEEL_SLOTS][2] = {
+            {SYS_SHIELDS, -1}, {SYS_ENGINES, -1}, {SYS_OXYGEN, -1}, {SYS_MEDBAY, SYS_CLONEBAY},
+            {SYS_TELEPORTER, -1}, {SYS_CLOAKING, -1}, {SYS_MIND, -1}, {SYS_HACKING, -1},
+        };
         const char *gui = gui_ptr();
         const void *boxes = gui ? gui + GUI_SYS_CONTROL + SYSCTRL_BOXES : NULL;
         size_t n = boxes ? vector_count(boxes, sizeof(void *)) : 0;
-        int slot = 0;
-        for (size_t i = 0; i < n && slot < WHEEL_SLOTS; i++) {
-            const void *box = vector_at(boxes, sizeof(void *), i);
-            const char *sys = box ? deref(box, SYSBOX_SYSTEM) : NULL;
-            int key = sys ? system_key(read_int(sys, SYSTEM_TYPE)) : 0;
-            if (!key)
-                continue;
-            struct plate *pl = &w->plates[slot++];
-            pl->bound = pl->available = true;
-            pl->bind = (struct binding){ACT_KEY, key, false, 0, NULL};
-            strncpy(pl->label, system_name(read_int(sys, SYSTEM_TYPE)), LABEL_LEN - 1);
-            snprintf(pl->badge, LABEL_LEN, "%d/%d", read_int(sys, SYSTEM_POWER), read_int(sys, SYSTEM_POWER + 4));
+        for (int slot = 0; slot < WHEEL_SLOTS; slot++) {
+            struct plate *pl = &w->plates[slot];
+            pl->bound = true;
+            pl->available = false;
+            strncpy(pl->label, system_name(slot_types[slot][0]), LABEL_LEN - 1);
+            pl->bind = (struct binding){ACT_KEY, system_key(slot_types[slot][0]), false, 0, NULL};
+            for (size_t i = 0; i < n; i++) {
+                const void *box = vector_at(boxes, sizeof(void *), i);
+                const char *sys = box ? deref(box, SYSBOX_SYSTEM) : NULL;
+                int type = sys ? read_int(sys, SYSTEM_TYPE) : -1;
+                if (type < 0 || (type != slot_types[slot][0] && type != slot_types[slot][1]))
+                    continue;
+                pl->available = true;
+                strncpy(pl->label, system_name(type), LABEL_LEN - 1);
+                snprintf(pl->badge, LABEL_LEN, "%d/%d", read_int(sys, SYSTEM_POWER), read_int(sys, SYSTEM_POWER + 4));
+                break;
+            }
         }
         return;
     }
