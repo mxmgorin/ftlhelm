@@ -94,6 +94,10 @@
 #define CAPP_X_BAR 14692
 #define CAPP_Y_BAR 14696
 #define GUI_CREW_CONTROL 616
+#define CREW_CONTROL_SIZE 552
+/* Small unplaced buttons the game parks in this corner. */
+#define CORNER_BUTTON_MAX 40
+#define CORNER_BUTTON_SIZE 24
 #define GUI_COMBAT_CONTROL 1416
 #define GUI_SHIP_COMPLETE 6512
 #define GUI_SHIP_POSITION 6656
@@ -121,6 +125,11 @@
 #define ARMAMENT_BOXES 32
 #define ARMAMENTBOX_ITEM 496
 #define WEAPON_POWERED 242
+#define WEAPON_BLUEPRINT 32
+#define DRONE_BLUEPRINT 32
+#define BLUEPRINT_TITLE 16
+#define TEXTSTRING_LITERAL 8
+#define TEXTLIB_LANGUAGE 0x60
 #define DRONE_POWERED 16
 #define SHIPMANAGER_CREW 192
 #define CREW_ROOM 156
@@ -154,6 +163,17 @@
 #define WEAPON_SLOTS 4
 #define DRONE_SLOTS 3
 #define DOOR_HALF 10
+/* CFPS::FPSControl's speed level, the field speed_patch.py raises while F12 is held. */
+#define FPS_LEVEL 0x24
+#define SPEED_LEVEL_MIN 1
+#define SPEED_LEVEL_MAX 6
+#define RUMBLE_STRENGTH 0.4f
+#define RUMBLE_S 0.05f
+#define HELP_FONT 12
+#define HELP_X 8.0f
+#define HELP_Y 40.0f
+#define HELP_LINE 18.0f
+#define HELP_W 300.0f
 #define COMBAT_CURRENT_TARGET 1984
 #define COMBAT_POSITION 2000
 #define COMBAT_TARGET_POSITION 2016
@@ -264,6 +284,7 @@ static struct {
     void (*read_stick)(int, int, float *, float *);
     void (*read_dpad)(int, int *, int *);
     void (*enable_unfocused)(int);
+    void (*rumble)(int, float, float, float);
 } joy;
 
 /* Game entry points, resolved the same way. Hooked ones are kept as plain addresses. */
@@ -289,6 +310,9 @@ static struct {
     int (*system_room)(void *, int);
     void (*set_tab)(void *, unsigned);
     void (*clear_crew)(void *);
+    void *fps_control;
+    void (*get_text)(void *, void *, const void *, const void *);
+    void *text_library;
     Point *mouse_position;
 } game;
 
@@ -304,6 +328,10 @@ static const struct {
     {"input_joystick_read_stick", (void **)&joy.read_stick},
     {"input_joystick_read_dpad", (void **)&joy.read_dpad},
     {"input_enable_unfocused_joystick", (void **)&joy.enable_unfocused},
+    {"input_joystick_rumble", (void **)&joy.rumble},
+    {"_ZN4CFPS10FPSControlE", (void **)&game.fps_control},
+    {"_ZN11TextLibrary7GetTextERKSsS1_", (void **)&game.get_text},
+    {"_ZN7Globals7LibraryE", (void **)&game.text_library},
     {"_ZN4CApp6OnLoopEv", &game.onloop},
     {"_ZN12MouseControl8OnRenderEv", &game.mouse_render},
     {"_ZN6CEvent13GetShiftStateEv", &game.get_shift},
@@ -360,11 +388,11 @@ enum act_kind { ACT_NONE, ACT_KEY, ACT_LCLICK, ACT_RCLICK, ACT_STATE, ACT_WHEEL,
 
 enum builtin {
     BI_PAUSE_FF, BI_CANCEL, BI_CONTEXT_CLICK, BI_ARM_NEXT, BI_AIM_CREW, BI_REPEAT_ABILITY,
-    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_COUNT
+    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_COUNT
 };
 static const char *const builtin_names[BI_COUNT] = {
     "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
-    "precision", "center_swap", "prev_tab", "next_tab",
+    "precision", "center_swap", "prev_tab", "next_tab", "help",
 };
 
 struct binding {
@@ -465,7 +493,10 @@ static struct {
     bool autopause_wheel;
     bool autopause_aim;
     bool precision;
-} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false};
+    int speed_level;
+    bool rumble;
+    bool help;
+} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false};
 
 static bool debug;
 static void *app;
@@ -724,13 +755,17 @@ static void load_config(const char *path)
             cfg.autopause_wheel = value != 0;
         else if (strcmp(key, "autopause_aim") == 0)
             cfg.autopause_aim = value != 0;
+        else if (strcmp(key, "speed_level") == 0)
+            cfg.speed_level = (int)clampf(value, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX);
+        else if (strcmp(key, "rumble") == 0)
+            cfg.rumble = value != 0;
         else
             logmsg("config: unknown key %s", key);
     }
     fclose(f);
-    logmsg("config: cursor_speed=%.0f cursor_deadzone=%.2f cursor_curve=%.1f overlay=%d snap_dpad=%d autopause_wheel=%d autopause_aim=%d",
+    logmsg("config: cursor_speed=%.0f cursor_deadzone=%.2f cursor_curve=%.1f overlay=%d snap_dpad=%d autopause_wheel=%d autopause_aim=%d speed_level=%d rumble=%d",
            cfg.cursor_speed, cfg.cursor_deadzone, cfg.cursor_curve, cfg.overlay, cfg.snap_dpad,
-           cfg.autopause_wheel, cfg.autopause_aim);
+           cfg.autopause_wheel, cfg.autopause_aim, cfg.speed_level, cfg.rumble);
 }
 
 static int find_wheel(struct wheel *set, int *count, const char *name)
@@ -1417,6 +1452,9 @@ static void move_cursor(float rx, float ry, float dt)
     send_cursor();
 }
 
+static void buzz(void);
+static void draw_help(void);
+
 /* Moves the cursor to the target nearest along a direction: inside the narrow cone first,
  * then the wide one, scored by distance grown with the angle off the axis. */
 static void focus_move(float dx, float dy)
@@ -1459,6 +1497,7 @@ static void focus_move(float dx, float dy)
     cursor.x = targets[best].rect.x + targets[best].rect.w / 2.0f;
     cursor.y = targets[best].rect.y + targets[best].rect.h / 2.0f;
     send_cursor();
+    buzz();
 }
 
 /* ---- layout engine ---- */
@@ -1561,8 +1600,10 @@ static void wheel_point(float lx, float ly, float rx, float ry)
     if (angle < 0)
         angle += 2.0f * (float)M_PI;
     int slot = (int)lroundf(angle / ((float)M_PI / 4.0f)) % WHEEL_SLOTS;
-    if (wheels[wheel_open].plates[slot].bound)
+    if (wheels[wheel_open].plates[slot].bound && slot != wheel_sel) {
         wheel_sel = slot;
+        buzz();
+    }
 }
 
 /* Steps the selection to the next bound plate clockwise or counter-clockwise. */
@@ -1574,6 +1615,7 @@ static void wheel_step(int dir)
         slot = (slot + dir + WHEEL_SLOTS) % WHEEL_SLOTS;
         if (w->plates[slot].bound) {
             wheel_sel = slot;
+            buzz();
             return;
         }
     }
@@ -1596,6 +1638,22 @@ static const char *game_string(const void *str)
 {
     const char *chars = deref(str, 0);
     return chars ? chars : "";
+}
+
+/* Copies a TextString's display text: literal ones as they are, keys through the
+ * game's text library in its current language. */
+static void display_text(const void *text, char *out, size_t len)
+{
+    if (*((const unsigned char *)text + TEXTSTRING_LITERAL)) {
+        strncpy(out, game_string(text), len - 1);
+        out[len - 1] = '\0';
+        return;
+    }
+    void *result = NULL;
+    game.get_text(&result, game.text_library, text, (char *)game.text_library + TEXTLIB_LANGUAGE);
+    strncpy(out, game_string(&result), len - 1);
+    out[len - 1] = '\0';
+    game.string_dtor(&result);
 }
 
 /* Hotkey of a system type, or 0 when it has none. */
@@ -1670,7 +1728,7 @@ static void refresh_wheel(void)
             struct plate *pl = &w->plates[slot++];
             pl->bound = pl->available = true;
             pl->bind = (struct binding){ACT_KEY, KEY_F1 + i, false, 0, NULL};
-            strncpy(pl->label, game_string(member + CREW_BLUEPRINT + CREWBP_NAME), LABEL_LEN - 1);
+            display_text(member + CREW_BLUEPRINT + CREWBP_NAME, pl->label, LABEL_LEN);
         }
         /* Empty slots stay on the wheel, greyed, so positions never shift. */
         for (; slot < WHEEL_SLOTS; slot++) {
@@ -1719,12 +1777,22 @@ static void refresh_wheel(void)
         pl->available = true;
         if (w->kind == WK_POWER && key >= '1' && key < '1' + WEAPON_SLOTS) {
             const char *weapon = weapon_control() ? armament_item(weapon_control(), key - '1') : NULL;
+            const char *bp = weapon ? deref(weapon, WEAPON_BLUEPRINT) : NULL;
             pl->available = weapon != NULL;
+            if (bp)
+                display_text(bp + BLUEPRINT_TITLE, pl->label, LABEL_LEN);
+            else
+                strncpy(pl->label, "Empty", LABEL_LEN - 1);
             if (weapon && *(weapon + WEAPON_POWERED))
                 strncpy(pl->badge, "on", LABEL_LEN - 1);
         } else if (w->kind == WK_POWER && key >= '5' && key < '5' + DRONE_SLOTS) {
             const char *drone = drone_control() ? armament_item(drone_control(), key - '5') : NULL;
+            const char *bp = drone ? deref(drone, DRONE_BLUEPRINT) : NULL;
             pl->available = drone != NULL;
+            if (bp)
+                display_text(bp + BLUEPRINT_TITLE, pl->label, LABEL_LEN);
+            else
+                strncpy(pl->label, "Empty", LABEL_LEN - 1);
             if (drone && *(drone + DRONE_POWERED))
                 strncpy(pl->badge, "on", LABEL_LEN - 1);
         } else if (w->kind == WK_ACTION && ability_system(key) >= 0) {
@@ -1971,6 +2039,10 @@ static void builtin(enum builtin id, bool down, double t)
         if (down)
             tab_step(id == BI_NEXT_TAB ? 1 : -1);
         break;
+    case BI_HELP:
+        if (down)
+            cfg.help = !cfg.help;
+        break;
     case BI_COUNT:
         break;
     }
@@ -2105,6 +2177,14 @@ static void stick_directions(float x, float y, bool out[4], const bool was[4])
     out[3] = !horizontal && y >= STICK_KEY_ON;
 }
 
+static int pad_index = -1;
+
+static void buzz(void)
+{
+    if (cfg.rumble && pad_index >= 0)
+        joy.rumble(pad_index, RUMBLE_STRENGTH, RUMBLE_STRENGTH, RUMBLE_S);
+}
+
 static int active_pad(void)
 {
     int n = joy.count();
@@ -2228,6 +2308,8 @@ static void apply_pad(struct pad *p, double t, float dt)
         if (game_paused())
             tap_key(KEY_SPACE, false);
         game.key_down(app, KEY_F12);
+        /* The patch stored its own level on the key; ours replaces it. */
+        memcpy((char *)game.fps_control + FPS_LEVEL, &cfg.speed_level, sizeof cfg.speed_level);
         fast_forward = true;
     }
 
@@ -2369,6 +2451,7 @@ static void onloop_hook(void *self)
     poll_commands();
     struct pad pad = {{false}, {{0, 0}, {0, 0}}, {0, 0}};
     int dev = active_pad();
+    pad_index = dev;
     if (dev >= 0)
         read_pad(dev, &pad);
     apply_pad(&pad, t, dt);
@@ -2394,6 +2477,8 @@ static void mouse_render_hook(void *self)
     }
     if (wheel_open >= 0)
         draw_wheel();
+    if (cfg.help && cursor.synced)
+        draw_help();
     if (cursor.synced && cfg.overlay && gui_ptr()) {
         const char *mode = wheel_open >= 0 ? wheels[wheel_open].name
                            : aiming() ? "Aim" : crew_selected() ? "Crew"
@@ -2411,6 +2496,53 @@ static void mouse_render_hook(void *self)
     mouse_render_orig(self);
 }
 
+static void describe_binding(const struct binding *b, char *out, size_t len)
+{
+    switch (b->kind) {
+    case ACT_KEY: {
+        const char *name = NULL;
+        for (size_t i = 0; i < sizeof key_names / sizeof *key_names && !name; i++)
+            if (key_names[i].code == b->key)
+                name = key_names[i].name;
+        if (name)
+            snprintf(out, len, "%s", name);
+        else if (b->key >= KEY_F1 && b->key < KEY_F1 + KEY_F_COUNT)
+            snprintf(out, len, "f%d", b->key - KEY_F1 + 1);
+        else
+            snprintf(out, len, "%c", b->key);
+        break;
+    }
+    case ACT_LCLICK: snprintf(out, len, "click"); break;
+    case ACT_RCLICK: snprintf(out, len, "right click"); break;
+    case ACT_STATE: snprintf(out, len, "page %s", states[b->state].name); break;
+    case ACT_WHEEL: snprintf(out, len, "wheel %s", wheels[b->state].name); break;
+    case ACT_BUILTIN: snprintf(out, len, "%s", builtin_names[b->state]); break;
+    default: out[0] = '\0';
+    }
+}
+
+/* Draws one line per bound button of the base state. */
+static void draw_help(void)
+{
+    const struct state *base = &states[0];
+    float y = HELP_Y;
+    int lines = 0;
+    for (int in = 0; in < SIL_BUTTONS; in++)
+        lines += base->bound[in];
+    game.draw_rect(HELP_X, y - HELP_LINE, HELP_W, HELP_LINE * (lines + 1), plate_color);
+    for (int in = 0; in < SIL_BUTTONS; in++) {
+        if (!base->bound[in])
+            continue;
+        char hold[LABEL_LEN * 2], tap[LABEL_LEN * 2] = "", text[LABEL_LEN * 4];
+        describe_binding(&base->bind[in], hold, sizeof hold);
+        if (base->bind[in].tap)
+            describe_binding(base->bind[in].tap, tap, sizeof tap);
+        snprintf(text, sizeof text, "%s: %s%s%s", input_ini_names[in], hold, tap[0] ? ", tap " : "", tap);
+        draw_text_center(HELP_FONT, HELP_X + HELP_W / 2, y, text);
+        y += HELP_LINE;
+    }
+}
+
 static int get_shift_hook(void)
 {
     return shift_count > 0 || get_shift_orig();
@@ -2418,10 +2550,14 @@ static int get_shift_hook(void)
 
 static void button_move_hook(void *self, int x, int y, bool silent)
 {
-    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE)) {
+    const char *gui = gui_ptr();
+    bool crew_control_button = gui && (const char *)self >= gui + GUI_CREW_CONTROL
+                               && (const char *)self < gui + GUI_CREW_CONTROL + CREW_CONTROL_SIZE;
+    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && !crew_control_button) {
         Rect r;
         memcpy(&r, (const char *)self + BUTTON_HITBOX, sizeof r);
-        if (r.w > 0 && r.h > 0 && r.x >= 0 && r.y >= 0 && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H)
+        bool corner = r.x < CORNER_BUTTON_MAX && r.y < CORNER_BUTTON_MAX && r.w <= CORNER_BUTTON_SIZE;
+        if (r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H)
             buttons_seen[nbuttons_seen++] = r;
     }
     button_move_orig(self, x, y, silent);

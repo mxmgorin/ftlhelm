@@ -136,6 +136,12 @@ def main():
         print("vpad: done", flush=True)
         ui.close()
         return
+    if mode == "help":
+        tap(ui, e.BTN_SELECT, 0.08); time.sleep(2.5)
+        tap(ui, e.BTN_SELECT, 0.08); time.sleep(0.3)
+        print("vpad: done", flush=True)
+        ui.close()
+        return
     if mode == "dpad":
         for b in [e.BTN_DPAD_RIGHT, e.BTN_DPAD_RIGHT, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_UP]:
             tap(ui, b, 0.2)
