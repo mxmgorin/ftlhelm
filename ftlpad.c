@@ -249,6 +249,8 @@
 /* Plates sit on an ellipse, wider than tall, so neighbours do not touch. */
 #define WHEEL_RADIUS_X 190.0f
 #define WHEEL_RADIUS_Y 128.0f
+/* Diagonal plates sit this much closer to the middle line than the ellipse would put them. */
+#define WHEEL_DIAGONAL_Y 0.5f
 #define WHEEL_PLATE_W 156.0f
 #define WHEEL_PLATE_H 30.0f
 #define WHEEL_MARGIN 8.0f
@@ -794,9 +796,9 @@ static void load_config(const char *path)
             logmsg("config: unknown key %s", key);
     }
     fclose(f);
-    logmsg("config: cursor_speed=%.0f cursor_deadzone=%.2f cursor_curve=%.1f overlay=%d snap_dpad=%d autopause_wheel=%d autopause_aim=%d speed_level=%d rumble=%d",
+    logmsg("config: cursor_speed=%.0f cursor_deadzone=%.2f cursor_curve=%.1f overlay=%d snap_dpad=%d autopause_wheel=%d autopause_aim=%d speed_level=%d rumble=%d nintendo_labels=%d",
            cfg.cursor_speed, cfg.cursor_deadzone, cfg.cursor_curve, cfg.overlay, cfg.snap_dpad,
-           cfg.autopause_wheel, cfg.autopause_aim, cfg.speed_level, cfg.rumble);
+           cfg.autopause_wheel, cfg.autopause_aim, cfg.speed_level, cfg.rumble, cfg.nintendo);
 }
 
 static int find_wheel(struct wheel *set, int *count, const char *name)
@@ -1589,8 +1591,9 @@ static void plate_center(int slot, float *cx, float *cy)
     float ox = clampf(cursor.x, reach_x, GAME_W - reach_x);
     float oy = clampf(cursor.y, reach_y, GAME_H - reach_y);
     float angle = (float)slot * (float)M_PI / 4.0f;
+    bool diagonal = slot % 2 == 1;
     *cx = ox + sinf(angle) * WHEEL_RADIUS_X;
-    *cy = oy - cosf(angle) * WHEEL_RADIUS_Y;
+    *cy = oy - (diagonal ? copysignf(WHEEL_DIAGONAL_Y, cosf(angle)) : cosf(angle)) * WHEEL_RADIUS_Y;
 }
 
 /* A panel in the game's style: a dark bevel around a framed fill. */
