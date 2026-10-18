@@ -85,6 +85,57 @@ def main():
         print("vpad: done", flush=True)
         ui.close()
         return
+    if mode == "scheme1":
+        # Hold L1 past the tap threshold, point the left stick up, A, then let go.
+        ui.write(e.EV_KEY, e.BTN_TL, 1); ui.syn(); time.sleep(0.6)
+        ui.write(e.EV_ABS, e.ABS_X, 0); ui.write(e.EV_ABS, e.ABS_Y, -30000); ui.syn(); time.sleep(0.4)
+        ui.write(e.EV_ABS, e.ABS_X, 0); ui.write(e.EV_ABS, e.ABS_Y, 0); ui.syn(); time.sleep(2.5)
+        tap(ui, e.BTN_SOUTH, 0.15)
+        time.sleep(1.0)
+        ui.write(e.EV_KEY, e.BTN_TL, 0); ui.syn(); time.sleep(0.5)
+        tap(ui, e.BTN_TL, 0.08)           # tap: arm next weapon
+        time.sleep(0.8)
+        tap(ui, e.BTN_EAST, 0.1)          # cancel aim
+        time.sleep(0.5)
+        tap(ui, e.BTN_NORTH, 0.1)         # pause
+        time.sleep(0.8)
+        ui.write(e.EV_KEY, e.BTN_NORTH, 1); ui.syn(); time.sleep(0.8)   # hold: fast
+        ui.write(e.EV_KEY, e.BTN_NORTH, 0); ui.syn(); time.sleep(0.5)
+        print("vpad: done", flush=True)
+        ui.close()
+        return
+    if mode == "scheme2":
+        # Systems wheel on L2 with a screenshot pause, B depowers, then crew wheel on R1.
+        ui.write(e.EV_KEY, e.BTN_TL2, 1); ui.syn(); time.sleep(0.6)
+        ui.write(e.EV_ABS, e.ABS_RX, 30000); ui.write(e.EV_ABS, e.ABS_RY, 0); ui.syn(); time.sleep(0.4)
+        ui.write(e.EV_ABS, e.ABS_RX, 0); ui.syn(); time.sleep(2.5)
+        tap(ui, e.BTN_EAST, 0.15)
+        time.sleep(0.5)
+        ui.write(e.EV_KEY, e.BTN_TL2, 0); ui.syn(); time.sleep(0.5)
+        ui.write(e.EV_KEY, e.BTN_TR, 1); ui.syn(); time.sleep(0.6)
+        ui.write(e.EV_ABS, e.ABS_Y, -30000); ui.syn(); time.sleep(0.4)
+        ui.write(e.EV_ABS, e.ABS_Y, 0); ui.syn(); time.sleep(2.5)
+        tap(ui, e.BTN_SOUTH, 0.15)
+        time.sleep(0.5)
+        ui.write(e.EV_KEY, e.BTN_TR, 0); ui.syn(); time.sleep(0.5)
+        print("vpad: done", flush=True)
+        ui.close()
+        return
+    if mode == "doors":
+        tap(ui, e.BTN_EAST, 0.1); time.sleep(0.5)
+        tap(ui, e.BTN_THUMBL, 0.1); time.sleep(3.5)
+        tap(ui, e.BTN_DPAD_RIGHT, 0.1); time.sleep(1.5)
+        tap(ui, e.BTN_THUMBL, 0.1); time.sleep(0.3)
+        print("vpad: done", flush=True)
+        ui.close()
+        return
+    if mode == "tabs":
+        tap(ui, e.BTN_TR2, 0.08); time.sleep(1.5)
+        tap(ui, e.BTN_TR2, 0.08); time.sleep(1.5)
+        tap(ui, e.BTN_EAST, 0.1); time.sleep(0.5)
+        print("vpad: done", flush=True)
+        ui.close()
+        return
     if mode == "dpad":
         for b in [e.BTN_DPAD_RIGHT, e.BTN_DPAD_RIGHT, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_UP]:
             tap(ui, b, 0.2)
