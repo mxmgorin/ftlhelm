@@ -1741,7 +1741,23 @@ static int ability_system(int key)
     case 'n': return SYS_HACKING;
     case 'm': return SYS_MIND;
     case 't': case 'r': return SYS_TELEPORTER;
+    case 'y': return SYS_ARTILLERY;
     default: return -1;
+    }
+}
+
+#define CREWBP_RACE 8
+#define CRYSTAL_RACE "crystal"
+
+/* Lockdown needs a living crystal crew member. */
+static bool has_crystal_crew(void)
+{
+    for (int i = 0;; i++) {
+        const char *member = crew_at(i);
+        if (!member)
+            return false;
+        if (!*(member + CREW_DEAD) && strcmp(game_string(member + CREW_BLUEPRINT + CREWBP_RACE), CRYSTAL_RACE) == 0)
+            return true;
     }
 }
 
@@ -1840,6 +1856,8 @@ static void refresh_wheel(void)
             pl->powered = drone && *(drone + DRONE_POWERED);
         } else if (w->kind == WK_ACTION && ability_system(key) >= 0) {
             pl->available = has_system(ability_system(key));
+        } else if (w->kind == WK_ACTION && key == 'p') {
+            pl->available = has_crystal_crew();
         }
     }
 }
