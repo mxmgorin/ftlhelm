@@ -152,6 +152,9 @@
 #define DOOR_X 592
 #define DOOR_Y 596
 #define DOOR_VERTICAL 600
+#define DOOR_ROOM1 28
+#define DOOR_ROOM2 32
+#define DOOR_OPEN 36
 /* Game system types with a power hotkey. */
 #define SYS_SHIELDS 0
 #define SYS_ENGINES 1
@@ -403,11 +406,11 @@ enum act_kind { ACT_NONE, ACT_KEY, ACT_LCLICK, ACT_RCLICK, ACT_STATE, ACT_WHEEL,
 
 enum builtin {
     BI_PAUSE_FF, BI_CANCEL, BI_CONTEXT_CLICK, BI_ARM_NEXT, BI_AIM_CREW, BI_REPEAT_ABILITY,
-    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_COUNT
+    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_ROOM_DOORS, BI_COUNT
 };
 static const char *const builtin_names[BI_COUNT] = {
     "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
-    "precision", "center_swap", "prev_tab", "next_tab", "help",
+    "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors",
 };
 
 struct binding {
@@ -1493,6 +1496,8 @@ static void move_cursor(float rx, float ry, float dt)
 
 static void buzz(void);
 static void draw_help(void);
+static void run_queued_clicks(void);
+static void builtin(enum builtin id, bool down, double t);
 static void badge_text(char *out, size_t len);
 static int text_width(int font, const char *text);
 
@@ -1941,9 +1946,9 @@ static void wheel_act(void)
     } else if (b->kind == ACT_LCLICK || b->kind == ACT_RCLICK) {
         click(b->kind, true);
         click(b->kind, false);
-    } else if (b->kind == ACT_BUILTIN && w->kind == WK_SETTINGS) {
-        if (b->state == BI_PRECISION)
-            cfg.precision = !cfg.precision;
+    } else if (b->kind == ACT_BUILTIN) {
+        builtin((enum builtin)b->state, true, now_s());
+        builtin((enum builtin)b->state, false, now_s());
     }
     if (debug)
         logmsg("wheel %s: %s", w->name, w->plates[wheel_sel].label);
@@ -2032,6 +2037,86 @@ static void cursor_to_selected_crew(void)
             send_cursor();
             return;
         }
+}
+
+/* Clicks queued for later frames: the game resolves what sits under the pointer a frame
+ * after the move, so each click takes a move, a press and a release on three frames. */
+#define MAX_QUEUED_CLICKS 16
+/* Frames between the phases of a queued click. */
+#define QUEUED_CLICK_FRAMES 4
+static struct {
+    float x, y;
+} queued_clicks[MAX_QUEUED_CLICKS];
+static int nqueued_clicks, queued_phase, queued_wait;
+
+static void click_at(float gx, float gy)
+{
+    if (nqueued_clicks < MAX_QUEUED_CLICKS) {
+        queued_clicks[nqueued_clicks].x = gx;
+        queued_clicks[nqueued_clicks].y = gy;
+        nqueued_clicks++;
+    }
+}
+
+/* Runs one step of the queued clicks; the cursor returns once the queue is empty. */
+static void run_queued_clicks(void)
+{
+    if (nqueued_clicks == 0)
+        return;
+    if (queued_wait > 0) {
+        queued_wait--;
+        return;
+    }
+    queued_wait = QUEUED_CLICK_FRAMES - 1;
+    int wx, wy;
+    to_window(queued_clicks[0].x, queued_clicks[0].y, &wx, &wy);
+    if (queued_phase == 0) {
+        game.mouse_move(app, wx, wy, 0, 0, false, false, false);
+    } else if (queued_phase == 1) {
+        game.lbutton_down(app, wx, wy);
+    } else {
+        game.lbutton_up(app, wx, wy);
+        memmove(queued_clicks, queued_clicks + 1, (size_t)(nqueued_clicks - 1) * sizeof *queued_clicks);
+        nqueued_clicks--;
+        if (nqueued_clicks == 0) {
+            to_window(cursor.x, cursor.y, &wx, &wy);
+            game.mouse_move(app, wx, wy, 0, 0, false, false, false);
+        }
+    }
+    queued_phase = (queued_phase + 1) % 3;
+    cursor.last_set = *game.mouse_position;
+}
+
+/* Toggles the doors of the player room under the cursor: closes them all while any is
+ * open, else opens them all. Each door is clicked, as the game toggles them. */
+static void room_doors(void)
+{
+    int under = target_under_cursor();
+    if (under < 0 || targets[under].kind != T_ROOM)
+        return;
+    int room = targets[under].id;
+    const char *gui = gui_ptr();
+    void *ship = ship_of(player_complete());
+    if (!gui || !ship)
+        return;
+    Point origin = read_point(gui, GUI_SHIP_POSITION);
+    const void *doors = (const char *)ship + SHIP_DOORS;
+    size_t n = vector_count(doors, sizeof(void *));
+    bool any_open = false;
+    for (size_t i = 0; i < n; i++) {
+        const char *door = vector_at(doors, sizeof(void *), i);
+        if (door && (read_int(door, DOOR_ROOM1) == room || read_int(door, DOOR_ROOM2) == room))
+            any_open |= *(door + DOOR_OPEN) != 0;
+    }
+    for (size_t i = 0; i < n; i++) {
+        const char *door = vector_at(doors, sizeof(void *), i);
+        if (!door || (read_int(door, DOOR_ROOM1) != room && read_int(door, DOOR_ROOM2) != room))
+            continue;
+        if ((*(door + DOOR_OPEN) != 0) == any_open)
+            click_at((float)(origin.x + read_int(door, DOOR_X)), (float)(origin.y + read_int(door, DOOR_Y)));
+    }
+    if (debug)
+        logmsg("room %d doors %s", room, any_open ? "closed" : "opened");
 }
 
 /* Selects the living crew member after the first selected one, wrapping. */
@@ -2150,8 +2235,8 @@ static void builtin(enum builtin id, bool down, double t)
             tap_key(last_ability_key, false);
         break;
     case BI_PRECISION:
-        if (down)
-            cfg.precision = !cfg.precision;
+        /* Held: doors are the zones for as long as the button is down. */
+        cfg.precision = down;
         break;
     case BI_CENTER_SWAP:
         if (down)
@@ -2165,6 +2250,10 @@ static void builtin(enum builtin id, bool down, double t)
     case BI_HELP:
         if (down)
             cfg.help = !cfg.help;
+        break;
+    case BI_ROOM_DOORS:
+        if (down)
+            room_doors();
         break;
     case BI_COUNT:
         break;
@@ -2404,7 +2493,8 @@ static void apply_pad(struct pad *p, double t, float dt)
             wheel_opened_aiming = false;
     }
     bool snapping = cfg.snap_dpad && depth == 0 && ntargets > 0 && mode[SLOT_DPAD] == SLOT_KEYS;
-    if (++frame % BUTTON_REFRESH_FRAMES == 0 && cursor.synced && !cursor.l_held && !cursor.r_held)
+    if (++frame % BUTTON_REFRESH_FRAMES == 0 && cursor.synced && !cursor.l_held && !cursor.r_held
+            && nqueued_clicks == 0)
         game.mouse_move(app, cursor.last_wx, cursor.last_wy, 0, 0, false, false, false);
 
     settle_pending(t);
@@ -2560,6 +2650,19 @@ static void run_command(char *line)
         dump_state();
     } else if (sscanf(line, "font %d", &key) == 1) {
         plate_font = key;
+    } else if (strncmp(line, "doors", 5) == 0) {
+        int under = target_under_cursor();
+        void *ship = ship_of(player_complete());
+        const void *doors = ship ? (const char *)ship + SHIP_DOORS : NULL;
+        size_t n = doors ? vector_count(doors, sizeof(void *)) : 0;
+        for (size_t i = 0; i < n; i++) {
+            const char *door = vector_at(doors, sizeof(void *), i);
+            if (door && under >= 0 && (read_int(door, DOOR_ROOM1) == targets[under].id || read_int(door, DOOR_ROOM2) == targets[under].id))
+                logmsg("door %zu rooms %d,%d at %d,%d open=%d", i, read_int(door, DOOR_ROOM1), read_int(door, DOOR_ROOM2),
+                       read_int(door, DOOR_X), read_int(door, DOOR_Y), *(door + DOOR_OPEN));
+        }
+    } else if (strncmp(line, "roomdoors", 9) == 0) {
+        room_doors();
     } else if (strncmp(line, "badge", 5) == 0) {
         char text[LABEL_LEN * 3];
         badge_text(text, sizeof text);
@@ -2606,6 +2709,7 @@ static void onloop_hook(void *self)
         logmsg("first OnLoop");
 
     poll_files(t);
+    run_queued_clicks();
     sync_cursor();
     build_targets();
     poll_commands();
