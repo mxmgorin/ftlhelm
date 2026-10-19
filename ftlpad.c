@@ -128,6 +128,9 @@
 #define COMBAT_DRONE_CONTROL 1056
 #define WEAPONCTRL_ARMED 216
 #define ARMAMENT_BOXES 32
+#define ARMAMENT_LOCATION 56
+#define WEAPON_CONTROL_SIZE 1024
+#define DRONE_CONTROL_SIZE 880
 #define ARMAMENTBOX_ITEM 496
 #define WEAPON_POWERED 242
 #define WEAPON_BLUEPRINT 32
@@ -149,6 +152,7 @@
 #define TABBED_BUTTONS 32
 #define TABBED_CURRENT 104
 #define SHIP_DOORS 40
+#define SHIP_AIRLOCKS 88
 #define DOOR_X 592
 #define DOOR_Y 596
 #define DOOR_VERTICAL 600
@@ -1265,9 +1269,8 @@ static bool ship_center(const void *ship, Point origin, float *cx, float *cy)
     return true;
 }
 
-static void add_doors(const void *ship, Point origin)
+static void add_door_list(const void *doors, Point origin)
 {
-    const void *doors = (const char *)ship + SHIP_DOORS;
     size_t n = vector_count(doors, sizeof(void *));
     for (size_t i = 0; i < n && ntargets < MAX_TARGETS; i++) {
         const void *door = vector_at(doors, sizeof(void *), i);
@@ -1279,6 +1282,13 @@ static void add_doors(const void *ship, Point origin)
         t->id = (int)i;
         t->kind = T_DOOR;
     }
+}
+
+/* Inner doors and the airlocks on the hull. */
+static void add_doors(const void *ship, Point origin)
+{
+    add_door_list((const char *)ship + SHIP_DOORS, origin);
+    add_door_list((const char *)ship + SHIP_AIRLOCKS, origin);
 }
 
 static void add_rooms(const void *ship, Point origin, bool enemy)
@@ -2102,20 +2112,25 @@ static void room_doors(void)
     if (!gui || !ship)
         return;
     Point origin = read_point(gui, GUI_SHIP_POSITION);
-    const void *doors = (const char *)ship + SHIP_DOORS;
-    size_t n = vector_count(doors, sizeof(void *));
+    const void *lists[2] = {(const char *)ship + SHIP_DOORS, (const char *)ship + SHIP_AIRLOCKS};
     bool any_open = false;
-    for (size_t i = 0; i < n; i++) {
-        const char *door = vector_at(doors, sizeof(void *), i);
-        if (door && (read_int(door, DOOR_ROOM1) == room || read_int(door, DOOR_ROOM2) == room))
-            any_open |= *(door + DOOR_OPEN) != 0;
+    for (int l = 0; l < 2; l++) {
+        size_t n = vector_count(lists[l], sizeof(void *));
+        for (size_t i = 0; i < n; i++) {
+            const char *door = vector_at(lists[l], sizeof(void *), i);
+            if (door && (read_int(door, DOOR_ROOM1) == room || read_int(door, DOOR_ROOM2) == room))
+                any_open |= *(door + DOOR_OPEN) != 0;
+        }
     }
-    for (size_t i = 0; i < n; i++) {
-        const char *door = vector_at(doors, sizeof(void *), i);
-        if (!door || (read_int(door, DOOR_ROOM1) != room && read_int(door, DOOR_ROOM2) != room))
-            continue;
-        if ((*(door + DOOR_OPEN) != 0) == any_open)
-            click_at((float)(origin.x + read_int(door, DOOR_X)), (float)(origin.y + read_int(door, DOOR_Y)));
+    for (int l = 0; l < 2; l++) {
+        size_t n = vector_count(lists[l], sizeof(void *));
+        for (size_t i = 0; i < n; i++) {
+            const char *door = vector_at(lists[l], sizeof(void *), i);
+            if (!door || (read_int(door, DOOR_ROOM1) != room && read_int(door, DOOR_ROOM2) != room))
+                continue;
+            if ((*(door + DOOR_OPEN) != 0) == any_open)
+                click_at((float)(origin.x + read_int(door, DOOR_X)), (float)(origin.y + read_int(door, DOOR_Y)));
+        }
     }
     if (debug)
         logmsg("room %d doors %s", room, any_open ? "closed" : "opened");
@@ -2892,6 +2907,15 @@ static void button_move_hook(void *self, int x, int y, bool silent)
     if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && !crew_control_button) {
         Rect r;
         memcpy(&r, (const char *)self + BUTTON_HITBOX, sizeof r);
+        /* The armament bars keep their buttons' boxes relative to the bar. */
+        const char *bars[2] = {gui ? weapon_control() : NULL, gui ? drone_control() : NULL};
+        const int bar_sizes[2] = {WEAPON_CONTROL_SIZE, DRONE_CONTROL_SIZE};
+        for (int i = 0; i < 2; i++)
+            if (bars[i] && (const char *)self >= bars[i] && (const char *)self < bars[i] + bar_sizes[i]) {
+                Point at = read_point(bars[i], ARMAMENT_LOCATION);
+                r.x += at.x;
+                r.y += at.y;
+            }
         bool corner = r.x < CORNER_BUTTON_MAX && r.y < CORNER_BUTTON_MAX && r.w <= CORNER_BUTTON_SIZE;
         if (r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H)
             buttons_seen[nbuttons_seen++] = r;
