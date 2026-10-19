@@ -547,6 +547,8 @@ static enum input wheel_by;
 static int wheel_sel = -1;
 /* Whether the open wheel paused the game, so its close unpauses. */
 static bool wheel_paused;
+/* Whether the game was already aiming when the wheel opened; only a new aim closes it. */
+static bool wheel_opened_aiming;
 /* The abilities key X repeats on a tap. */
 static int last_ability_key;
 static bool fast_forward;
@@ -1896,6 +1898,7 @@ static void wheel_show(int index, enum input by)
     wheel_open = index;
     wheel_by = by;
     wheel_sel = -1;
+    wheel_opened_aiming = aiming();
     refresh_wheel();
     if (cfg.autopause_wheel && !game_paused()) {
         tap_key(KEY_SPACE, false);
@@ -2351,8 +2354,10 @@ static void apply_pad(struct pad *p, double t, float dt)
     if (in_wheel) {
         refresh_wheel();
         wheel_point(p->stick[0][0], p->stick[0][1], p->stick[1][0], p->stick[1][1]);
-        if (aiming())
+        if (aiming() && !wheel_opened_aiming)
             wheel_close();
+        if (!aiming())
+            wheel_opened_aiming = false;
     }
     bool snapping = cfg.snap_dpad && depth == 0 && ntargets > 0 && mode[SLOT_DPAD] == SLOT_KEYS;
     if (++frame % BUTTON_REFRESH_FRAMES == 0 && cursor.synced && !cursor.l_held && !cursor.r_held)
