@@ -330,6 +330,7 @@ static struct {
     int (*system_room)(void *, int);
     void (*set_tab)(void *, unsigned);
     void (*clear_crew)(void *);
+    void (*deselect_crew)(void *, void *);
     void *fps_control;
     void (*get_text)(void *, void *, const void *, const void *);
     void *text_library;
@@ -375,6 +376,7 @@ static const struct {
     {"_ZN11ShipManager13GetSystemRoomEi", (void **)&game.system_room},
     {"_ZN12TabbedWindow6SetTabEj", (void **)&game.set_tab},
     {"_ZN11CrewControl17ClearSelectedCrewEv", (void **)&game.clear_crew},
+    {"_ZN11CrewControl12DeselectCrewEP10CrewMember", (void **)&game.deselect_crew},
     {"_ZN12MouseControl5MouseE", (void **)&game.mouse_position},
 };
 
@@ -1975,10 +1977,22 @@ static void wheel_back(void)
 }
 
 /* D-pad up and down on a power or systems wheel: the selected item's key, with Shift to
- * take power away. */
+ * take power away. On the crew wheel they add the member to the selection or drop them. */
 static void wheel_power(int dir)
 {
     struct wheel *w = &wheels[wheel_open];
+    if (w->kind == WK_CREW) {
+        if (wheel_sel < 0 || !w->plates[wheel_sel].available)
+            return;
+        void *member = crew_at(w->plates[wheel_sel].bind.key - KEY_F1);
+        if (!member)
+            return;
+        if (dir > 0)
+            tap_key(w->plates[wheel_sel].bind.key, crew_selected());
+        else
+            game.deselect_crew((char *)gui_ptr() + GUI_CREW_CONTROL, member);
+        return;
+    }
     if (w->kind != WK_POWER && w->kind != WK_SYSTEMS)
         return;
     if (wheel_sel < 0 || !w->plates[wheel_sel].bound || !w->plates[wheel_sel].available
