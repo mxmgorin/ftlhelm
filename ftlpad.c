@@ -406,11 +406,13 @@ enum act_kind { ACT_NONE, ACT_KEY, ACT_LCLICK, ACT_RCLICK, ACT_STATE, ACT_WHEEL,
 
 enum builtin {
     BI_PAUSE_FF, BI_CANCEL, BI_CONTEXT_CLICK, BI_ARM_NEXT, BI_AIM_CREW, BI_REPEAT_ABILITY,
-    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_ROOM_DOORS, BI_COUNT
+    BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_ROOM_DOORS, BI_PAUSE,
+    BI_FAST_FORWARD, BI_COUNT
 };
 static const char *const builtin_names[BI_COUNT] = {
     "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
-    "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors",
+    "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
+    "fast_forward",
 };
 
 struct binding {
@@ -2254,6 +2256,22 @@ static void builtin(enum builtin id, bool down, double t)
     case BI_ROOM_DOORS:
         if (down)
             room_doors();
+        break;
+    case BI_PAUSE:
+        if (down)
+            tap_key(KEY_SPACE, false);
+        break;
+    case BI_FAST_FORWARD:
+        if (down) {
+            if (game_paused())
+                tap_key(KEY_SPACE, false);
+            game.key_down(app, KEY_F12);
+            memcpy((char *)game.fps_control + FPS_LEVEL, &cfg.speed_level, sizeof cfg.speed_level);
+            fast_forward = true;
+        } else {
+            game.key_up(app, KEY_F12);
+            fast_forward = false;
+        }
         break;
     case BI_COUNT:
         break;
