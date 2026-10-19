@@ -103,10 +103,19 @@
 /* Small unplaced buttons the game parks in this corner. */
 #define CORNER_BUTTON_MAX 40
 #define CORNER_BUTTON_SIZE 24
+/* The HUD's top row; with a screen open, buttons above it belong to the background. */
+#define HUD_TOP_HEIGHT 90
+/* The HUD's bottom bar starts here; the screens' own buttons end above it. */
+#define HUD_BOTTOM_TOP 610
 #define GUI_COMBAT_CONTROL 1416
 #define GUI_SHIP_COMPLETE 6512
 #define GUI_SHIP_POSITION 6656
 #define GUI_STAR_MAP 6504
+#define GUI_FTL_BUTTON 5928
+#define FTL_BUTTON_SIZE 416
+#define STARMAP_SIZE 3280
+/* StarMap::closeButton stays active while hidden. */
+#define STARMAP_CLOSE_BUTTON 1656
 #define FOCUS_OPEN 8
 #define STARMAP_LOCATIONS 40
 #define STARMAP_POSITION 160
@@ -118,6 +127,7 @@
 #define GUI_CHOICE_BOX 6688
 #define CHOICE_RECTS 88
 #define BUTTON_HITBOX 16
+#define BUTTON_RENDER_OFF 34
 #define BUTTON_ACTIVE 72
 #define GUI_SYS_CONTROL 1168
 #define SYSCTRL_BOXES 16
@@ -148,6 +158,11 @@
 #define CREWBP_NAME 120
 #define GUI_PAUSED 12944
 #define GUI_SHIP_SCREENS 13064
+#define GUI_CREW_SCREEN 14552
+#define GUI_EQUIP_SCREEN 15624
+#define EQUIP_BOXES 472
+#define CREWSCREEN_BOXES 184
+#define EQUIPBOX_HITBOX 96
 #define GUI_STORE_SCREENS 13448
 #define TABBED_BUTTONS 32
 #define TABBED_CURRENT 104
@@ -283,8 +298,8 @@ typedef struct {
     int x, y, w, h;
 } Rect;
 
-enum target_kind { T_ROOM, T_ENEMY_ROOM, T_BEACON, T_SECTOR, T_CHOICE, T_BUTTON, T_DOOR };
-static const char *const target_kind_names[] = {"player room", "enemy room", "beacon", "sector", "choice", "button", "door"};
+enum target_kind { T_ROOM, T_ENEMY_ROOM, T_BEACON, T_SECTOR, T_CHOICE, T_BUTTON, T_DOOR, T_SLOT };
+static const char *const target_kind_names[] = {"player room", "enemy room", "beacon", "sector", "choice", "button", "door", "slot"};
 
 struct target {
     Rect rect;
@@ -574,6 +589,7 @@ static struct {
 } pending[IN_COUNT];
 /* Buttons the game hit-tested since the last frame, and the last full set. */
 static Rect buttons_seen[MAX_BUTTONS], buttons[MAX_BUTTONS];
+static const void *button_objects_seen[MAX_BUTTONS], *button_objects[MAX_BUTTONS];
 static int nbuttons_seen, nbuttons;
 /* Pushed states above the base, with the input holding each. */
 static struct {
@@ -1390,13 +1406,54 @@ static bool add_choice_targets(const void *gui)
     return true;
 }
 
-static void add_button_targets(void)
+static bool inside(const void *p, const void *base, size_t size)
 {
+    return base && (const char *)p >= (const char *)base && (const char *)p < (const char *)base + size;
+}
+
+/* With the map open only its own buttons count, a beacon click jumps by itself; with
+ * another screen open the HUD's top and bottom rows drop out. */
+static void add_button_targets(const void *gui, bool screen_open, bool map_open)
+{
+    const void *map = map_open ? deref(gui, GUI_STAR_MAP) : NULL;
     for (int i = 0; i < nbuttons && ntargets < MAX_TARGETS; i++) {
+        if (map_open && (!inside(button_objects[i], map, STARMAP_SIZE)
+                         || button_objects[i] == (const char *)map + STARMAP_CLOSE_BUTTON))
+            continue;
+        if (screen_open && (buttons[i].y < HUD_TOP_HEIGHT || buttons[i].y >= HUD_BOTTOM_TOP))
+            continue;
         struct target *t = &targets[ntargets++];
         t->rect = buttons[i];
         t->id = i;
         t->kind = T_BUTTON;
+    }
+}
+
+/* Equipment and crew slots of an open ship screen, which are not buttons. */
+static void add_slot_targets(const void *gui)
+{
+    const struct {
+        size_t window, boxes;
+    } screens[2] = {{GUI_EQUIP_SCREEN, EQUIP_BOXES}, {GUI_CREW_SCREEN, CREWSCREEN_BOXES}};
+    for (int k = 0; k < 2; k++) {
+        const char *window = (const char *)gui + screens[k].window;
+        if (!window_open(window))
+            continue;
+        const void *boxes = window + screens[k].boxes;
+        size_t n = vector_count(boxes, sizeof(void *));
+        for (size_t i = 0; i < n && ntargets < MAX_TARGETS; i++) {
+            const char *box = vector_at(boxes, sizeof(void *), i);
+            if (!box)
+                continue;
+            Rect r;
+            memcpy(&r, box + EQUIPBOX_HITBOX, sizeof r);
+            if (r.w <= 0 || r.h <= 0)
+                continue;
+            struct target *t = &targets[ntargets++];
+            t->rect = r;
+            t->id = (int)i;
+            t->kind = T_SLOT;
+        }
     }
 }
 
@@ -1408,6 +1465,7 @@ static void build_targets(void)
     ntargets = 0;
     if (nbuttons_seen > 0) {
         memcpy(buttons, buttons_seen, (size_t)nbuttons_seen * sizeof *buttons);
+        memcpy(button_objects, button_objects_seen, (size_t)nbuttons_seen * sizeof *button_objects);
         nbuttons = nbuttons_seen;
         nbuttons_seen = 0;
     }
@@ -1415,7 +1473,9 @@ static void build_targets(void)
     if (!gui)
         return;
     void *player = ship_of(player_complete());
-    if (player && !add_map_targets(gui) && !add_choice_targets(gui)) {
+    bool screen_open = open_tabbed() != NULL;
+    bool map_open = window_open(deref(gui, GUI_STAR_MAP));
+    if (player && !screen_open && !add_map_targets(gui) && !add_choice_targets(gui)) {
         void *enemy = ship_of(enemy_complete());
         Point origin = read_point(gui, GUI_SHIP_POSITION);
         if (aiming()) {
@@ -1430,8 +1490,10 @@ static void build_targets(void)
                 add_rooms(enemy, enemy_origin(gui), true);
         }
     }
+    if (screen_open)
+        add_slot_targets(gui);
     if (!cfg.precision || aiming() || crew_selected())
-        add_button_targets();
+        add_button_targets(gui, screen_open, map_open);
 }
 
 static bool rect_contains(const Rect *r, int x, int y)
@@ -2711,6 +2773,13 @@ static void run_command(char *line)
         }
     } else if (strncmp(line, "roomdoors", 9) == 0) {
         room_doors();
+    } else if (strncmp(line, "buttons", 7) == 0) {
+        const char *gui = gui_ptr();
+        const char *map = gui ? deref(gui, GUI_STAR_MAP) : NULL;
+        for (int i = 0; i < nbuttons; i++)
+            logmsg("button %d at %d,%d %dx%d gui+%ld map+%ld", i, buttons[i].x, buttons[i].y, buttons[i].w, buttons[i].h,
+                   gui ? (long)((const char *)button_objects[i] - gui) : -1L,
+                   map ? (long)((const char *)button_objects[i] - map) : -1L);
     } else if (strncmp(line, "badge", 5) == 0) {
         char text[LABEL_LEN * 3];
         badge_text(text, sizeof text);
@@ -2918,7 +2987,8 @@ static void button_move_hook(void *self, int x, int y, bool silent)
     const char *gui = gui_ptr();
     bool crew_control_button = gui && (const char *)self >= gui + GUI_CREW_CONTROL
                                && (const char *)self < gui + GUI_CREW_CONTROL + CREW_CONTROL_SIZE;
-    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && !crew_control_button) {
+    bool drawn = !*((const unsigned char *)self + BUTTON_RENDER_OFF);
+    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && drawn && !crew_control_button) {
         Rect r;
         memcpy(&r, (const char *)self + BUTTON_HITBOX, sizeof r);
         /* The armament bars keep their buttons' boxes relative to the bar. */
@@ -2931,8 +3001,10 @@ static void button_move_hook(void *self, int x, int y, bool silent)
                 r.y += at.y;
             }
         bool corner = r.x < CORNER_BUTTON_MAX && r.y < CORNER_BUTTON_MAX && r.w <= CORNER_BUTTON_SIZE;
-        if (r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H)
+        if (r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H) {
+            button_objects_seen[nbuttons_seen] = self;
             buttons_seen[nbuttons_seen++] = r;
+        }
     }
     button_move_orig(self, x, y, silent);
 }
