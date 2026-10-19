@@ -1684,6 +1684,20 @@ static void *crew_at(int index)
     return vector_at(crew, sizeof(void *), (size_t)index);
 }
 
+/* Whether a crew member is in the current selection. */
+static bool crew_is_selected(const void *member)
+{
+    const char *gui = gui_ptr();
+    if (!gui)
+        return false;
+    const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
+    size_t n = vector_count(selected, sizeof(void *));
+    for (size_t i = 0; i < n; i++)
+        if (vector_at(selected, sizeof(void *), i) == member)
+            return true;
+    return false;
+}
+
 static const char *game_string(const void *str)
 {
     const char *chars = deref(str, 0);
@@ -1793,6 +1807,7 @@ static void refresh_wheel(void)
                 continue;
             struct plate *pl = &w->plates[slot++];
             pl->bound = pl->available = true;
+            pl->powered = crew_is_selected(member);
             pl->bind = (struct binding){ACT_KEY, KEY_F1 + i, false, 0, NULL};
             display_text(member + CREW_BLUEPRINT + CREWBP_NAME, pl->label, LABEL_LEN);
         }
@@ -1916,7 +1931,10 @@ static void wheel_act(void)
     if (wheel_sel < 0 || !w->plates[wheel_sel].bound || !w->plates[wheel_sel].available)
         return;
     const struct binding *b = &w->plates[wheel_sel].bind;
-    if (b->kind == ACT_KEY) {
+    if (w->kind == WK_CREW && b->kind == ACT_KEY) {
+        /* Shift adds to the selection instead of replacing it. */
+        tap_key(b->key, crew_selected());
+    } else if (b->kind == ACT_KEY) {
         tap_key(b->key, b->shift);
         if (w->kind == WK_ACTION && ability_system(b->key) >= 0)
             last_ability_key = b->key;
@@ -1929,7 +1947,7 @@ static void wheel_act(void)
     }
     if (debug)
         logmsg("wheel %s: %s", w->name, w->plates[wheel_sel].label);
-    if (w->kind != WK_POWER && w->kind != WK_SYSTEMS && w->kind != WK_SETTINGS)
+    if (w->kind != WK_POWER && w->kind != WK_SYSTEMS && w->kind != WK_SETTINGS && w->kind != WK_CREW)
         wheel_close();
 }
 
@@ -2016,6 +2034,28 @@ static void cursor_to_selected_crew(void)
         }
 }
 
+/* Selects the living crew member after the first selected one, wrapping. */
+static void select_next_crew(void)
+{
+    int count = 0;
+    while (crew_at(count))
+        count++;
+    if (count == 0)
+        return;
+    int start = -1;
+    for (int i = 0; i < count && start < 0; i++)
+        if (crew_is_selected(crew_at(i)))
+            start = i;
+    for (int n = 1; n <= count; n++) {
+        int i = (start + n) % count;
+        const char *member = crew_at(i);
+        if (member && !*(member + CREW_DEAD)) {
+            tap_key(KEY_F1 + i, false);
+            return;
+        }
+    }
+}
+
 /* Arms the next powered weapon after the armed one, wrapping. */
 static void arm_next(void)
 {
@@ -2059,7 +2099,15 @@ static void builtin(enum builtin id, bool down, double t)
             if (down)
                 wheel_act();
         } else {
-            click(ACT_LCLICK, down);
+            /* With crew selected and a room under the cursor, A sends them there, which
+             * the game does on the right button. */
+            static bool crew_order;
+            if (down) {
+                int under = target_under_cursor();
+                crew_order = crew_selected() && !aiming() && under >= 0
+                             && (targets[under].kind == T_ROOM || targets[under].kind == T_ENEMY_ROOM);
+            }
+            click(crew_order ? ACT_RCLICK : ACT_LCLICK, down);
         }
         break;
     case BI_CANCEL:
@@ -2067,12 +2115,12 @@ static void builtin(enum builtin id, bool down, double t)
             break;
         if (wheel_open >= 0)
             wheel_back();
-        else if (aiming() || crew_selected()) {
+        else if (aiming()) {
+            /* The right button cancels targeting. */
             click(ACT_RCLICK, true);
             click(ACT_RCLICK, false);
-            const char *gui = gui_ptr();
-            if (gui)
-                game.clear_crew((char *)gui + GUI_CREW_CONTROL);
+        } else if (crew_selected()) {
+            game.clear_crew((char *)gui_ptr() + GUI_CREW_CONTROL);
         } else if (open_tabbed() || (gui_ptr() && window_open((char *)gui_ptr() + GUI_CHOICE_BOX))
                    || (gui_ptr() && window_open(deref(gui_ptr(), GUI_STAR_MAP)))) {
             tap_key(KEY_ESCAPE, false);
@@ -2094,12 +2142,8 @@ static void builtin(enum builtin id, bool down, double t)
             arm_next();
         break;
     case BI_AIM_CREW:
-        if (!down)
-            break;
-        if (crew_selected())
-            cursor_to_selected_crew();
-        else
-            tap_key(KEY_F1, false);
+        if (down)
+            select_next_crew();
         break;
     case BI_REPEAT_ABILITY:
         if (down && last_ability_key)
