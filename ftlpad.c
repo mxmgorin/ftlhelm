@@ -2225,12 +2225,13 @@ static void builtin(enum builtin id, bool down, double t)
         }
         break;
     case BI_ARM_NEXT:
+        /* On a tabbed screen the shoulder taps walk its tabs instead. */
         if (down)
-            arm_next();
+            open_tabbed() ? tab_step(-1) : arm_next();
         break;
     case BI_AIM_CREW:
         if (down)
-            select_next_crew();
+            open_tabbed() ? tab_step(1) : select_next_crew();
         break;
     case BI_REPEAT_ABILITY:
         if (down && last_ability_key)
