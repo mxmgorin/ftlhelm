@@ -28,8 +28,9 @@
  * as StarMap::MouseMove inverts them, or the sector boxes while a new sector is chosen.
  *
  * Wheels: a button bound to "wheel NAME" shows, while held, eight labelled plates around
- * the cursor; either stick picks one (the D-pad steps), A performs it, B undoes power or
- * closes, and the release closes without acting. A power wheel stays open after A and B;
+ * the cursor; either stick picks one (D-pad left and right step), A performs it, B
+ * closes, D-pad up and down add and take power on power wheels, and the release closes
+ * without acting. A power wheel stays open after A and the power keys;
  * any wheel closes once the game starts aiming. Opening a wheel pauses the game and the
  * close unpauses only what the wheel paused. Crew and system wheels fill themselves from
  * the game: the living crew in list order, the installed systems in power-bar order.
@@ -243,8 +244,9 @@
 #define CONE_NARROW_DEG 30.0f
 #define CONE_WIDE_DEG 60.0f
 #define BADGE_FONT 12
-#define BADGE_W 150.0f
 #define BADGE_H 30.0f
+#define BADGE_PAD 14.0f
+#define BADGE_SEPARATOR " / "
 #define BADGE_MARGIN 8.0f
 /* Plates sit on an ellipse, wider than tall, so neighbours do not touch. */
 #define WHEEL_RADIUS_X 190.0f
@@ -316,6 +318,7 @@ static struct {
     void (*string_ctor)(void *, const char *, const void *);
     void (*string_dtor)(void *);
     void (*print_center)(int, float, float, const void *);
+    int (*measure_width)(int, const void *);
     void *button_move;
     int (*system_room)(void *, int);
     void (*set_tab)(void *, unsigned);
@@ -360,6 +363,7 @@ static const struct {
     {"_ZNSsC1EPKcRKSaIcE", (void **)&game.string_ctor},
     {"_ZNSsD1Ev", (void **)&game.string_dtor},
     {"_ZN8freetype16easy_printCenterEiffRKSs", (void **)&game.print_center},
+    {"_ZN8freetype17easy_measureWidthEiRKSs", (void **)&game.measure_width},
     {"_ZN13GenericButton9MouseMoveEiib", &game.button_move},
     {"_ZN11ShipManager13GetSystemRoomEi", (void **)&game.system_room},
     {"_ZN12TabbedWindow6SetTabEj", (void **)&game.set_tab},
@@ -1487,6 +1491,8 @@ static void move_cursor(float rx, float ry, float dt)
 
 static void buzz(void);
 static void draw_help(void);
+static void badge_text(char *out, size_t len);
+static int text_width(int font, const char *text);
 
 /* Moves the cursor to the target nearest along a direction: inside the narrow cone first,
  * then the wide one, scored by distance grown with the angle off the axis. */
@@ -1924,16 +1930,25 @@ static void wheel_act(void)
         wheel_close();
 }
 
-/* B in a wheel: depowers on power wheels, closes the others. */
+/* B in a wheel closes it. */
 static void wheel_back(void)
 {
-    struct wheel *w = &wheels[wheel_open];
-    if (w->kind == WK_POWER || w->kind == WK_SYSTEMS) {
-        if (wheel_sel >= 0 && w->plates[wheel_sel].bound && w->plates[wheel_sel].bind.kind == ACT_KEY)
-            tap_key(w->plates[wheel_sel].bind.key, true);
-        return;
-    }
     wheel_close();
+}
+
+/* D-pad up and down on a power or systems wheel: the selected item's key, with Shift to
+ * take power away. */
+static void wheel_power(int dir)
+{
+    struct wheel *w = &wheels[wheel_open];
+    if (w->kind != WK_POWER && w->kind != WK_SYSTEMS)
+        return;
+    if (wheel_sel < 0 || !w->plates[wheel_sel].bound || !w->plates[wheel_sel].available
+            || w->plates[wheel_sel].bind.kind != ACT_KEY)
+        return;
+    tap_key(w->plates[wheel_sel].bind.key, dir < 0);
+    if (debug)
+        logmsg("wheel %s: %s power %s", w->name, w->plates[wheel_sel].label, dir < 0 ? "down" : "up");
 }
 
 static void set_shift(bool on)
@@ -2355,6 +2370,8 @@ static void apply_pad(struct pad *p, double t, float dt)
                 if (in_wheel) {
                     if (d == 0 || d == 2)
                         wheel_step(d == 2 ? 1 : -1);
+                    else
+                        wheel_power(d == 1 ? 1 : -1);
                 } else {
                     focus_move((float)dir_dx[d], (float)dir_dy[d]);
                 }
@@ -2494,6 +2511,10 @@ static void run_command(char *line)
         dump_state();
     } else if (sscanf(line, "font %d", &key) == 1) {
         plate_font = key;
+    } else if (strncmp(line, "badge", 5) == 0) {
+        char text[LABEL_LEN * 3];
+        badge_text(text, sizeof text);
+        logmsg("badge: '%s' width %d", text, text[0] ? text_width(WHEEL_FONT, text) : 0);
     } else {
         logmsg("unknown command: %s", line);
     }
@@ -2570,17 +2591,14 @@ static void mouse_render_hook(void *self)
     if (cfg.help && cursor.synced)
         draw_help();
     if (cursor.synced && cfg.overlay && gui_ptr()) {
-        const char *mode = wheel_open >= 0 ? wheels[wheel_open].name
-                           : aiming() ? "Aim" : crew_selected() ? "Crew"
-                           : window_open(deref(gui_ptr(), GUI_STAR_MAP)) ? "Map"
-                           : window_open((char *)gui_ptr() + GUI_CHOICE_BOX) ? "Event"
-                           : open_tabbed() ? "Screen" : "Free";
-        char text[LABEL_LEN * 2];
-        snprintf(text, sizeof text, "%s%s%s", mode, cfg.precision ? " / doors" : "",
-                 fast_forward ? " / fast" : "");
-        float x = GAME_W - BADGE_MARGIN - BADGE_W, y = BADGE_MARGIN;
-        draw_panel(x, y, BADGE_W, BADGE_H, plate_color, plate_edge_color);
-        draw_text_center(WHEEL_FONT, x + BADGE_W / 2, y + WHEEL_TEXT_DY, text);
+        char text[LABEL_LEN * 3];
+        badge_text(text, sizeof text);
+        if (text[0]) {
+            float w = (float)text_width(WHEEL_FONT, text) + 2 * BADGE_PAD;
+            float x = GAME_W - BADGE_MARGIN - w, y = BADGE_MARGIN;
+            draw_panel(x, y, w, BADGE_H, plate_color, plate_edge_color);
+            draw_text_center(WHEEL_FONT, x + w / 2, y + WHEEL_TEXT_DY, text);
+        }
     }
     mouse_render_orig(self);
 }
@@ -2630,6 +2648,63 @@ static void draw_help(void)
         draw_text_center(HELP_FONT, HELP_X + HELP_W / 2, y, text);
         y += HELP_LINE;
     }
+}
+
+static void upper_ascii(char *text)
+{
+    for (; *text; text++)
+        *text = (char)toupper((unsigned char)*text);
+}
+
+static int text_width(int font, const char *text)
+{
+    void *str = NULL;
+    char alloc = 0;
+    game.string_ctor(&str, text, &alloc);
+    int w = game.measure_width(font, &str);
+    game.string_dtor(&str);
+    return w;
+}
+
+/* The mode badge text, empty in the plain state. */
+static void badge_text(char *out, size_t len)
+{
+    const char *gui = gui_ptr();
+    const void *mouse = game.mouse_position;
+    char main[LABEL_LEN * 2] = "";
+    if (wheel_open >= 0) {
+        snprintf(main, sizeof main, "%s", wheels[wheel_open].name);
+    } else if (read_int(mouse, MOUSE_TELEPORTING)) {
+        snprintf(main, sizeof main, "Teleport");
+    } else if (read_int(mouse, MOUSE_MIND)) {
+        snprintf(main, sizeof main, "Mind control");
+    } else if (read_int(mouse, MOUSE_HACKING)) {
+        snprintf(main, sizeof main, "Hacking");
+    } else if (read_int(mouse, MOUSE_AIMING)) {
+        const char *control = weapon_control();
+        const char *armed = control ? deref(control, WEAPONCTRL_ARMED) : NULL;
+        const char *bp = armed ? deref(armed, WEAPON_BLUEPRINT) : NULL;
+        char name[LABEL_LEN] = "";
+        if (bp)
+            display_text(bp + BLUEPRINT_SHORT_TITLE, name, sizeof name);
+        snprintf(main, sizeof main, name[0] ? "Target: %s" : "Target", name);
+    } else if (crew_selected()) {
+        const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
+        size_t n = vector_count(selected, sizeof(void *));
+        const char *member = vector_at(selected, sizeof(void *), 0);
+        char name[LABEL_LEN] = "";
+        if (n == 1 && member)
+            display_text(member + CREW_BLUEPRINT + CREWBP_NAME, name, sizeof name);
+        if (name[0])
+            snprintf(main, sizeof main, "Crew: %s", name);
+        else
+            snprintf(main, sizeof main, "Crew: %zu", n);
+    } else if (window_open(deref(gui, GUI_STAR_MAP))) {
+        snprintf(main, sizeof main, "Map");
+    }
+    snprintf(out, len, "%s%s%s%s%s", main, cfg.precision ? (main[0] ? BADGE_SEPARATOR "Doors" : "Doors") : "",
+             fast_forward && (main[0] || cfg.precision) ? BADGE_SEPARATOR : "", fast_forward ? "Fast" : "", "");
+    upper_ascii(out);
 }
 
 static int get_shift_hook(void)
