@@ -445,7 +445,7 @@ static const char *const builtin_names[BI_COUNT] = {
     "fast_forward", "dpad_mode",
 };
 static const char *const builtin_titles[BI_COUNT] = {
-    "Pause, hold: fast", "Cancel", "Click", "Next weapon / tab", "Next crew / tab",
+    "Pause, hold: fast", "Cancel", "Click", "Next weapon", "Next crew / tab",
     "Repeat ability", "Doors mode", "Other ship", "Previous tab", "Next tab", "Help",
     "Room doors", "Pause", "Fast forward", "Cursor / zones",
 };
@@ -2375,11 +2375,11 @@ static void builtin(enum builtin id, bool down, double t)
         }
         break;
     case BI_ARM_NEXT:
-        /* On a tabbed screen the shoulder taps walk its tabs instead. */
         if (down)
-            open_tabbed() ? tab_step(-1) : arm_next();
+            arm_next();
         break;
     case BI_AIM_CREW:
+        /* On a tabbed screen the shoulder tap walks its tabs instead. */
         if (down)
             open_tabbed() ? tab_step(1) : select_next_crew();
         break;
