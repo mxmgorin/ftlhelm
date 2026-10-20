@@ -259,9 +259,10 @@
 #define WHEEL_ON 0.5f
 #define TAP_HOLD_S 0.2
 #define FF_HOLD_S 0.25
-#define FLICK_ON 0.6f
-#define FLICK_OFF 0.3f
-#define FLICK_REPEAT_S 0.25
+#define FLICK_ON 0.8f
+#define FLICK_OFF 0.25f
+/* Zero: one flick per deflection, the stick must return to centre. */
+#define FLICK_REPEAT_S 0.0
 /* Magnet cone half-angles: the narrow one first, the wide one when it finds nothing. */
 #define CONE_NARROW_DEG 30.0f
 #define CONE_WIDE_DEG 60.0f
@@ -547,10 +548,12 @@ static struct {
     int speed_level;
     bool rumble;
     bool help;
+    float flick_on;
+    float flick_repeat;
     /* Face buttons by label: -1 from the SDL mapping, Nintendo-style without one; 1
      * Nintendo-style (A east, B south, X north, Y west), 0 Xbox-style. */
     int nintendo;
-} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1};
+} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1, FLICK_ON, FLICK_REPEAT_S};
 
 /* SIL button index per face label from the SDL mapping, or SDL_MAP_UNSET. */
 static int sdl_face[4] = {SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET};
@@ -582,8 +585,8 @@ static bool fast_forward;
 static bool dpad_mouse;
 static double pause_ff_since;
 static bool prev_aiming, prev_crew;
-static double flick_last;
-static bool flick_armed = true;
+static double flick_last[2];
+static bool flick_armed[2] = {true, true};
 /* Presses waiting to turn into a tap or a hold. */
 static struct {
     bool pending;
@@ -827,6 +830,10 @@ static void load_config(const char *path)
             cfg.rumble = value != 0;
         else if (strcmp(key, "nintendo_labels") == 0)
             cfg.nintendo = (int)value;
+        else if (strcmp(key, "flick_threshold") == 0)
+            cfg.flick_on = clampf(value, FLICK_OFF + 0.1f, 1.0f);
+        else if (strcmp(key, "flick_repeat") == 0)
+            cfg.flick_repeat = fmaxf(value, 0.0f);
         else
             logmsg("config: unknown key %s", key);
     }
@@ -2656,12 +2663,14 @@ static void apply_pad(struct pad *p, double t, float dt)
             if (mode[s] == SLOT_MOUSE) {
                 move_cursor(x, y, dt);
             } else if (mode[s] == SLOT_FLICK) {
+                int k = s - SLOT_LSTICK;
                 float mag = hypotf(x, y);
                 if (mag < FLICK_OFF) {
-                    flick_armed = true;
-                } else if (mag >= FLICK_ON && (flick_armed || t - flick_last >= FLICK_REPEAT_S)) {
-                    flick_armed = false;
-                    flick_last = t;
+                    flick_armed[k] = true;
+                } else if (mag >= cfg.flick_on
+                           && (flick_armed[k] || (cfg.flick_repeat > 0 && t - flick_last[k] >= cfg.flick_repeat))) {
+                    flick_armed[k] = false;
+                    flick_last[k] = t;
                     focus_move(x, y);
                 }
             }
