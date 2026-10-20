@@ -428,12 +428,12 @@ enum act_kind { ACT_NONE, ACT_KEY, ACT_LCLICK, ACT_RCLICK, ACT_STATE, ACT_WHEEL,
 enum builtin {
     BI_PAUSE_FF, BI_CANCEL, BI_CONTEXT_CLICK, BI_ARM_NEXT, BI_AIM_CREW, BI_REPEAT_ABILITY,
     BI_PRECISION, BI_CENTER_SWAP, BI_PREV_TAB, BI_NEXT_TAB, BI_HELP, BI_ROOM_DOORS, BI_PAUSE,
-    BI_FAST_FORWARD, BI_COUNT
+    BI_FAST_FORWARD, BI_DPAD_MODE, BI_COUNT
 };
 static const char *const builtin_names[BI_COUNT] = {
     "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
     "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
-    "fast_forward",
+    "fast_forward", "dpad_mode",
 };
 
 struct binding {
@@ -578,6 +578,8 @@ static bool wheel_opened_aiming;
 /* The abilities key X repeats on a tap. */
 static int last_ability_key;
 static bool fast_forward;
+/* dpad_mode toggled: the D-pad and the sticks move the cursor instead of walking zones. */
+static bool dpad_mouse;
 static double pause_ff_since;
 static bool prev_aiming, prev_crew;
 static double flick_last;
@@ -2353,6 +2355,10 @@ static void builtin(enum builtin id, bool down, double t)
         if (down)
             tap_key(KEY_SPACE, false);
         break;
+    case BI_DPAD_MODE:
+        if (down)
+            dpad_mouse = !dpad_mouse;
+        break;
     case BI_FAST_FORWARD:
         if (down) {
             if (game_paused())
@@ -2589,6 +2595,13 @@ static void apply_pad(struct pad *p, double t, float dt)
     enum slot_mode mode[SLOT_COUNT];
     for (int s = 0; s < SLOT_COUNT; s++) {
         mode[s] = slot_mode((enum slot)s);
+        /* The mode toggle: cursor on the D-pad and the sticks, or zones and flicks. */
+        if (wheel_open < 0) {
+            if (s == SLOT_DPAD && dpad_mouse)
+                mode[s] = SLOT_MOUSE;
+            if (s != SLOT_DPAD && !dpad_mouse && mode[s] == SLOT_MOUSE)
+                mode[s] = SLOT_FLICK;
+        }
         if (mode[s] != SLOT_KEYS)
             for (int d = 0; d < 4; d++)
                 p->down[slot_first[s] + d] = false;
@@ -2972,8 +2985,11 @@ static void badge_text(char *out, size_t len)
     } else if (window_open(deref(gui, GUI_STAR_MAP))) {
         snprintf(main, sizeof main, "Map");
     }
-    snprintf(out, len, "%s%s%s%s%s", main, cfg.precision ? (main[0] ? BADGE_SEPARATOR "Doors" : "Doors") : "",
-             fast_forward && (main[0] || cfg.precision) ? BADGE_SEPARATOR : "", fast_forward ? "Fast" : "", "");
+    const char *parts[3] = {cfg.precision ? "Doors" : NULL, fast_forward ? "Fast" : NULL, dpad_mouse ? "Mouse" : NULL};
+    size_t used = (size_t)snprintf(out, len, "%s", main);
+    for (int i = 0; i < 3; i++)
+        if (parts[i] && used < len)
+            used += (size_t)snprintf(out + used, len - used, "%s%s", used ? BADGE_SEPARATOR : "", parts[i]);
     upper_ascii(out);
 }
 
