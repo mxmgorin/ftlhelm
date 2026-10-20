@@ -30,7 +30,8 @@
  * Wheels: a button bound to "wheel NAME" shows, while held, eight labelled plates around
  * the cursor; either stick picks one (D-pad left and right step), A performs it, B
  * closes, D-pad up and down add and take power on power wheels, and the release closes
- * without acting. A power wheel stays open after A and the power keys;
+ * without acting. Every wheel stays open after the release; the same button or B closes
+ * it, as does A on a plate that is not about power. A power wheel stays open after A and the power keys;
  * any wheel closes once the game starts aiming. Opening a wheel pauses the game and the
  * close unpauses only what the wheel paused. Crew and system wheels fill themselves from
  * the game: the living crew in list order, the installed systems in power-bar order.
@@ -595,6 +596,8 @@ static int nwheels;
 static int wheel_open = -1;
 static enum input wheel_by;
 static int wheel_sel = -1;
+/* Wheels stay open after the release and close on A's action, B or their own button. */
+static bool wheel_sticky;
 /* Whether the open wheel paused the game, so its close unpauses. */
 static bool wheel_paused;
 /* Whether the game was already aiming when the wheel opened; only a new aim closes it. */
@@ -2048,10 +2051,14 @@ static void wheel_close(void)
 
 static void wheel_show(int index, enum input by)
 {
-    if (wheel_open >= 0)
+    if (wheel_open >= 0) {
+        if (wheel_sticky && wheel_open == index)
+            wheel_close();
         return;
+    }
     wheel_open = index;
     wheel_by = by;
+    wheel_sticky = true;
     wheel_sel = -1;
     wheel_opened_aiming = aiming();
     refresh_wheel();
@@ -2472,7 +2479,7 @@ static void perform(const struct binding *b, enum input in, bool down, double t)
     case ACT_WHEEL:
         if (down)
             wheel_show(b->state, in);
-        else if (wheel_open >= 0 && wheel_by == in)
+        else if (wheel_open >= 0 && wheel_by == in && !wheel_sticky)
             wheel_close();
         break;
     case ACT_BUILTIN:
