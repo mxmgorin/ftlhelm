@@ -564,10 +564,13 @@ static struct {
     bool help;
     float flick_on;
     float flick_repeat;
-    /* Face buttons by label: -1 from the SDL mapping, Nintendo-style without one; 1
-     * Nintendo-style (A east, B south, X north, Y west), 0 Xbox-style. */
+    /* Face buttons by label: -1 from the SDL mapping, with the swaps below when there is
+     * none; 1 forces the swaps, 0 forces none. */
     int nintendo;
-} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1, FLICK_ON, FLICK_REPEAT_S};
+    /* Which raw pairs to swap for the labels: A/B (east/south) and X/Y (north/west). */
+    bool swap_ab;
+    bool swap_xy;
+} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1, true, false, FLICK_ON, FLICK_REPEAT_S};
 
 /* SIL button index per face label from the SDL mapping, or SDL_MAP_UNSET. */
 static int sdl_face[4] = {SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET};
@@ -844,6 +847,10 @@ static void load_config(const char *path)
             cfg.rumble = value != 0;
         else if (strcmp(key, "nintendo_labels") == 0)
             cfg.nintendo = (int)value;
+        else if (strcmp(key, "swap_ab") == 0)
+            cfg.swap_ab = value != 0;
+        else if (strcmp(key, "swap_xy") == 0)
+            cfg.swap_xy = value != 0;
         else if (strcmp(key, "flick_threshold") == 0)
             cfg.flick_on = clampf(value, FLICK_OFF + 0.1f, 1.0f);
         else if (strcmp(key, "flick_repeat") == 0)
@@ -2585,11 +2592,16 @@ static void read_pad(int dev, struct pad *p)
         for (int i = 0; i < 4; i++)
             p->down[sdl_face_inputs[i]] = joy.button_state(dev, sdl_face[i]);
     } else if (cfg.nintendo != 0) {
-        bool south = p->down[IN_FACE_DOWN], west = p->down[IN_FACE_LEFT];
-        p->down[IN_FACE_DOWN] = p->down[IN_FACE_RIGHT];
-        p->down[IN_FACE_RIGHT] = south;
-        p->down[IN_FACE_LEFT] = p->down[IN_FACE_UP];
-        p->down[IN_FACE_UP] = west;
+        if (cfg.swap_ab) {
+            bool south = p->down[IN_FACE_DOWN];
+            p->down[IN_FACE_DOWN] = p->down[IN_FACE_RIGHT];
+            p->down[IN_FACE_RIGHT] = south;
+        }
+        if (cfg.swap_xy) {
+            bool west = p->down[IN_FACE_LEFT];
+            p->down[IN_FACE_LEFT] = p->down[IN_FACE_UP];
+            p->down[IN_FACE_UP] = west;
+        }
     }
     if (joy.num_sticks(dev) > TRIGGER_STICK) {
         float l2, r2;
