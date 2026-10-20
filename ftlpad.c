@@ -157,6 +157,10 @@
 #define CREW_BLUEPRINT 576
 #define CREWBP_NAME 120
 #define GUI_PAUSED 12944
+#define GUI_MENU_BOX 7232
+#define MENU_BOX_SIZE 1136
+#define GUI_OPTIONS_BOX 8592
+#define OPTIONS_BOX_SIZE 4352
 #define GUI_SHIP_SCREENS 13064
 #define GUI_CREW_SCREEN 14552
 #define GUI_EQUIP_SCREEN 15624
@@ -1441,8 +1445,23 @@ static bool inside(const void *p, const void *base, size_t size)
     return base && (const char *)p >= (const char *)base && (const char *)p < (const char *)base + size;
 }
 
+/* The game menu or the options screen when one is open: only its buttons count. */
+static const char *modal_window(const char *gui, size_t *size)
+{
+    if (window_open(gui + GUI_OPTIONS_BOX)) {
+        *size = OPTIONS_BOX_SIZE;
+        return gui + GUI_OPTIONS_BOX;
+    }
+    if (window_open(gui + GUI_MENU_BOX)) {
+        *size = MENU_BOX_SIZE;
+        return gui + GUI_MENU_BOX;
+    }
+    return NULL;
+}
+
 /* With the map open only its own buttons count, a beacon click jumps by itself; with
- * another screen open the HUD's top and bottom rows drop out. */
+ * another screen or the menu open the HUD's top and bottom rows drop out (the menu's
+ * buttons live on the heap, so they cannot be told apart by address). */
 static void add_button_targets(const void *gui, bool screen_open, bool map_open)
 {
     const void *map = map_open ? deref(gui, GUI_STAR_MAP) : NULL;
@@ -1503,7 +1522,8 @@ static void build_targets(void)
     if (!gui)
         return;
     void *player = ship_of(player_complete());
-    bool screen_open = open_tabbed() != NULL;
+    size_t modal_size = 0;
+    bool screen_open = open_tabbed() != NULL || modal_window(gui, &modal_size) != NULL;
     bool map_open = window_open(deref(gui, GUI_STAR_MAP));
     if (player && !screen_open && !add_map_targets(gui) && !add_choice_targets(gui)) {
         void *enemy = ship_of(enemy_complete());
