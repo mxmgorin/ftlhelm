@@ -2805,6 +2805,11 @@ static void apply_pad(struct pad *p, double t, float dt)
         if (p->down[i] == held[i])
             continue;
         held[i] = p->down[i];
+        /* Any button closes the help; that press does nothing else. */
+        if (cfg.help && p->down[i] && i < SIL_BUTTONS) {
+            cfg.help = false;
+            continue;
+        }
         if (is_dpad(i)) {
             int d = i - IN_DPAD_LEFT;
             if (p->down[i] && (in_wheel || snapping)) {
