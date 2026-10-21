@@ -1820,8 +1820,9 @@ static void add_slot_targets(const void *gui)
     }
 }
 
-/* Rebuilds the zones for the current screen: beacons or sector boxes with the map open,
- * event choices with an event open, otherwise rooms (the enemy's only while aiming, only
+/* Rebuilds the zones for the current screen: an event's choices alone while it is open
+ * (it sits over any screen but the game menu), beacons or sector boxes with the map open,
+ * otherwise rooms (the enemy's only while aiming, only
  * doors in precision mode); the buttons the game hit-tests come on top. */
 static void build_targets(void)
 {
@@ -1838,9 +1839,12 @@ static void build_targets(void)
         return;
     void *player = ship_of(player_complete());
     size_t modal_size = 0;
-    bool screen_open = open_tabbed() != NULL || modal_window(gui, &modal_size) != NULL;
+    bool modal_open = modal_window(gui, &modal_size) != NULL;
+    if (!modal_open && add_choice_targets(gui))
+        return;
+    bool screen_open = open_tabbed() != NULL || modal_open;
     bool map_open = window_open(deref(gui, GUI_STAR_MAP));
-    if (player && !screen_open && !add_map_targets(gui) && !add_choice_targets(gui)) {
+    if (player && !screen_open && !add_map_targets(gui)) {
         void *enemy = ship_of(enemy_complete());
         Point origin = read_point(gui, GUI_SHIP_POSITION);
         if (aiming()) {
@@ -1936,7 +1940,8 @@ static void move_cursor(float rx, float ry, float dt)
 }
 
 /* Moves the cursor to the target nearest along a direction: inside the narrow cone first,
- * then the wide one, scored by distance grown with the angle off the axis. */
+ * then the wide one, scored by distance grown with the angle off the axis. Both are
+ * measured to a target's nearest point, or its centre when the cursor is inside it. */
 static void focus_move(float dx, float dy)
 {
     if (ntargets == 0)
@@ -1956,9 +1961,13 @@ static void focus_move(float dx, float dy)
         for (int i = 0; i < ntargets; i++) {
             if (i == from)
                 continue;
-            float tx = targets[i].rect.x + targets[i].rect.w / 2.0f;
-            float ty = targets[i].rect.y + targets[i].rect.h / 2.0f;
-            float vx = tx - cx, vy = ty - cy;
+            const Rect *r = &targets[i].rect;
+            float vx = clampf(cx, (float)r->x, (float)(r->x + r->w)) - cx;
+            float vy = clampf(cy, (float)r->y, (float)(r->y + r->h)) - cy;
+            if (vx == 0 && vy == 0) {
+                vx = r->x + r->w / 2.0f - cx;
+                vy = r->y + r->h / 2.0f - cy;
+            }
             float dist = hypotf(vx, vy);
             if (dist <= 0)
                 continue;
@@ -1972,6 +1981,8 @@ static void focus_move(float dx, float dy)
             }
         }
     }
+    if (debug)
+        logmsg("focus %.0f,%.0f: from %d to %d", dx, dy, from, best);
     if (best < 0)
         return;
     cursor.x = targets[best].rect.x + targets[best].rect.w / 2.0f;
@@ -1986,10 +1997,10 @@ enum first_screen { FS_NONE, FS_MAIN_MENU, FS_GAME_MENU, FS_CHOICE };
 static enum first_screen first_screen(void)
 {
     const char *gui = gui_ptr();
-    if (gui && *((const unsigned char *)gui + GUI_CHOICE_BOX + FOCUS_OPEN))
-        return FS_CHOICE;
     if (gui && window_open(gui + GUI_MENU_BOX))
         return FS_GAME_MENU;
+    if (gui && *((const unsigned char *)gui + GUI_CHOICE_BOX + FOCUS_OPEN))
+        return FS_CHOICE;
     if (*((const unsigned char *)app + CAPP_MAIN_MENU_OPEN))
         return FS_MAIN_MENU;
     return FS_NONE;
