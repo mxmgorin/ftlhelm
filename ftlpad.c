@@ -248,6 +248,8 @@
 #define SPEED_LEVEL_DEFAULT 3
 #define RUMBLE_STRENGTH 0.4f
 #define RUMBLE_S 0.05f
+#define RUMBLE_S_MIN 0.01f
+#define RUMBLE_S_MAX 0.5f
 #define HELP_FONT WHEEL_FONT
 #define HELP_LINE 30.0f
 #define HELP_W 760.0f
@@ -321,8 +323,10 @@
 #define QUEUED_CLICK_FRAMES 4
 #define QUEUED_CLICK_PHASES 3
 #define WHEEL_ON 0.5f
-#define TAP_HOLD_S 0.2
-#define FF_HOLD_S 0.25
+#define TAP_HOLD_S 0.2f
+#define FF_HOLD_S 0.25f
+#define HOLD_S_MIN 0.05f
+#define HOLD_S_MAX 2.0f
 #define FLICK_ON 0.8f
 #define FLICK_OFF 0.25f
 /* The narrowest band a flick threshold keeps above the re-arm level. */
@@ -332,6 +336,9 @@
 /* Magnet cone half-angles: the narrow one first, the wide one when it finds nothing. */
 #define CONE_NARROW_DEG 30.0f
 #define CONE_WIDE_DEG 60.0f
+#define CONE_DEG_MIN 5.0f
+#define CONE_DEG_MAX 89.0f
+#define FOCUS_SIDE_WEIGHT_MAX 10.0f
 #define BADGE_FONT 12
 #define BADGE_H 30.0f
 #define BADGE_PAD 14.0f
@@ -698,6 +705,19 @@ struct config {
     /* Which raw pairs to swap for the labels: A/B (east/south) and X/Y (north/west). */
     bool swap_ab;
     bool swap_xy;
+    float tap_hold;
+    float pause_ff_hold;
+    float focus_cone_narrow;
+    float focus_cone_wide;
+    float focus_side_weight;
+    /* Menus, dialogs and the map open with the cursor on their first item. */
+    bool focus_first;
+    /* The cursor moves to the room of a newly selected crew member. */
+    bool crew_follow;
+    /* Wheels open only on the ship view. */
+    bool wheels_ship_only;
+    float rumble_strength;
+    float rumble_time;
 };
 
 /* What a key missing from the config file takes. */
@@ -716,6 +736,16 @@ static const struct config cfg_defaults = {
     .nintendo = -1,
     .swap_ab = true,
     .swap_xy = false,
+    .tap_hold = TAP_HOLD_S,
+    .pause_ff_hold = FF_HOLD_S,
+    .focus_cone_narrow = CONE_NARROW_DEG,
+    .focus_cone_wide = CONE_WIDE_DEG,
+    .focus_side_weight = FOCUS_SIDE_WEIGHT,
+    .focus_first = true,
+    .crew_follow = true,
+    .wheels_ship_only = true,
+    .rumble_strength = RUMBLE_STRENGTH,
+    .rumble_time = RUMBLE_S,
 };
 static struct config cfg;
 /* Doors are the zones while precision is held. */
@@ -1088,6 +1118,16 @@ static const struct {
     {"swap_xy", OPT_BOOL, offsetof(struct config, swap_xy), 0, 0},
     {"flick_threshold", OPT_FLOAT, offsetof(struct config, flick_on), FLICK_OFF + FLICK_GAP, 1.0f},
     {"flick_repeat", OPT_FLOAT, offsetof(struct config, flick_repeat), 0.0f, INFINITY},
+    {"tap_hold", OPT_FLOAT, offsetof(struct config, tap_hold), HOLD_S_MIN, HOLD_S_MAX},
+    {"pause_ff_hold", OPT_FLOAT, offsetof(struct config, pause_ff_hold), HOLD_S_MIN, HOLD_S_MAX},
+    {"focus_cone_narrow", OPT_FLOAT, offsetof(struct config, focus_cone_narrow), CONE_DEG_MIN, CONE_DEG_MAX},
+    {"focus_cone_wide", OPT_FLOAT, offsetof(struct config, focus_cone_wide), CONE_DEG_MIN, CONE_DEG_MAX},
+    {"focus_side_weight", OPT_FLOAT, offsetof(struct config, focus_side_weight), 0.0f, FOCUS_SIDE_WEIGHT_MAX},
+    {"focus_first", OPT_BOOL, offsetof(struct config, focus_first), 0, 0},
+    {"crew_follow", OPT_BOOL, offsetof(struct config, crew_follow), 0, 0},
+    {"wheels_ship_only", OPT_BOOL, offsetof(struct config, wheels_ship_only), 0, 0},
+    {"rumble_strength", OPT_FLOAT, offsetof(struct config, rumble_strength), 0.0f, 1.0f},
+    {"rumble_time", OPT_FLOAT, offsetof(struct config, rumble_time), RUMBLE_S_MIN, RUMBLE_S_MAX},
 };
 
 static void set_option(size_t i, float value)
@@ -1962,7 +2002,7 @@ static void focus_move(float dx, float dy)
     float cx = cursor.x, cy = cursor.y;
     int best = -1;
     float best_score = 0;
-    const float cones[] = {CONE_NARROW_DEG, CONE_WIDE_DEG};
+    const float cones[] = {cfg.focus_cone_narrow, cfg.focus_cone_wide};
     for (size_t pass = 0; pass < sizeof cones / sizeof *cones && best < 0; pass++) {
         float cos_cone = cosf(cones[pass] * (float)M_PI / 180.0f);
         for (int i = 0; i < ntargets; i++) {
@@ -1981,7 +2021,7 @@ static void focus_move(float dx, float dy)
             float cos_a = (vx * dx + vy * dy) / dist;
             if (cos_a < cos_cone)
                 continue;
-            float score = dist * (1.0f + FOCUS_SIDE_WEIGHT * (1.0f - cos_a));
+            float score = dist * (1.0f + cfg.focus_side_weight * (1.0f - cos_a));
             if (best < 0 || score < best_score) {
                 best = i;
                 best_score = score;
@@ -3140,12 +3180,14 @@ static void start(const struct binding *b, enum input in, double t)
     active[in].tap = NULL;
 }
 
-/* Whether the ship view is up with nothing over it: no menu, ship or store screen,
- * dialog or map. Wheels open only there. */
+/* Whether wheels may open: anywhere, or with wheels_ship_only only on the ship view with
+ * nothing over it (no menu, ship or store screen, dialog or map). */
 static bool wheel_screen(void)
 {
     const char *gui = gui_ptr();
     size_t size;
+    if (!cfg.wheels_ship_only)
+        return true;
     return gui && player_complete() && !*((const unsigned char *)app + CAPP_MAIN_MENU_OPEN)
            && !open_tabbed() && !modal_window(gui, &size) && !window_open(gui + GUI_CHOICE_BOX)
            && !window_open(deref(gui, GUI_STAR_MAP));
@@ -3196,7 +3238,7 @@ static void settle_pending(double t)
 {
     for (int in = 0; in < IN_COUNT; in++) {
         const struct binding *b = pending[in].bind;
-        if (!b || t - pending[in].since < TAP_HOLD_S)
+        if (!b || t - pending[in].since < cfg.tap_hold)
             continue;
         pending[in].bind = NULL;
         start(b, (enum input)in, t);
@@ -3245,7 +3287,7 @@ static void load_sdl_map(void)
 static void buzz(void)
 {
     if (cfg.rumble && pad_index >= 0)
-        joy.rumble(pad_index, RUMBLE_STRENGTH, RUMBLE_STRENGTH, RUMBLE_S);
+        joy.rumble(pad_index, cfg.rumble_strength, cfg.rumble_strength, cfg.rumble_time);
 }
 
 static int active_pad(void)
@@ -3413,7 +3455,7 @@ static void apply_pad(struct pad *p, double t, float dt)
     }
 
     /* pause_ff held past the threshold: unpause and run fast. */
-    if (pause_ff_since > 0 && !fast_forward && t - pause_ff_since >= FF_HOLD_S) {
+    if (pause_ff_since > 0 && !fast_forward && t - pause_ff_since >= cfg.pause_ff_hold) {
         if (game_paused())
             tap_key(KEY_SPACE, false);
         set_fast(true);
@@ -3435,7 +3477,8 @@ static void apply_pad(struct pad *p, double t, float dt)
             tap_key(KEY_SPACE, false);
     }
     if (now_crew && now_crew != prev_crew)
-        cursor_to_selected_crew();
+        if (cfg.crew_follow)
+            cursor_to_selected_crew();
     prev_aiming = now_aiming;
     prev_crew = now_crew;
 
@@ -3600,7 +3643,8 @@ static void onloop_hook(void *self)
     run_queued_clicks();
     sync_cursor();
     build_targets();
-    focus_first_on_open();
+    if (cfg.focus_first)
+        focus_first_on_open();
     poll_commands();
     struct pad pad = {{false}, {{0, 0}, {0, 0}}, {0, 0}};
     int dev = active_pad();
