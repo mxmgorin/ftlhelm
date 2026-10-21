@@ -53,6 +53,7 @@
 #include <ctype.h>
 #include <elf.h>
 #include <fcntl.h>
+#include <locale.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -1479,8 +1480,15 @@ static void poll_files(double t)
     if (t - last_poll < FILE_POLL_S)
         return;
     last_poll = t;
+    /* Numbers in the files use a dot whatever locale the game has set. */
+    static locale_t c_numeric;
+    if (!c_numeric)
+        c_numeric = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+    locale_t previous = c_numeric ? uselocale(c_numeric) : (locale_t)0;
     poll_file(getenv(CONFIG_ENV), &config_mtime, load_config);
     poll_file(getenv(LAYOUT_ENV), &layout_mtime, load_layout);
+    if (previous)
+        uselocale(previous);
 }
 
 /* ---- game state ---- */
