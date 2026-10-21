@@ -258,6 +258,7 @@
 #define KEY_F_COUNT 15
 #define KEY_SPACE 0x20
 #define KEY_ESCAPE 0x1b
+#define KEY_ENTER 0x0d
 
 /* Cursor defaults, overridden by the config file. */
 #define STICK_DEADZONE 0.12f
@@ -3383,16 +3384,29 @@ static void mouse_render_hook(void *self)
         mouse_render_orig(self);
 }
 
+/* What the game's own hotkeys do, as the help names them. */
+static const struct {
+    int code;
+    const char *title;
+} key_titles[] = {
+    {KEY_ESCAPE, "Menu"}, {KEY_SPACE, "Pause"}, {'j', "Jump"}, {'u', "Upgrades"},
+    {'v', "Autofire"}, {'z', "Open doors"}, {'x', "Close doors"}, {'q', "All crew"},
+    {KEY_ENTER, "To stations"}, {'/', "Save stations"},
+};
+
 static void describe_binding(const struct binding *b, char *out, size_t len)
 {
     switch (b->kind) {
     case ACT_KEY: {
-        const char *name = NULL;
+        const char *title = NULL, *name = NULL;
+        for (size_t i = 0; i < sizeof key_titles / sizeof *key_titles && !title; i++)
+            if (key_titles[i].code == b->key)
+                title = key_titles[i].title;
         for (size_t i = 0; i < sizeof key_names / sizeof *key_names && !name; i++)
             if (key_names[i].code == b->key)
                 name = key_names[i].name;
-        if (b->key == KEY_ESCAPE)
-            snprintf(out, len, "Menu");
+        if (title)
+            snprintf(out, len, "%s", title);
         else if (name)
             snprintf(out, len, "%s", name);
         else if (b->key >= KEY_F1 && b->key < KEY_F1 + KEY_F_COUNT)
@@ -3404,7 +3418,10 @@ static void describe_binding(const struct binding *b, char *out, size_t len)
     case ACT_LCLICK: snprintf(out, len, "click"); break;
     case ACT_RCLICK: snprintf(out, len, "right click"); break;
     case ACT_STATE: snprintf(out, len, "%s page", states[b->state].name); break;
-    case ACT_WHEEL: snprintf(out, len, "%s wheel", wheels[b->state].name); break;
+    case ACT_WHEEL:
+        snprintf(out, len, "%s wheel", wheels[b->state].name);
+        out[0] = (char)toupper((unsigned char)out[0]);
+        break;
     case ACT_BUILTIN: snprintf(out, len, "%s", builtin_titles[b->state]); break;
     default: out[0] = '\0';
     }
