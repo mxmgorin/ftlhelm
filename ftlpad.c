@@ -398,7 +398,7 @@ struct target {
 };
 
 /* SIL joystick API, resolved from the symbol table. */
-static struct {
+struct joy_api {
     int (*count)(void);
     int (*connected)(int);
     int (*num_sticks)(int);
@@ -408,10 +408,11 @@ static struct {
     void (*read_dpad)(int, int *, int *);
     void (*enable_unfocused)(int);
     void (*rumble)(int, float, float, float);
-} joy;
+};
+static struct joy_api joy;
 
 /* Game entry points, resolved the same way. Hooked ones are kept as plain addresses. */
-static struct {
+struct game_api {
     void *onloop;
     void *mouse_render;
     void *get_shift;
@@ -452,12 +453,14 @@ static struct {
     void (*get_text)(void *, void *, const void *, const void *);
     void *text_library;
     Point *mouse_position;
-} game;
+};
+static struct game_api game;
 
-static const struct {
+struct symbol_slot {
     const char *name;
     void **slot;
-} symbols[] = {
+};
+static const struct symbol_slot symbols[] = {
     {"input_joystick_count", (void **)&joy.count},
     {"input_joystick_connected", (void **)&joy.connected},
     {"input_joystick_num_sticks", (void **)&joy.num_sticks},
@@ -625,10 +628,11 @@ struct wheel {
     struct plate plates[WHEEL_SLOTS];
 };
 
-static const struct {
+struct key_name {
     const char *name;
     int code;
-} key_names[] = {
+};
+static const struct key_name key_names[] = {
     {"space", KEY_SPACE}, {"enter", KEY_ENTER}, {"return", KEY_ENTER}, {"esc", KEY_ESCAPE},
     {"escape", KEY_ESCAPE}, {"tab", 9},
     {"backspace", 8}, {"delete", 127}, {"up", 273}, {"down", 274}, {"right", 275},
@@ -790,10 +794,11 @@ static const void *prev_crew;
 static double flick_last[2];
 static bool flick_armed[2] = {true, true};
 /* Presses waiting to turn into a tap or a hold, with the binding resolved at the press. */
-static struct {
+struct pending_press {
     const struct binding *bind;
     double since;
-} pending[IN_COUNT];
+};
+static struct pending_press pending[IN_COUNT];
 /* Buttons the game hit-tested since the last frame, and the last full set. */
 static Rect buttons_seen[MAX_BUTTONS], buttons[MAX_BUTTONS];
 static const void *button_objects_seen[MAX_BUTTONS], *button_objects[MAX_BUTTONS];
@@ -801,10 +806,11 @@ static int nbuttons_seen, nbuttons;
 /* Whether the game hit-tested any button since the last frame, so the seen set is whole. */
 static bool buttons_tested;
 /* Pushed states above the base, with the input holding each. */
-static struct {
+struct stack_entry {
     int state;
     enum input by;
-} stack[MAX_STATES];
+};
+static struct stack_entry stack[MAX_STATES];
 static int depth;
 
 static bool held[IN_COUNT];
@@ -821,13 +827,14 @@ static bool exit_requested;
 static struct target targets[MAX_TARGETS];
 static int ntargets;
 
-static struct {
+struct cursor_state {
     float x, y;
     int last_x, last_y;
     int last_wx, last_wy;
     Point last_set;
     bool synced, l_held, r_held;
-} cursor;
+};
+static struct cursor_state cursor;
 
 static void buzz(void);
 static void draw_help(void);
@@ -1098,12 +1105,13 @@ static float *redirect_step_cap(void)
 enum option_type { OPT_FLOAT, OPT_INT, OPT_BOOL };
 
 /* Config file keys: the field each sets and the range a number is clamped to. */
-static const struct {
+struct option_def {
     const char *name;
     enum option_type type;
     size_t offset;
     float lo, hi;
-} options[] = {
+};
+static const struct option_def options[] = {
     {"cursor_speed", OPT_FLOAT, offsetof(struct config, cursor_speed), CURSOR_SPEED_MIN, INFINITY},
     {"cursor_deadzone", OPT_FLOAT, offsetof(struct config, cursor_deadzone), 0.0f, STICK_DEADZONE_MAX},
     {"cursor_curve", OPT_FLOAT, offsetof(struct config, cursor_curve), CURSOR_CURVE_MIN, CURSOR_CURVE_MAX},
@@ -1236,6 +1244,15 @@ static int key_code(const char *name)
         if (strcmp(key_names[i].name, name) == 0)
             return key_names[i].code;
     return 0;
+}
+
+/* Names a key code as the ini spells it; returns NULL for a code with no name there. */
+static const char *key_name(int code)
+{
+    for (size_t i = 0; i < sizeof key_names / sizeof *key_names; i++)
+        if (key_names[i].code == code)
+            return key_names[i].name;
+    return NULL;
 }
 
 static char *trim(char *s)
@@ -2851,9 +2868,10 @@ static void cursor_to_selected_crew(void)
 
 /* Clicks queued for later frames: the game resolves what sits under the pointer a frame
  * after the move, so each click takes a move, a press and a release on three frames. */
-static struct {
+struct queued_click {
     float x, y;
-} queued_clicks[MAX_QUEUED_CLICKS];
+};
+static struct queued_click queued_clicks[MAX_QUEUED_CLICKS];
 static int nqueued_clicks, queued_phase, queued_wait;
 
 static void click_at(float gx, float gy)
@@ -3683,10 +3701,11 @@ static void mouse_render_hook(void *self)
 }
 
 /* What the game's own hotkeys do, as the help names them. */
-static const struct {
+struct key_title {
     int code;
     const char *title;
-} key_titles[] = {
+};
+static const struct key_title key_titles[] = {
     {KEY_ESCAPE, "Menu"}, {KEY_SPACE, "Pause"}, {'j', "Jump"}, {'u', "Upgrades"},
     {'v', "Autofire"}, {'z', "Open doors"}, {'x', "Close doors"}, {'q', "All crew"},
     {KEY_ENTER, "To stations"}, {'/', "Save stations"},
@@ -3700,9 +3719,7 @@ static void describe_binding(const struct binding *b, char *out, size_t len)
         for (size_t i = 0; i < sizeof key_titles / sizeof *key_titles && !title; i++)
             if (key_titles[i].code == b->key)
                 title = key_titles[i].title;
-        for (size_t i = 0; i < sizeof key_names / sizeof *key_names && !name; i++)
-            if (key_names[i].code == b->key)
-                name = key_names[i].name;
+        name = key_name(b->key);
         if (title)
             snprintf(out, len, "%s", title);
         else if (name)
