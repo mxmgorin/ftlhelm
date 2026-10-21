@@ -122,9 +122,9 @@
 #define FTL_BUTTON_SIZE 416
 #define STARMAP_SIZE 3280
 /* StarMap::closeButton stays active while hidden. */
-#define STARMAP_CLOSE_BUTTON 1656
 #define FOCUS_OPEN 8
 #define STARMAP_LOCATIONS 40
+#define STARMAP_CURRENT_LOC 136
 #define STARMAP_POSITION 160
 #define STARMAP_TRANSLATION 184
 #define STARMAP_CHOOSING_SECTOR 2232
@@ -1780,8 +1780,7 @@ static void add_button_targets(const void *gui, bool screen_open, bool map_open)
 {
     const void *map = map_open ? deref(gui, GUI_STAR_MAP) : NULL;
     for (int i = 0; i < nbuttons && ntargets < MAX_TARGETS; i++) {
-        if (map_open && (!inside(button_objects[i], map, STARMAP_SIZE)
-                         || button_objects[i] == (const char *)map + STARMAP_CLOSE_BUTTON))
+        if (map_open && !inside(button_objects[i], map, STARMAP_SIZE))
             continue;
         if (screen_open && (buttons[i].y < HUD_TOP_HEIGHT || buttons[i].y >= HUD_BOTTOM_TOP))
             continue;
@@ -1992,7 +1991,7 @@ static void focus_move(float dx, float dy)
 }
 
 /* Screens that open on their first item. */
-enum first_screen { FS_NONE, FS_MAIN_MENU, FS_GAME_MENU, FS_CHOICE };
+enum first_screen { FS_NONE, FS_MAIN_MENU, FS_GAME_MENU, FS_CHOICE, FS_MAP };
 /* The menu or dialog on screen, if it is one that opens on its first item. */
 static enum first_screen first_screen(void)
 {
@@ -2001,19 +2000,28 @@ static enum first_screen first_screen(void)
         return FS_GAME_MENU;
     if (gui && *((const unsigned char *)gui + GUI_CHOICE_BOX + FOCUS_OPEN))
         return FS_CHOICE;
+    const char *map = gui ? deref(gui, GUI_STAR_MAP) : NULL;
+    if (map && window_open(map) && !*(const unsigned char *)(map + STARMAP_CHOOSING_SECTOR))
+        return FS_MAP;
     if (*((const unsigned char *)app + CAPP_MAIN_MENU_OPEN))
         return FS_MAIN_MENU;
     return FS_NONE;
 }
 
-/* The first item of a screen among the zones: a dialog's first choice, else the topmost
- * button, leftmost on a tie; -1 while there is none. */
+/* The first item of a screen among the zones: a dialog's first choice, the map's beacon
+ * under the ship, else the topmost button, leftmost on a tie; -1 while there is none. */
 static int first_item(enum first_screen screen)
 {
+    const char *map = screen == FS_MAP ? deref(gui_ptr(), GUI_STAR_MAP) : NULL;
+    const void *current = map ? deref(map, STARMAP_CURRENT_LOC) : NULL;
     int best = -1;
     for (int i = 0; i < ntargets; i++) {
         const struct target *t = &targets[i];
-        if (screen == FS_CHOICE) {
+        if (screen == FS_MAP) {
+            if (t->kind == T_BEACON && current
+                    && vector_at(map + STARMAP_LOCATIONS, sizeof(void *), (size_t)t->id) == current)
+                return i;
+        } else if (screen == FS_CHOICE) {
             if (t->kind == T_CHOICE && t->id == 0)
                 return i;
         } else if (t->kind == T_BUTTON && (best < 0 || t->rect.y < targets[best].rect.y
@@ -2024,8 +2032,8 @@ static int first_item(enum first_screen screen)
     return best;
 }
 
-/* Puts the cursor on the first item of a menu or dialog as it opens, unless the cursor
- * moves first. A dialog that follows another counts as new when its text changes or its
+/* Puts the cursor on the first item of a menu, dialog or the map as it opens, unless the
+ * cursor moves first. A dialog that follows another counts as new when its text changes or its
  * open timer restarts. */
 static void focus_first_on_open(void)
 {
@@ -3798,6 +3806,13 @@ static void button_move_hook(void *self, int x, int y, bool silent)
                 r.x += at.x;
                 r.y += at.y;
             }
+        /* So does the star map, relative to its position. */
+        const char *map = gui ? deref(gui, GUI_STAR_MAP) : NULL;
+        if (map && (const char *)self >= map && (const char *)self < map + STARMAP_SIZE) {
+            Point at = read_point(map, STARMAP_POSITION);
+            r.x += at.x;
+            r.y += at.y;
+        }
         bool corner = r.x < CORNER_BUTTON_MAX && r.y < CORNER_BUTTON_MAX && r.w <= CORNER_BUTTON_SIZE;
         if (r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H) {
             button_objects_seen[nbuttons_seen] = self;
