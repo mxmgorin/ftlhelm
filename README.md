@@ -10,9 +10,9 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
 |---|---|
 | `ftlpad.c` | the library |
 | `Makefile` | builds `ftlpad.so`; `make OUT=path` builds elsewhere |
-| `ftl_scheme.ini` | the layout: buttons, taps and holds, wheels |
-| `ftlpad.ini` | settings: cursor, rumble, label swaps, speed level |
-| `vpad.py` | uinput virtual pad for desktop tests (python-evdev) |
+| `config/ftl_scheme.ini` | the layout: buttons, taps and holds, wheels |
+| `config/ftlpad.ini` | settings: cursor, rumble, label swaps, speed level |
+| `tools/vpad.py` | uinput virtual pad for desktop tests (python-evdev) |
 
 ## Build
 
