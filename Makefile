@@ -1,5 +1,5 @@
-# Builds the x86_64 library the launcher preloads into the game through box64.
-OUT := ../port/ftl/ftlpad.so
+# Builds the x86_64 library preloaded into the game; OUT names where it goes.
+OUT ?= ftlpad.so
 CFLAGS := -O2 -Wall -Wextra -fPIC -fno-stack-protector
 
 $(OUT): ftlpad.c
