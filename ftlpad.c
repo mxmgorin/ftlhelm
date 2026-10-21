@@ -3728,22 +3728,16 @@ static int text_width(int font, const char *text)
     return w;
 }
 
-/* The mode badge text, empty in the plain state. */
+/* The mode badge text, empty in the plain state: the weapon waiting for a target and the
+ * layer's own modes, which the game does not show. */
 static void badge_text(char *out, size_t len)
 {
-    const char *gui = gui_ptr();
-    const void *mouse = game.mouse_position;
     char main[LABEL_LEN * 2] = "";
     if (wheel_open >= 0) {
         out[0] = '\0';
         return;
-    } else if (read_int(mouse, MOUSE_TELEPORTING)) {
-        snprintf(main, sizeof main, "Teleport");
-    } else if (read_int(mouse, MOUSE_MIND)) {
-        snprintf(main, sizeof main, "Mind control");
-    } else if (read_int(mouse, MOUSE_HACKING)) {
-        snprintf(main, sizeof main, "Hacking");
-    } else if (read_int(mouse, MOUSE_AIMING)) {
+    }
+    if (read_int(game.mouse_position, MOUSE_AIMING)) {
         const char *control = weapon_control();
         const char *armed = control ? deref(control, WEAPONCTRL_ARMED) : NULL;
         const char *bp = armed ? deref(armed, WEAPON_BLUEPRINT) : NULL;
@@ -3751,18 +3745,6 @@ static void badge_text(char *out, size_t len)
         if (bp)
             display_text(bp + BLUEPRINT_SHORT_TITLE, name, sizeof name);
         snprintf(main, sizeof main, name[0] ? "Target: %s" : "Target", name);
-    } else if (crew_selected()) {
-        size_t n = selected_count();
-        const char *member = first_selected_crew();
-        char name[LABEL_LEN] = "";
-        if (n == 1 && member)
-            display_text(member + CREW_BLUEPRINT + CREWBP_NAME, name, sizeof name);
-        if (name[0])
-            snprintf(main, sizeof main, "Crew: %s", name);
-        else
-            snprintf(main, sizeof main, "Crew: %zu", n);
-    } else if (window_open(deref(gui, GUI_STAR_MAP))) {
-        snprintf(main, sizeof main, "Map");
     }
     const char *parts[] = {precision ? "Doors" : NULL, fast_forward ? "Fast" : NULL, dpad_mouse ? "Mouse" : NULL};
     size_t used = (size_t)snprintf(out, len, "%s", main);
