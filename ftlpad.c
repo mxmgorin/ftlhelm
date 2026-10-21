@@ -97,6 +97,8 @@
 /* Game object layout, from the binary's DWARF. */
 #define CAPP_GUI 16
 #define CAPP_MAIN_MENU_OPEN 32
+/* The Shift flag CApp::OnLoop samples once a frame and hands to the hotkeys. */
+#define CAPP_SHIFT_HELD 9
 #define CAPP_MODIFIER_X 14648
 #define CAPP_MODIFIER_Y 14652
 #define CAPP_MOUSE_MODIFIER_X 14668
@@ -231,9 +233,16 @@
 #define WEAPON_SLOTS 4
 #define DRONE_SLOTS 3
 #define DOOR_HALF 10
-/* CFPS::FPSControl's speed level, the field speed_patch.py raises while F12 is held. */
+/* CFPS::FPSControl's speed level, unused by the game itself. */
 #define FPS_LEVEL 0x24
+/* The step CFPS::OnLoop last computed, in the game's frame units. */
+#define FPS_STEP 0x18
 #define SPEED_LEVEL_MIN 1
+#define SPEED_LEVEL_NORMAL 0
+/* CFPS::OnLoop caps the step with "movss cap(%rip),%xmm1; unpcklpd %xmm0,%xmm0" within
+ * this many bytes of its start; the fast speed doubles the cap. */
+#define STEP_CAP_SCAN 0x100
+#define STEP_CAP_FAST 2.0f
 #define SPEED_LEVEL_MAX 6
 #define SPEED_LEVEL_DEFAULT 3
 #define RUMBLE_STRENGTH 0.4f
@@ -264,7 +273,6 @@
 /* Key codes the game's key handlers take: SDL1 keysyms, ASCII for letters and digits. */
 #define KEY_LSHIFT 0x130
 #define KEY_F1 0x11a
-#define KEY_F12 0x125
 #define KEY_F_COUNT 15
 #define KEY_SPACE 0x20
 #define KEY_ESCAPE 0x1b
@@ -432,6 +440,7 @@ static struct {
     void (*clear_crew)(void *);
     void (*deselect_crew)(void *, void *);
     void *fps_control;
+    unsigned char *fps_loop;
     void (*get_text)(void *, void *, const void *, const void *);
     void *text_library;
     Point *mouse_position;
@@ -451,6 +460,7 @@ static const struct {
     {"input_enable_unfocused_joystick", (void **)&joy.enable_unfocused},
     {"input_joystick_rumble", (void **)&joy.rumble},
     {"_ZN4CFPS10FPSControlE", (void **)&game.fps_control},
+    {"_ZN4CFPS6OnLoopEv", (void **)&game.fps_loop},
     {"_ZN11TextLibrary7GetTextERKSsS1_", (void **)&game.get_text},
     {"_ZN7Globals7LibraryE", (void **)&game.text_library},
     {"_ZN4CApp6OnLoopEv", &game.onloop},
@@ -657,6 +667,8 @@ static const GL_Color pip_on_color = {0.47f, 0.95f, 0.47f, 1.0f};
 static const unsigned char button_move_prologue[] = {0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47, 0x49};
 /* push %rbp; push %rbx; mov %rdi,%rbx */
 static const unsigned char onloop_prologue[] = {0x55, 0x53, 0x48, 0x89, 0xfb};
+static const unsigned char step_cap_load[] = {0xf3, 0x0f, 0x10, 0x0d};
+static const unsigned char step_cap_next[] = {0x66, 0x0f, 0x14, 0xc0};
 /* push %r15; mov %rdi,%r15 */
 static const unsigned char mouse_render_prologue[] = {0x41, 0x57, 0x49, 0x89, 0xff};
 /* sub $0x8,%rsp; mov $KEY_LEFTSHIFT,%edi */
@@ -736,6 +748,9 @@ static bool wheel_opened_aiming;
 /* The abilities key X repeats on a tap. */
 static int last_ability_key;
 static bool fast_forward;
+/* The step cap CFPS::OnLoop reads once redirected here, and the game's own value. */
+static float *step_cap;
+static float step_cap_normal;
 /* dpad_mode toggled: the D-pad and the sticks move the cursor instead of walking zones. */
 static bool dpad_mouse;
 static double pause_ff_since;
@@ -785,6 +800,7 @@ static struct {
 
 static void buzz(void);
 static void draw_help(void);
+static bool wheel_screen(void);
 static void upper_ascii(char *text);
 static void builtin(enum builtin id, enum input in, bool down, double t);
 static void badge_text(char *out, size_t len);
@@ -1000,6 +1016,50 @@ static void *hook(const char *name, void *fn, void *repl, const unsigned char *p
     memset((unsigned char *)fn + JMP_LEN, NOP, len - JMP_LEN);
     protect(fn, len, PROT_READ | PROT_EXEC);
     return orig;
+}
+
+/* Points CFPS::OnLoop's step cap load at a float in the trampoline page, so the speed
+ * can raise the cap; returns that float, or NULL with the reason logged. */
+static float *redirect_step_cap(void)
+{
+    const size_t insn = sizeof step_cap_load + sizeof(int32_t);
+    unsigned char *site = NULL;
+    for (size_t i = 0; i + insn + sizeof step_cap_next <= STEP_CAP_SCAN; i++) {
+        unsigned char *at = game.fps_loop + i;
+        if (memcmp(at, step_cap_load, sizeof step_cap_load) != 0
+                || memcmp(at + insn, step_cap_next, sizeof step_cap_next) != 0)
+            continue;
+        if (site) {
+            logmsg("step cap: load not unique");
+            return NULL;
+        }
+        site = at;
+    }
+    if (!site) {
+        logmsg("step cap: load not found");
+        return NULL;
+    }
+    unsigned char *disp_at = site + sizeof step_cap_load;
+    unsigned char *next = site + insn;
+    int32_t disp;
+    memcpy(&disp, disp_at, sizeof disp);
+    const float *cap = (const float *)(next + disp);
+    size_t slot = (trampolines_used + sizeof(float) - 1) & ~(sizeof(float) - 1);
+    if (!trampolines || slot + sizeof(float) > TRAMPOLINE_PAGE || !fits_rel32(next, trampolines + slot)) {
+        logmsg("step cap: no room near the code");
+        return NULL;
+    }
+    float *redirected = (float *)(trampolines + slot);
+    trampolines_used = slot + sizeof(float);
+    *redirected = *cap;
+    if (protect(disp_at, sizeof disp, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        logmsg("step cap: code not writable");
+        return NULL;
+    }
+    disp = (int32_t)((intptr_t)redirected - (intptr_t)next);
+    memcpy(disp_at, &disp, sizeof disp);
+    protect(disp_at, sizeof disp, PROT_READ | PROT_EXEC);
+    return redirected;
 }
 
 /* ---- files: config and layout ---- */
@@ -2580,6 +2640,8 @@ static void wheel_show(int index, enum input by)
             wheel_close();
         return;
     }
+    if (!wheel_screen())
+        return;
     wheel_open = index;
     wheel_sel = -1;
     wheel_opened_aiming = aiming();
@@ -2658,6 +2720,7 @@ static void wheel_power(int dir)
 static void set_shift(bool on)
 {
     shift_count += on ? 1 : -1;
+    *((bool *)app + CAPP_SHIFT_HELD) = shift_count > 0;
     if (on && shift_count == 1)
         game.key_down(app, KEY_LSHIFT);
     else if (!on && shift_count == 0)
@@ -2857,6 +2920,16 @@ static void tab_step(int dir)
     game.set_tab(tabbed, (unsigned)((current + dir + n) % n));
 }
 
+/* Runs the game at the configured speed level, or back at the normal one. */
+static void set_fast(bool on)
+{
+    int level = on ? cfg.speed_level : SPEED_LEVEL_NORMAL;
+    memcpy((char *)game.fps_control + FPS_LEVEL, &level, sizeof level);
+    if (step_cap)
+        *step_cap = on ? step_cap_normal * STEP_CAP_FAST : step_cap_normal;
+    fast_forward = on;
+}
+
 /* Runs a builtin on the press or release of input in, NO_INPUT for a wheel plate. */
 static void builtin(enum builtin id, enum input in, bool down, double t)
 {
@@ -2904,8 +2977,7 @@ static void builtin(enum builtin id, enum input in, bool down, double t)
             pause_ff_since = t;
         } else {
             if (fast_forward)
-                game.key_up(app, KEY_F12);
-            fast_forward = false;
+                set_fast(false);
             pause_ff_since = 0;
         }
         break;
@@ -2955,12 +3027,9 @@ static void builtin(enum builtin id, enum input in, bool down, double t)
         if (down) {
             if (game_paused())
                 tap_key(KEY_SPACE, false);
-            game.key_down(app, KEY_F12);
-            memcpy((char *)game.fps_control + FPS_LEVEL, &cfg.speed_level, sizeof cfg.speed_level);
-            fast_forward = true;
+            set_fast(true);
         } else {
-            game.key_up(app, KEY_F12);
-            fast_forward = false;
+            set_fast(false);
         }
         break;
     case BI_COUNT:
@@ -3044,12 +3113,31 @@ static void start(const struct binding *b, enum input in, double t)
     active[in].tap = NULL;
 }
 
+/* Whether the ship view is up with nothing over it: no menu, ship or store screen,
+ * dialog or map. Wheels open only there. */
+static bool wheel_screen(void)
+{
+    const char *gui = gui_ptr();
+    size_t size;
+    return gui && player_complete() && !*((const unsigned char *)app + CAPP_MAIN_MENU_OPEN)
+           && !open_tabbed() && !modal_window(gui, &size) && !window_open(gui + GUI_CHOICE_BOX)
+           && !window_open(deref(gui, GUI_STAR_MAP));
+}
+
 static void press(enum input in, double t)
 {
     const struct binding *b = lookup(in);
     active[in].kind = ACT_NONE;
     if (!b)
         return;
+    /* Off the ship view a wheel button is its tap alone, at once. */
+    if (b->kind == ACT_WHEEL && wheel_open < 0 && !wheel_screen()) {
+        if (b->tap) {
+            perform(b->tap, in, true, t);
+            perform(b->tap, in, false, t);
+        }
+        return;
+    }
     /* The open wheel's own button closes it, its tap half included. */
     if (b->kind == ACT_WHEEL && b->state == wheel_open) {
         wheel_close();
@@ -3230,7 +3318,7 @@ static void apply_pad(struct pad *p, double t, float dt)
         if (--wheel_refresh_wait <= 0)
             refresh_wheel();
         wheel_point(p->stick[0][0], p->stick[0][1], p->stick[1][0], p->stick[1][1]);
-        if (aiming() && !wheel_opened_aiming)
+        if ((aiming() && !wheel_opened_aiming) || !wheel_screen())
             wheel_close();
         if (!aiming())
             wheel_opened_aiming = false;
@@ -3301,10 +3389,7 @@ static void apply_pad(struct pad *p, double t, float dt)
     if (pause_ff_since > 0 && !fast_forward && t - pause_ff_since >= FF_HOLD_S) {
         if (game_paused())
             tap_key(KEY_SPACE, false);
-        game.key_down(app, KEY_F12);
-        /* The patch stored its own level on the key; ours replaces it. */
-        memcpy((char *)game.fps_control + FPS_LEVEL, &cfg.speed_level, sizeof cfg.speed_level);
-        fast_forward = true;
+        set_fast(true);
     }
 
     /* Mode changes read from the game: the cursor starts where the payload wants it. */
@@ -3377,6 +3462,11 @@ static void dump_state(void)
            line, wheel_open >= 0 ? wheels[wheel_open].name : "-", wheel_sel, shift_count,
            mode_names[slot_mode(SLOT_DPAD)], mode_names[slot_mode(SLOT_LSTICK)],
            mode_names[slot_mode(SLOT_RSTICK)], aiming(), crew_selected(), game_paused(), precision);
+    int level;
+    float step;
+    memcpy(&level, (char *)game.fps_control + FPS_LEVEL, sizeof level);
+    memcpy(&step, (char *)game.fps_control + FPS_STEP, sizeof step);
+    logmsg("speed: level %d, step %.3f, cap %.2f", level, step, step_cap ? *step_cap : -1.0f);
 }
 
 static void run_command(char *line)
@@ -3731,8 +3821,11 @@ __attribute__((constructor)) static void init(void)
                           sizeof get_shift_prologue);
     button_move_orig = hook("GenericButton::MouseMove", game.button_move, button_move_hook,
                             button_move_prologue, sizeof button_move_prologue);
-    logmsg("active: overlay %s, shift %s, buttons %s", mouse_render_orig ? "on" : "off",
-           get_shift_orig ? "on" : "off", button_move_orig ? "on" : "off");
+    step_cap = redirect_step_cap();
+    if (step_cap)
+        step_cap_normal = *step_cap;
+    logmsg("active: overlay %s, shift %s, buttons %s, step cap %s", mouse_render_orig ? "on" : "off",
+           get_shift_orig ? "on" : "off", button_move_orig ? "on" : "off", step_cap ? "on" : "off");
 
     char text[sizeof default_layout];
     memcpy(text, default_layout, sizeof text);
