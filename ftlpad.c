@@ -27,21 +27,19 @@
  * the targets are its beacons, at the map's position plus translation plus the location,
  * as StarMap::MouseMove inverts them, or the sector boxes while a new sector is chosen.
  *
- * Wheels: a button bound to "wheel NAME" shows, while held, eight labelled plates around
- * the cursor; either stick picks one (D-pad left and right step), A performs it, B
- * closes, D-pad up and down add and take power on power wheels, and the release closes
- * without acting. Every wheel stays open after the release; the same button or B closes
- * it, as does A on a plate that is not about power. A power wheel stays open after A and the power keys;
- * any wheel closes once the game starts aiming. Opening a wheel pauses the game and the
- * close unpauses only what the wheel paused. Crew and system wheels fill themselves from
- * the game: the living crew in list order, the installed systems in power-bar order.
+ * Wheels: a button bound to "wheel NAME" opens eight labelled plates around the cursor,
+ * open until that button or cancel closes it. Either stick picks a plate (D-pad left and
+ * right step), context_click performs it, D-pad up and down add and take power. Only an
+ * action wheel closes after performing; any wheel closes once the game starts aiming.
+ * Opening a wheel pauses the game and the close unpauses only what the wheel paused.
+ * Crew and system wheels fill themselves from the game: the living crew in list order,
+ * the installed systems in power-bar order.
  * Labels print through the game's own font code, which takes its bundled copy-on-write
  * std::string, built and destroyed through the constructors in the binary.
  *
  * A binding may carry two actions, "HOLD | TAP": a press shorter than the tap threshold
  * performs the tap, a longer one the hold. Built-in actions cover what keys cannot:
- * pause_ff, cancel, context_click, arm_next, aim_crew, repeat_ability, precision,
- * center_swap, prev_tab, next_tab. Modes are read from the game, never tracked: aiming
+ * see builtin_names. Modes are read from the game, never tracked: aiming
  * from MouseControl, crew selection from CrewControl, screens from their open flags.
  *
  * Zones for the D-pad come from every screen: rooms of the ships, event choices, the
@@ -58,6 +56,7 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,9 +75,13 @@
  * buttons all sit in the gamepad key range. */
 #define SDL_MAP_ENV "SDL_GAMECONTROLLERCONFIG"
 #define SDL_MAP_UNSET -1
+/* Face buttons the mapping names: a, b, x, y. */
+#define FACE_COUNT 4
 #define FILE_POLL_S 1.0
 #define EXE_FALLBACK "/proc/self/exe"
 #define MAPS "/proc/self/maps"
+/* Distance between candidate addresses when the trampoline page must be placed by search. */
+#define TRAMPOLINE_STEP 0x1000000
 #define LOG_PREFIX "ftlpad: "
 #define TRAMPOLINE_HINT ((void *)0x70000000)
 #define TRAMPOLINE_PAGE 4096
@@ -138,6 +141,8 @@
 #define SYSBOX_SYSTEM 144
 #define SYSTEM_TYPE 64
 #define SYSTEM_POWER 80
+/* ShipSystem::powerState is a pair: the power in use, then the capacity. */
+#define SYSTEM_POWER_MAX (SYSTEM_POWER + sizeof(int))
 #define COMBAT_WEAPON_CONTROL 32
 #define COMBAT_DRONE_CONTROL 1056
 #define WEAPONCTRL_ARMED 216
@@ -180,6 +185,10 @@
 #define CREW_DEAD 544
 #define CREW_BLUEPRINT 576
 #define CREWBP_NAME 120
+#define CREWBP_RACE 8
+#define CRYSTAL_RACE "crystal"
+/* Crew hotkeys run F1 up to this many. */
+#define CREW_HOTKEYS 8
 #define GUI_PAUSED 12944
 #define GUI_MENU_BOX 7232
 #define MENU_BOX_SIZE 1136
@@ -226,6 +235,7 @@
 #define FPS_LEVEL 0x24
 #define SPEED_LEVEL_MIN 1
 #define SPEED_LEVEL_MAX 6
+#define SPEED_LEVEL_DEFAULT 3
 #define RUMBLE_STRENGTH 0.4f
 #define RUMBLE_S 0.05f
 #define HELP_FONT WHEEL_FONT
@@ -265,6 +275,7 @@
 #define STICK_DEADZONE_MAX 0.9f
 /* Logical pixels per second at full deflection. */
 #define CURSOR_SPEED 800.0f
+#define CURSOR_SPEED_MIN 1.0f
 #define CURSOR_CURVE 2.0f
 #define CURSOR_CURVE_MIN 0.5f
 #define CURSOR_CURVE_MAX 4.0f
@@ -291,11 +302,22 @@
 #define MAX_BUTTONS 64
 /* Frames between synthetic mouse moves that refresh the button zones. */
 #define BUTTON_REFRESH_FRAMES 6
+/* Frames between refills of an open wheel from the game. */
+#define WHEEL_REFRESH_FRAMES 6
+/* Frames a newly opened screen gets to show its items before the focus gives up; a
+ * dialog's choices wait for the jump animation. */
+#define FIRST_FOCUS_FRAMES 300
+/* Queued clicks: capacity, frames between phases, phases per click. */
+#define MAX_QUEUED_CLICKS 16
+#define QUEUED_CLICK_FRAMES 4
+#define QUEUED_CLICK_PHASES 3
 #define WHEEL_ON 0.5f
 #define TAP_HOLD_S 0.2
 #define FF_HOLD_S 0.25
 #define FLICK_ON 0.8f
 #define FLICK_OFF 0.25f
+/* The narrowest band a flick threshold keeps above the re-arm level. */
+#define FLICK_GAP 0.1f
 /* Zero: one flick per deflection, the stick must return to centre. */
 #define FLICK_REPEAT_S 0.0
 /* Magnet cone half-angles: the narrow one first, the wide one when it finds nothing. */
@@ -331,6 +353,11 @@
 /* Text baseline sits this far below a plate's top edge. */
 #define WHEEL_TEXT_DY 5.0f
 #define LINE_LEN 256
+/* Layout sections: the base state, a pushed state and a wheel, the last two by name. */
+#define BASE_SECTION "controls"
+#define STATE_SECTION "controls:"
+#define WHEEL_SECTION "wheel:"
+#define MAPS_LINE 512
 #define CMD_BUF 512
 
 typedef struct {
@@ -542,8 +569,8 @@ static const char *const wheel_slot_names[WHEEL_SLOTS] = {
     "up", "up_right", "right", "down_right", "down", "down_left", "left", "up_left",
 };
 
-/* power: A sends the key, B the key with Shift, the wheel stays open; action and crew
- * close after A; systems and crew fill their plates from the game. */
+/* An action wheel closes after performing a plate, the others stay open; crew and
+ * systems fill their plates from the game. */
 enum wheel_kind { WK_ACTION, WK_POWER, WK_CREW, WK_SYSTEMS, WK_SETTINGS };
 static const char *const wheel_kind_names[] = {"action", "power", "crew", "systems", "settings"};
 
@@ -584,7 +611,8 @@ static const struct {
     const char *name;
     int code;
 } key_names[] = {
-    {"space", 32}, {"enter", 13}, {"return", 13}, {"esc", 27}, {"escape", 27}, {"tab", 9},
+    {"space", KEY_SPACE}, {"enter", KEY_ENTER}, {"return", KEY_ENTER}, {"esc", KEY_ESCAPE},
+    {"escape", KEY_ESCAPE}, {"tab", 9},
     {"backspace", 8}, {"delete", 127}, {"up", 273}, {"down", 274}, {"right", 275},
     {"left", 276}, {"insert", 277}, {"home", 278}, {"end", 279}, {"pageup", 280},
     {"pagedown", 281}, {"shift", KEY_LSHIFT}, {"lshift", KEY_LSHIFT}, {"rshift", 303},
@@ -639,7 +667,7 @@ static void (*mouse_render_orig)(void *);
 static int (*get_shift_orig)(void);
 static void (*button_move_orig)(void *, int, int, bool);
 
-static struct {
+struct config {
     float cursor_speed;
     float cursor_deadzone;
     float cursor_curve;
@@ -647,10 +675,8 @@ static struct {
     bool snap_dpad;
     bool autopause_wheel;
     bool autopause_aim;
-    bool precision;
     int speed_level;
     bool rumble;
-    bool help;
     float flick_on;
     float flick_repeat;
     /* Face buttons by label: -1 from the SDL mapping, with the swaps below when there is
@@ -659,29 +685,50 @@ static struct {
     /* Which raw pairs to swap for the labels: A/B (east/south) and X/Y (north/west). */
     bool swap_ab;
     bool swap_xy;
-} cfg = {CURSOR_SPEED, STICK_DEADZONE, CURSOR_CURVE, true, true, true, false, false, 3, true, false, -1, true, false, FLICK_ON, FLICK_REPEAT_S};
+};
+
+/* What a key missing from the config file takes. */
+static const struct config cfg_defaults = {
+    .cursor_speed = CURSOR_SPEED,
+    .cursor_deadzone = STICK_DEADZONE,
+    .cursor_curve = CURSOR_CURVE,
+    .overlay = true,
+    .snap_dpad = true,
+    .autopause_wheel = true,
+    .autopause_aim = false,
+    .speed_level = SPEED_LEVEL_DEFAULT,
+    .rumble = true,
+    .flick_on = FLICK_ON,
+    .flick_repeat = FLICK_REPEAT_S,
+    .nintendo = -1,
+    .swap_ab = true,
+    .swap_xy = false,
+};
+static struct config cfg;
+/* Doors are the zones while precision is held. */
+static bool precision;
+static bool help_shown;
 
 /* SIL button index per face label from the SDL mapping, or SDL_MAP_UNSET. */
-static int sdl_face[4] = {SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET};
-static const char *const sdl_face_names[4] = {"a", "b", "x", "y"};
-static const enum input sdl_face_inputs[4] = {IN_FACE_DOWN, IN_FACE_RIGHT, IN_FACE_LEFT, IN_FACE_UP};
+static int sdl_face[FACE_COUNT] = {SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET, SDL_MAP_UNSET};
+static const char *const sdl_face_names[FACE_COUNT] = {"a", "b", "x", "y"};
+static const enum input sdl_face_inputs[FACE_COUNT] = {IN_FACE_DOWN, IN_FACE_RIGHT, IN_FACE_LEFT, IN_FACE_UP};
 
 static bool debug;
 static void *app;
 static int cmd_fd = -1;
-/* Fonts and colours of the overlay; the plate font is tunable from the command channel. */
+/* The font of the wheel plates' text. */
 static int plate_font = WHEEL_FONT;
 
 static struct state states[MAX_STATES];
 static int nstates;
 static struct wheel wheels[MAX_WHEELS];
 static int nwheels;
-/* The open wheel, the input holding it and the plate the left stick points at. */
+/* The open wheel and the plate the sticks point at. */
 static int wheel_open = -1;
-static enum input wheel_by;
 static int wheel_sel = -1;
-/* Wheels stay open after the release and close on A's action, B or their own button. */
-static bool wheel_sticky;
+/* Frames until the open wheel refills from the game. */
+static int wheel_refresh_wait;
 /* Whether the open wheel paused the game, so its close unpauses. */
 static bool wheel_paused;
 /* Whether the game was already aiming when the wheel opened; only a new aim closes it. */
@@ -696,15 +743,17 @@ static bool prev_aiming;
 static const void *prev_crew;
 static double flick_last[2];
 static bool flick_armed[2] = {true, true};
-/* Presses waiting to turn into a tap or a hold. */
+/* Presses waiting to turn into a tap or a hold, with the binding resolved at the press. */
 static struct {
-    bool pending;
+    const struct binding *bind;
     double since;
 } pending[IN_COUNT];
 /* Buttons the game hit-tested since the last frame, and the last full set. */
 static Rect buttons_seen[MAX_BUTTONS], buttons[MAX_BUTTONS];
 static const void *button_objects_seen[MAX_BUTTONS], *button_objects[MAX_BUTTONS];
 static int nbuttons_seen, nbuttons;
+/* Whether the game hit-tested any button since the last frame, so the seen set is whole. */
+static bool buttons_tested;
 /* Pushed states above the base, with the input holding each. */
 static struct {
     int state;
@@ -714,12 +763,11 @@ static int depth;
 
 static bool held[IN_COUNT];
 /* What each held input did when pressed, undone on release. */
-static struct {
-    enum act_kind kind;
-    int key;
-    bool shift;
-    int state;
-} active[IN_COUNT];
+static struct binding active[IN_COUNT];
+/* The input slot of actions a wheel plate performs. */
+#define NO_INPUT IN_COUNT
+/* The button context_click pressed for each input, ACT_NONE when a wheel took the press. */
+static enum act_kind context_done[IN_COUNT + 1];
 static int shift_count;
 static double chord_since;
 static bool exit_requested;
@@ -734,6 +782,16 @@ static struct {
     Point last_set;
     bool synced, l_held, r_held;
 } cursor;
+
+static void buzz(void);
+static void draw_help(void);
+static void upper_ascii(char *text);
+static void builtin(enum builtin id, enum input in, bool down, double t);
+static void badge_text(char *out, size_t len);
+static int text_width(int font, const char *text);
+static void set_shift(bool on);
+static void click(enum act_kind kind, bool down);
+static void wheel_close(void);
 
 static double now_s(void)
 {
@@ -783,22 +841,26 @@ static int resolve_symbols(void)
     if (!read_at(fd, &eh, sizeof eh, 0) || eh.e_shentsize != sizeof *sh)
         goto out;
     sh = calloc(eh.e_shnum, sizeof *sh);
-    if (!sh || !read_at(fd, sh, eh.e_shnum * sizeof *sh, eh.e_shoff))
+    if (!sh || !read_at(fd, sh, eh.e_shnum * sizeof *sh, (off_t)eh.e_shoff))
         goto out;
-    for (int i = 0; i < eh.e_shnum; i++) {
-        if (sh[i].sh_type != SHT_SYMTAB)
+    size_t left = wanted;
+    for (int i = 0; i < eh.e_shnum && left > 0; i++) {
+        if (sh[i].sh_type != SHT_SYMTAB || sh[i].sh_link >= eh.e_shnum)
             continue;
         Elf64_Shdr *st = &sh[sh[i].sh_link];
         char *strtab = malloc(st->sh_size);
         Elf64_Sym *syms = malloc(sh[i].sh_size);
-        if (strtab && syms && read_at(fd, strtab, st->sh_size, st->sh_offset)
-                && read_at(fd, syms, sh[i].sh_size, sh[i].sh_offset)) {
-            for (size_t s = 0; s < sh[i].sh_size / sizeof *syms; s++) {
+        if (strtab && syms && read_at(fd, strtab, st->sh_size, (off_t)st->sh_offset)
+                && read_at(fd, syms, sh[i].sh_size, (off_t)sh[i].sh_offset)) {
+            for (size_t s = 0; s < sh[i].sh_size / sizeof *syms && left > 0; s++) {
                 if (!syms[s].st_value || syms[s].st_name >= st->sh_size)
                     continue;
+                const char *name = strtab + syms[s].st_name;
                 for (size_t w = 0; w < wanted; w++)
-                    if (!*symbols[w].slot && strcmp(strtab + syms[s].st_name, symbols[w].name) == 0)
+                    if (!*symbols[w].slot && name[0] == symbols[w].name[0] && strcmp(name, symbols[w].name) == 0) {
                         *symbols[w].slot = (void *)syms[s].st_value;
+                        left--;
+                    }
             }
         }
         free(strtab);
@@ -824,7 +886,7 @@ static int mapped_executable(const void *addr)
     if (!f)
         return 0;
     int found = 0;
-    char line[512];
+    char line[MAPS_LINE];
     while (!found && fgets(line, sizeof line, f)) {
         unsigned long lo, hi;
         char perms[8];
@@ -870,23 +932,59 @@ static void put_far_jmp(unsigned char *at, const void *to)
 static unsigned char *trampolines;
 static size_t trampolines_used;
 
-/* Diverts fn to repl after checking its first bytes; returns an entry that runs the
- * original, or NULL. The prologue must be whole instructions with no relative operands. */
-static void *hook(void *fn, void *repl, const unsigned char *prologue, size_t len)
+static void *map_trampolines(void *at, int flags)
 {
-    if (len < JMP_LEN || memcmp(fn, prologue, len) != 0)
-        return NULL;
-    if (!trampolines) {
-        trampolines = mmap(TRAMPOLINE_HINT, TRAMPOLINE_PAGE, PROT_READ | PROT_WRITE | PROT_EXEC,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (trampolines == MAP_FAILED) {
-            trampolines = NULL;
-            return NULL;
+    void *page = mmap(at, TRAMPOLINE_PAGE, PROT_READ | PROT_WRITE | PROT_EXEC,
+                      MAP_PRIVATE | MAP_ANONYMOUS | flags, -1, 0);
+    return page == MAP_FAILED ? NULL : page;
+}
+
+/* Maps the trampoline page within a rel32 jump of near: at the hint, else at the first
+ * free step around near; returns it, or NULL. */
+static unsigned char *place_trampolines(const void *near)
+{
+    unsigned char *page = map_trampolines(TRAMPOLINE_HINT, 0);
+    if (page && fits_rel32(near, page))
+        return page;
+    if (page)
+        munmap(page, TRAMPOLINE_PAGE);
+    uintptr_t base = (uintptr_t)near & ~(uintptr_t)(TRAMPOLINE_STEP - 1);
+    for (uintptr_t d = TRAMPOLINE_STEP; d < INT32_MAX / 2; d += TRAMPOLINE_STEP) {
+        const uintptr_t candidates[] = {base + d, base - d};
+        for (size_t i = 0; i < sizeof candidates / sizeof *candidates; i++) {
+            if (i == 1 && d > base)
+                continue;
+            page = map_trampolines((void *)candidates[i], MAP_FIXED_NOREPLACE);
+            /* Kernels without MAP_FIXED_NOREPLACE take the address as a hint. */
+            if (page && fits_rel32(near, page))
+                return page;
+            if (page)
+                munmap(page, TRAMPOLINE_PAGE);
         }
     }
-    size_t need = FAR_JMP_LEN + len + JMP_LEN;
-    if (trampolines_used + need > TRAMPOLINE_PAGE || !fits_rel32(fn, trampolines))
+    return NULL;
+}
+
+/* Diverts fn to repl after checking its first bytes; returns an entry that runs the
+ * original, or NULL with the reason logged under name. The prologue must be whole
+ * instructions with no relative operands. */
+static void *hook(const char *name, void *fn, void *repl, const unsigned char *prologue, size_t len)
+{
+    if (len < JMP_LEN || memcmp(fn, prologue, len) != 0) {
+        logmsg("%s: prologue differs", name);
         return NULL;
+    }
+    if (!trampolines)
+        trampolines = place_trampolines(fn);
+    size_t need = FAR_JMP_LEN + len + JMP_LEN;
+    if (!trampolines || !fits_rel32(fn, trampolines)) {
+        logmsg("%s: no trampoline page within reach", name);
+        return NULL;
+    }
+    if (trampolines_used + need > TRAMPOLINE_PAGE) {
+        logmsg("%s: trampoline page full", name);
+        return NULL;
+    }
     unsigned char *entry = trampolines + trampolines_used;
     unsigned char *orig = entry + FAR_JMP_LEN;
     put_far_jmp(entry, repl);
@@ -894,8 +992,10 @@ static void *hook(void *fn, void *repl, const unsigned char *prologue, size_t le
     put_jmp(orig + len, (unsigned char *)fn + len);
     trampolines_used += need;
 
-    if (protect(fn, len, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+    if (protect(fn, len, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        logmsg("%s: code not writable", name);
         return NULL;
+    }
     put_jmp(fn, entry);
     memset((unsigned char *)fn + JMP_LEN, NOP, len - JMP_LEN);
     protect(fn, len, PROT_READ | PROT_EXEC);
@@ -904,12 +1004,67 @@ static void *hook(void *fn, void *repl, const unsigned char *prologue, size_t le
 
 /* ---- files: config and layout ---- */
 
-/* Reads the config file named by the environment: "key = value" lines, '#' comments. */
+enum option_type { OPT_FLOAT, OPT_INT, OPT_BOOL };
+
+/* Config file keys: the field each sets and the range a number is clamped to. */
+static const struct {
+    const char *name;
+    enum option_type type;
+    size_t offset;
+    float lo, hi;
+} options[] = {
+    {"cursor_speed", OPT_FLOAT, offsetof(struct config, cursor_speed), CURSOR_SPEED_MIN, INFINITY},
+    {"cursor_deadzone", OPT_FLOAT, offsetof(struct config, cursor_deadzone), 0.0f, STICK_DEADZONE_MAX},
+    {"cursor_curve", OPT_FLOAT, offsetof(struct config, cursor_curve), CURSOR_CURVE_MIN, CURSOR_CURVE_MAX},
+    {"overlay", OPT_BOOL, offsetof(struct config, overlay), 0, 0},
+    {"snap_dpad", OPT_BOOL, offsetof(struct config, snap_dpad), 0, 0},
+    {"autopause_wheel", OPT_BOOL, offsetof(struct config, autopause_wheel), 0, 0},
+    {"autopause_aim", OPT_BOOL, offsetof(struct config, autopause_aim), 0, 0},
+    {"speed_level", OPT_INT, offsetof(struct config, speed_level), SPEED_LEVEL_MIN, SPEED_LEVEL_MAX},
+    {"rumble", OPT_BOOL, offsetof(struct config, rumble), 0, 0},
+    {"nintendo_labels", OPT_INT, offsetof(struct config, nintendo), -1, 1},
+    {"swap_ab", OPT_BOOL, offsetof(struct config, swap_ab), 0, 0},
+    {"swap_xy", OPT_BOOL, offsetof(struct config, swap_xy), 0, 0},
+    {"flick_threshold", OPT_FLOAT, offsetof(struct config, flick_on), FLICK_OFF + FLICK_GAP, 1.0f},
+    {"flick_repeat", OPT_FLOAT, offsetof(struct config, flick_repeat), 0.0f, INFINITY},
+};
+
+static void set_option(size_t i, float value)
+{
+    char *field = (char *)&cfg + options[i].offset;
+    if (options[i].type == OPT_BOOL) {
+        *(bool *)field = value != 0;
+    } else if (options[i].type == OPT_INT) {
+        *(int *)field = (int)clampf(value, options[i].lo, options[i].hi);
+    } else {
+        *(float *)field = clampf(value, options[i].lo, options[i].hi);
+    }
+}
+
+/* Logs every option's current value on one line. */
+static void log_options(void)
+{
+    char text[CMD_BUF];
+    size_t used = 0;
+    for (size_t i = 0; i < sizeof options / sizeof *options && used < sizeof text; i++) {
+        const char *field = (const char *)&cfg + options[i].offset;
+        if (options[i].type == OPT_FLOAT)
+            used += (size_t)snprintf(text + used, sizeof text - used, " %s=%.2f", options[i].name, *(const float *)field);
+        else
+            used += (size_t)snprintf(text + used, sizeof text - used, " %s=%d", options[i].name,
+                                     options[i].type == OPT_INT ? *(const int *)field : *(const bool *)field);
+    }
+    logmsg("config:%s", text);
+}
+
+/* Reads the config file named by the environment: "key = value" lines, '#' comments. A
+ * key the file leaves out takes its default. */
 static void load_config(const char *path)
 {
     FILE *f = fopen(path, "r");
     if (!f)
         return;
+    cfg = cfg_defaults;
     char line[LINE_LEN];
     while (fgets(line, sizeof line, f)) {
         char *hash = strchr(line, '#');
@@ -919,41 +1074,16 @@ static void load_config(const char *path)
         float value;
         if (sscanf(line, " %31[a-z_] = %f", key, &value) != 2)
             continue;
-        if (strcmp(key, "cursor_speed") == 0)
-            cfg.cursor_speed = fmaxf(value, 1.0f);
-        else if (strcmp(key, "cursor_deadzone") == 0)
-            cfg.cursor_deadzone = clampf(value, 0.0f, STICK_DEADZONE_MAX);
-        else if (strcmp(key, "cursor_curve") == 0)
-            cfg.cursor_curve = clampf(value, CURSOR_CURVE_MIN, CURSOR_CURVE_MAX);
-        else if (strcmp(key, "overlay") == 0)
-            cfg.overlay = value != 0;
-        else if (strcmp(key, "snap_dpad") == 0)
-            cfg.snap_dpad = value != 0;
-        else if (strcmp(key, "autopause_wheel") == 0)
-            cfg.autopause_wheel = value != 0;
-        else if (strcmp(key, "autopause_aim") == 0)
-            cfg.autopause_aim = value != 0;
-        else if (strcmp(key, "speed_level") == 0)
-            cfg.speed_level = (int)clampf(value, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX);
-        else if (strcmp(key, "rumble") == 0)
-            cfg.rumble = value != 0;
-        else if (strcmp(key, "nintendo_labels") == 0)
-            cfg.nintendo = (int)value;
-        else if (strcmp(key, "swap_ab") == 0)
-            cfg.swap_ab = value != 0;
-        else if (strcmp(key, "swap_xy") == 0)
-            cfg.swap_xy = value != 0;
-        else if (strcmp(key, "flick_threshold") == 0)
-            cfg.flick_on = clampf(value, FLICK_OFF + 0.1f, 1.0f);
-        else if (strcmp(key, "flick_repeat") == 0)
-            cfg.flick_repeat = fmaxf(value, 0.0f);
+        size_t i = 0;
+        while (i < sizeof options / sizeof *options && strcmp(options[i].name, key) != 0)
+            i++;
+        if (i < sizeof options / sizeof *options)
+            set_option(i, value);
         else
             logmsg("config: unknown key %s", key);
     }
     fclose(f);
-    logmsg("config: cursor_speed=%.0f cursor_deadzone=%.2f cursor_curve=%.1f overlay=%d snap_dpad=%d autopause_wheel=%d autopause_aim=%d speed_level=%d rumble=%d nintendo_labels=%d",
-           cfg.cursor_speed, cfg.cursor_deadzone, cfg.cursor_curve, cfg.overlay, cfg.snap_dpad,
-           cfg.autopause_wheel, cfg.autopause_aim, cfg.speed_level, cfg.rumble, cfg.nintendo);
+    log_options();
 }
 
 static int find_wheel(struct wheel *set, int *count, const char *name)
@@ -1022,6 +1152,9 @@ struct layout_set {
     int nstates;
     struct wheel wheels[MAX_WHEELS];
     int nwheels;
+    /* Which states and wheels have a section of their own. */
+    bool state_defined[MAX_STATES];
+    bool wheel_defined[MAX_WHEELS];
 };
 
 /* Parses one action ("key [add_shift]", mouse_left, mouse_right, hold_state NAME, wheel
@@ -1171,7 +1304,7 @@ static void parse_wheel_line(struct layout_set *set, struct wheel *w, char *key,
 static void parse_layout(char *text, struct layout_set *set)
 {
     memset(set, 0, sizeof *set);
-    int base = find_state(set->states, &set->nstates, "controls");
+    int base = find_state(set->states, &set->nstates, BASE_SECTION);
     struct state *state = NULL;
     struct wheel *wheel = NULL;
     char *save = NULL;
@@ -1194,14 +1327,19 @@ static void parse_layout(char *text, struct layout_set *set)
                 *end = '\0';
             state = NULL;
             wheel = NULL;
-            if (strcmp(line + 1, "controls") == 0) {
+            const char *section = line + 1;
+            if (strcmp(section, BASE_SECTION) == 0) {
                 state = &set->states[base];
-            } else if (strncmp(line + 1, "controls:", 9) == 0) {
-                int idx = find_state(set->states, &set->nstates, line + 10);
+            } else if (strncmp(section, STATE_SECTION, strlen(STATE_SECTION)) == 0) {
+                int idx = find_state(set->states, &set->nstates, section + strlen(STATE_SECTION));
                 state = idx >= 0 ? &set->states[idx] : NULL;
-            } else if (strncmp(line + 1, "wheel:", 6) == 0) {
-                int idx = find_wheel(set->wheels, &set->nwheels, line + 7);
+                if (idx >= 0)
+                    set->state_defined[idx] = true;
+            } else if (strncmp(section, WHEEL_SECTION, strlen(WHEEL_SECTION)) == 0) {
+                int idx = find_wheel(set->wheels, &set->nwheels, section + strlen(WHEEL_SECTION));
                 wheel = idx >= 0 ? &set->wheels[idx] : NULL;
+                if (idx >= 0)
+                    set->wheel_defined[idx] = true;
             }
             continue;
         }
@@ -1214,6 +1352,12 @@ static void parse_layout(char *text, struct layout_set *set)
         else if (wheel)
             parse_wheel_line(set, wheel, trim(line), trim(eq + 1));
     }
+    for (int i = base + 1; i < set->nstates; i++)
+        if (!set->state_defined[i])
+            logmsg("layout: state %s has no section", set->states[i].name);
+    for (int i = 0; i < set->nwheels; i++)
+        if (!set->wheel_defined[i])
+            logmsg("layout: wheel %s has no section", set->wheels[i].name);
 }
 
 static void load_layout_text(char *text, const char *origin)
@@ -1224,6 +1368,7 @@ static void load_layout_text(char *text, const char *origin)
         logmsg("layout: nothing usable in %s", origin);
         return;
     }
+    wheel_close();
     memcpy(states, set.states, sizeof states);
     memcpy(wheels, set.wheels, sizeof wheels);
     nstates = set.nstates;
@@ -1232,7 +1377,7 @@ static void load_layout_text(char *text, const char *origin)
         for (int in = 0; in < IN_COUNT; in++)
             states[i].bind[in].tap = states[i].bind[in].tap ? &states[i].taps[in] : NULL;
     depth = 0;
-    wheel_open = -1;
+    memset(pending, 0, sizeof pending);
     logmsg("layout: %d states, %d wheels from %s", nstates, nwheels, origin);
 }
 
@@ -1280,20 +1425,6 @@ static void poll_files(double t)
 
 /* ---- game state ---- */
 
-static float capp_float(size_t offset)
-{
-    float v;
-    memcpy(&v, (char *)app + offset, sizeof v);
-    return v;
-}
-
-static int capp_int(size_t offset)
-{
-    int v;
-    memcpy(&v, (char *)app + offset, sizeof v);
-    return v;
-}
-
 static void *deref(const void *base, size_t off)
 {
     void *p;
@@ -1304,6 +1435,13 @@ static void *deref(const void *base, size_t off)
 static int read_int(const void *base, size_t off)
 {
     int v;
+    memcpy(&v, (const char *)base + off, sizeof v);
+    return v;
+}
+
+static float read_float(const void *base, size_t off)
+{
+    float v;
     memcpy(&v, (const char *)base + off, sizeof v);
     return v;
 }
@@ -1350,6 +1488,25 @@ static void *enemy_complete(void)
     return gui ? deref((const char *)gui + GUI_COMBAT_CONTROL, COMBAT_CURRENT_TARGET) : NULL;
 }
 
+static void *player_manager(void)
+{
+    void *complete = player_complete();
+    return complete ? deref(complete, COMPLETE_SHIP_MANAGER) : NULL;
+}
+
+/* CrewControl's vector of selected crew, or NULL without a GUI. */
+static const void *selected_crew(void)
+{
+    const char *gui = gui_ptr();
+    return gui ? gui + GUI_CREW_CONTROL + CREW_SELECTED : NULL;
+}
+
+static size_t selected_count(void)
+{
+    const void *selected = selected_crew();
+    return selected ? vector_count(selected, sizeof(void *)) : 0;
+}
+
 static bool game_paused(void)
 {
     void *gui = gui_ptr();
@@ -1376,8 +1533,7 @@ static void *open_tabbed(void)
 
 static bool crew_selected(void)
 {
-    const char *gui = gui_ptr();
-    return gui && vector_count(gui + GUI_CREW_CONTROL + CREW_SELECTED, sizeof(void *)) > 0;
+    return selected_count() > 0;
 }
 
 /* The weapon or drone object in slot i of an armament control, or NULL for an empty slot. */
@@ -1463,13 +1619,6 @@ static void add_rooms(const void *ship, Point origin, bool enemy)
         t->id = read_int(room, ROOM_ID);
         t->kind = enemy ? T_ENEMY_ROOM : T_ROOM;
     }
-}
-
-static float read_float(const void *base, size_t off)
-{
-    float v;
-    memcpy(&v, (const char *)base + off, sizeof v);
-    return v;
 }
 
 /* Beacons, or the sector boxes while a new sector is being chosen; returns false when the
@@ -1588,8 +1737,8 @@ static void add_slot_targets(const void *gui)
 {
     const struct {
         size_t window, boxes;
-    } screens[2] = {{GUI_EQUIP_SCREEN, EQUIP_BOXES}, {GUI_CREW_SCREEN, CREWSCREEN_BOXES}};
-    for (int k = 0; k < 2; k++) {
+    } screens[] = {{GUI_EQUIP_SCREEN, EQUIP_BOXES}, {GUI_CREW_SCREEN, CREWSCREEN_BOXES}};
+    for (size_t k = 0; k < sizeof screens / sizeof *screens; k++) {
         const char *window = (const char *)gui + screens[k].window;
         if (!window_open(window))
             continue;
@@ -1617,11 +1766,12 @@ static void add_slot_targets(const void *gui)
 static void build_targets(void)
 {
     ntargets = 0;
-    if (nbuttons_seen > 0) {
+    if (buttons_tested) {
         memcpy(buttons, buttons_seen, (size_t)nbuttons_seen * sizeof *buttons);
         memcpy(button_objects, button_objects_seen, (size_t)nbuttons_seen * sizeof *button_objects);
         nbuttons = nbuttons_seen;
         nbuttons_seen = 0;
+        buttons_tested = false;
     }
     void *gui = gui_ptr();
     if (!gui)
@@ -1637,7 +1787,7 @@ static void build_targets(void)
             if (enemy)
                 add_rooms(enemy, enemy_origin(gui), true);
             add_rooms(player, origin, false);
-        } else if (cfg.precision && !crew_selected()) {
+        } else if (precision && !crew_selected()) {
             add_doors(player, origin);
         } else {
             add_rooms(player, origin, false);
@@ -1647,7 +1797,7 @@ static void build_targets(void)
     }
     if (screen_open)
         add_slot_targets(gui);
-    if (!cfg.precision || aiming() || crew_selected())
+    if (!precision || aiming() || crew_selected())
         add_button_targets(gui, screen_open, map_open);
 }
 
@@ -1669,13 +1819,13 @@ static int target_under_cursor(void)
 /* Maps a logical position to the window pixels the mouse handlers take. */
 static void to_window(float gx, float gy, int *wx, int *wy)
 {
-    float mx = capp_float(CAPP_MOUSE_MODIFIER_X), my = capp_float(CAPP_MOUSE_MODIFIER_Y);
+    float mx = read_float(app, CAPP_MOUSE_MODIFIER_X), my = read_float(app, CAPP_MOUSE_MODIFIER_Y);
     if (mx <= 0)
         mx = 1;
     if (my <= 0)
         my = 1;
-    *wx = (int)lroundf((gx + (float)capp_int(CAPP_MODIFIER_X)) / mx) + capp_int(CAPP_X_BAR);
-    *wy = (int)lroundf((gy + (float)capp_int(CAPP_MODIFIER_Y)) / my) + capp_int(CAPP_Y_BAR);
+    *wx = (int)lroundf((gx + (float)read_int(app, CAPP_MODIFIER_X)) / mx) + read_int(app, CAPP_X_BAR);
+    *wy = (int)lroundf((gy + (float)read_int(app, CAPP_MODIFIER_Y)) / my) + read_int(app, CAPP_Y_BAR);
 }
 
 /* Adopts the game's cursor when something else moved it. */
@@ -1725,14 +1875,6 @@ static void move_cursor(float rx, float ry, float dt)
     send_cursor();
 }
 
-static void buzz(void);
-static void draw_help(void);
-static void upper_ascii(char *text);
-static void run_queued_clicks(void);
-static void builtin(enum builtin id, bool down, double t);
-static void badge_text(char *out, size_t len);
-static int text_width(int font, const char *text);
-
 /* Moves the cursor to the target nearest along a direction: inside the narrow cone first,
  * then the wide one, scored by distance grown with the angle off the axis. */
 static void focus_move(float dx, float dy)
@@ -1748,8 +1890,8 @@ static void focus_move(float dx, float dy)
     float cx = cursor.x, cy = cursor.y;
     int best = -1;
     float best_score = 0;
-    const float cones[2] = {CONE_NARROW_DEG, CONE_WIDE_DEG};
-    for (int pass = 0; pass < 2 && best < 0; pass++) {
+    const float cones[] = {CONE_NARROW_DEG, CONE_WIDE_DEG};
+    for (size_t pass = 0; pass < sizeof cones / sizeof *cones && best < 0; pass++) {
         float cos_cone = cosf(cones[pass] * (float)M_PI / 180.0f);
         for (int i = 0; i < ntargets; i++) {
             if (i == from)
@@ -1780,10 +1922,6 @@ static void focus_move(float dx, float dy)
 
 /* Screens that open on their first item. */
 enum first_screen { FS_NONE, FS_MAIN_MENU, FS_GAME_MENU, FS_CHOICE };
-/* Frames a newly opened screen gets to show its items before the focus gives up; a
- * dialog's choices wait for the jump animation. */
-#define FIRST_FOCUS_FRAMES 300
-
 /* The menu or dialog on screen, if it is one that opens on its first item. */
 static enum first_screen first_screen(void)
 {
@@ -1893,26 +2031,33 @@ static enum slot_mode slot_mode(enum slot slot)
     return SLOT_KEYS;
 }
 
-static void set_shift(bool on);
-static void click(enum act_kind kind, bool down);
-
-static void draw_text_left(int font, float x, float y, const char *text)
+/* A std::string built by the game's own constructor; release it with free_string. */
+static void *make_string(const char *text)
 {
     void *str = NULL;
     char alloc = 0;
     game.string_ctor(&str, text, &alloc);
-    game.print_left(font, x, y, &str);
+    return str;
+}
+
+static void free_string(void *str)
+{
     game.string_dtor(&str);
+}
+
+static void draw_text_left(int font, float x, float y, const char *text)
+{
+    void *str = make_string(text);
+    game.print_left(font, x, y, &str);
+    free_string(str);
 }
 
 /* Prints text centred at x,y with the game's font code. */
 static void draw_text_center(int font, float x, float y, const char *text)
 {
-    void *str = NULL;
-    char alloc = 0;
-    game.string_ctor(&str, text, &alloc);
+    void *str = make_string(text);
     game.print_center(font, x, y, &str);
-    game.string_dtor(&str);
+    free_string(str);
 }
 
 /* The point the plates circle, kept inside the screen. */
@@ -1963,11 +2108,9 @@ static void *game_image(const char *path)
     for (int i = 0; i < ncache; i++)
         if (strcmp(cache[i].path, path) == 0)
             return cache[i].texture;
-    void *str = NULL;
-    char alloc = 0;
-    game.string_ctor(&str, path, &alloc);
+    void *str = make_string(path);
     void *texture = game.image_id(game.resources, &str);
-    game.string_dtor(&str);
+    free_string(str);
     if (!texture)
         logmsg("image missing: %s", path);
     if (ncache < IMAGE_CACHE_SIZE) {
@@ -2131,8 +2274,7 @@ static void wheel_step(int dir)
 /* The crew member a plate key selects, by F-key index into the ship's crew list. */
 static void *crew_at(int index)
 {
-    void *complete = player_complete();
-    void *manager = complete ? deref(complete, COMPLETE_SHIP_MANAGER) : NULL;
+    void *manager = player_manager();
     if (!manager)
         return NULL;
     const void *crew = (const char *)manager + SHIPMANAGER_CREW;
@@ -2144,11 +2286,8 @@ static void *crew_at(int index)
 /* Whether a crew member is in the current selection. */
 static bool crew_is_selected(const void *member)
 {
-    const char *gui = gui_ptr();
-    if (!gui)
-        return false;
-    const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
-    size_t n = vector_count(selected, sizeof(void *));
+    const void *selected = selected_crew();
+    size_t n = selected_count();
     for (size_t i = 0; i < n; i++)
         if (vector_at(selected, sizeof(void *), i) == member)
             return true;
@@ -2231,9 +2370,6 @@ static int ability_system(int key)
     }
 }
 
-#define CREWBP_RACE 8
-#define CRYSTAL_RACE "crystal"
-
 /* Lockdown needs a living crystal crew member. */
 static bool has_crystal_crew(void)
 {
@@ -2248,8 +2384,7 @@ static bool has_crystal_crew(void)
 
 static bool has_system(int type)
 {
-    void *complete = player_complete();
-    void *manager = complete ? deref(complete, COMPLETE_SHIP_MANAGER) : NULL;
+    void *manager = player_manager();
     return manager && game.system_room(manager, type) >= 0;
 }
 
@@ -2261,8 +2396,7 @@ static void crew_location(struct plate *pl, const void *member)
         strncpy(pl->badge, "Enemy ship", LABEL_LEN - 1);
         return;
     }
-    void *complete = player_complete();
-    void *manager = complete ? deref(complete, COMPLETE_SHIP_MANAGER) : NULL;
+    void *manager = player_manager();
     const char *sys = manager ? game.system_in_room(manager, read_int(member, CREW_ROOM)) : NULL;
     if (!sys)
         return;
@@ -2289,16 +2423,32 @@ static void armament_plate(struct plate *pl, const void *icon_name, const char *
     pl->pips_on = pl->powered ? power : 0;
 }
 
+/* Where a power wheel finds the item a slot key powers: weapons, then drones. */
+struct armament {
+    int first_key, slots;
+    const char *(*control)(void);
+    size_t blueprint, powered, power, icon;
+    const char *icon_prefix, *icon_fallback;
+    float icon_shift;
+};
+static const struct armament armaments[] = {
+    {'1', WEAPON_SLOTS, weapon_control, WEAPON_BLUEPRINT, WEAPON_POWERED, WEAPON_POWER, WEAPONBP_ICON,
+     WEAPON_ICON_PREFIX, WEAPON_ICON_FALLBACK, WEAPON_ICON_SHIFT},
+    {'1' + WEAPON_SLOTS, DRONE_SLOTS, drone_control, DRONE_BLUEPRINT, DRONE_POWERED, DRONE_POWER, DRONEBP_ICON,
+     DRONE_ICON_PREFIX, DRONE_ICON_FALLBACK, 0.0f},
+};
+
 /* Fills the open wheel's plates from the game: crew and systems wholesale, power and
  * action wheels their availability, badges and icons. */
 static void refresh_wheel(void)
 {
+    wheel_refresh_wait = WHEEL_REFRESH_FRAMES;
     struct wheel *w = &wheels[wheel_open];
     if (w->kind == WK_CREW || w->kind == WK_SYSTEMS)
         memset(w->plates, 0, sizeof w->plates);
     if (w->kind == WK_CREW) {
         int slot = 0;
-        for (int i = 0; slot < WHEEL_SLOTS; i++) {
+        for (int i = 0; i < CREW_HOTKEYS && slot < WHEEL_SLOTS; i++) {
             const char *member = crew_at(i);
             if (!member)
                 break;
@@ -2351,7 +2501,7 @@ static void refresh_wheel(void)
                 pl->powered = read_int(sys, SYSTEM_POWER) > 0;
                 pl->icon = deref(sys, SYSTEM_ICON);
                 pl->icon_partial = false;
-                pl->pips = read_int(sys, SYSTEM_POWER + 4);
+                pl->pips = read_int(sys, SYSTEM_POWER_MAX);
                 pl->pips_on = read_int(sys, SYSTEM_POWER);
                 strncpy(pl->label, system_name(type), LABEL_LEN - 1);
                 snprintf(pl->badge, LABEL_LEN, "%d/%d", pl->pips_on, pl->pips);
@@ -2373,32 +2523,24 @@ static void refresh_wheel(void)
             continue;
         int key = pl->bind.key;
         pl->available = true;
-        if (w->kind == WK_POWER && key >= '1' && key < '1' + WEAPON_SLOTS) {
-            const char *weapon = weapon_control() ? armament_item(weapon_control(), key - '1') : NULL;
-            const char *bp = weapon ? deref(weapon, WEAPON_BLUEPRINT) : NULL;
-            pl->available = weapon != NULL;
-            pl->empty = !weapon;
-            if (bp)
+        const struct armament *arm = NULL;
+        for (size_t a = 0; a < sizeof armaments / sizeof *armaments && w->kind == WK_POWER; a++)
+            if (key >= armaments[a].first_key && key < armaments[a].first_key + armaments[a].slots)
+                arm = &armaments[a];
+        if (arm) {
+            const char *control = arm->control();
+            const char *item = control ? armament_item(control, key - arm->first_key) : NULL;
+            const char *bp = item ? deref(item, arm->blueprint) : NULL;
+            pl->available = bp != NULL;
+            pl->empty = !bp;
+            pl->powered = bp && *(item + arm->powered);
+            if (bp) {
                 display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
-            else
+                armament_plate(pl, bp + arm->icon, arm->icon_prefix, arm->icon_fallback, arm->icon_shift,
+                               read_int(item, arm->power));
+            } else {
                 strncpy(pl->label, "Empty", LABEL_LEN - 1);
-            pl->powered = weapon && *(weapon + WEAPON_POWERED);
-            if (weapon)
-                armament_plate(pl, bp + WEAPONBP_ICON, WEAPON_ICON_PREFIX, WEAPON_ICON_FALLBACK, WEAPON_ICON_SHIFT,
-                               read_int(weapon, WEAPON_POWER));
-        } else if (w->kind == WK_POWER && key >= '5' && key < '5' + DRONE_SLOTS) {
-            const char *drone = drone_control() ? armament_item(drone_control(), key - '5') : NULL;
-            const char *bp = drone ? deref(drone, DRONE_BLUEPRINT) : NULL;
-            pl->available = drone != NULL;
-            pl->empty = !drone;
-            if (bp)
-                display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
-            else
-                strncpy(pl->label, "Empty", LABEL_LEN - 1);
-            pl->powered = drone && *(drone + DRONE_POWERED);
-            if (drone)
-                armament_plate(pl, bp + DRONEBP_ICON, DRONE_ICON_PREFIX, DRONE_ICON_FALLBACK, 0.0f,
-                               read_int(drone, DRONE_POWER));
+            }
         } else if (w->kind == WK_POWER && key == 'v') {
             const char *control = weapon_control();
             pl->powered = control && *(control + WEAPONCTRL_AUTOFIRE);
@@ -2434,13 +2576,11 @@ static void wheel_close(void)
 static void wheel_show(int index, enum input by)
 {
     if (wheel_open >= 0) {
-        if (wheel_sticky && wheel_open == index)
+        if (wheel_open == index)
             wheel_close();
         return;
     }
     wheel_open = index;
-    wheel_by = by;
-    wheel_sticky = true;
     wheel_sel = -1;
     wheel_opened_aiming = aiming();
     refresh_wheel();
@@ -2456,8 +2596,8 @@ static void wheel_show(int index, enum input by)
         logmsg("%s: wheel %s", input_ini_names[by], wheels[index].name);
 }
 
-/* A on the selected plate: keys and clicks run as taps; power wheels stay open, the
- * others close. The abilities key is remembered for repeat_ability. */
+/* Performs the selected plate: keys and clicks run as taps; an action wheel closes after,
+ * the others refill. The abilities key is remembered for repeat_ability. */
 static void wheel_act(void)
 {
     struct wheel *w = &wheels[wheel_open];
@@ -2475,23 +2615,19 @@ static void wheel_act(void)
         click(b->kind, true);
         click(b->kind, false);
     } else if (b->kind == ACT_BUILTIN) {
-        builtin((enum builtin)b->state, true, now_s());
-        builtin((enum builtin)b->state, false, now_s());
+        builtin((enum builtin)b->state, NO_INPUT, true, now_s());
+        builtin((enum builtin)b->state, NO_INPUT, false, now_s());
     }
     if (debug)
         logmsg("wheel %s: %s", w->name, w->plates[wheel_sel].label);
-    if (w->kind != WK_POWER && w->kind != WK_SYSTEMS && w->kind != WK_SETTINGS && w->kind != WK_CREW)
+    if (w->kind == WK_ACTION)
         wheel_close();
+    else if (wheel_open >= 0)
+        refresh_wheel();
 }
 
-/* B in a wheel closes it. */
-static void wheel_back(void)
-{
-    wheel_close();
-}
-
-/* D-pad up and down on a power or systems wheel: the selected item's key, with Shift to
- * take power away. On the crew wheel they add the member to the selection or drop them. */
+/* Adds power to the selected item of a power or systems wheel, or takes it away for a
+ * negative dir; on the crew wheel, adds the member to the selection or drops them. */
 static void wheel_power(int dir)
 {
     struct wheel *w = &wheels[wheel_open];
@@ -2505,6 +2641,7 @@ static void wheel_power(int dir)
             tap_key(w->plates[wheel_sel].bind.key, crew_selected());
         else
             game.deselect_crew((char *)gui_ptr() + GUI_CREW_CONTROL, member);
+        refresh_wheel();
         return;
     }
     if (w->kind != WK_POWER && w->kind != WK_SYSTEMS)
@@ -2515,6 +2652,7 @@ static void wheel_power(int dir)
     tap_key(w->plates[wheel_sel].bind.key, dir < 0);
     if (debug)
         logmsg("wheel %s: %s power %s", w->name, w->plates[wheel_sel].label, dir < 0 ? "down" : "up");
+    refresh_wheel();
 }
 
 static void set_shift(bool on)
@@ -2559,13 +2697,7 @@ static void center_swap(void)
 /* The first crew member of the current selection, or NULL. */
 static const void *first_selected_crew(void)
 {
-    const char *gui = gui_ptr();
-    if (!gui)
-        return NULL;
-    const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
-    if (vector_count(selected, sizeof(void *)) == 0)
-        return NULL;
-    return vector_at(selected, sizeof(void *), 0);
+    return crew_selected() ? vector_at(selected_crew(), sizeof(void *), 0) : NULL;
 }
 
 /* Moves the cursor to the room of the first selected crew member. */
@@ -2589,9 +2721,6 @@ static void cursor_to_selected_crew(void)
 
 /* Clicks queued for later frames: the game resolves what sits under the pointer a frame
  * after the move, so each click takes a move, a press and a release on three frames. */
-#define MAX_QUEUED_CLICKS 16
-/* Frames between the phases of a queued click. */
-#define QUEUED_CLICK_FRAMES 4
 static struct {
     float x, y;
 } queued_clicks[MAX_QUEUED_CLICKS];
@@ -2631,7 +2760,7 @@ static void run_queued_clicks(void)
             game.mouse_move(app, wx, wy, 0, 0, false, false, false);
         }
     }
-    queued_phase = (queued_phase + 1) % 3;
+    queued_phase = (queued_phase + 1) % QUEUED_CLICK_PHASES;
     cursor.last_set = *game.mouse_position;
 }
 
@@ -2676,7 +2805,7 @@ static void room_doors(void)
 static void select_next_crew(void)
 {
     int count = 0;
-    while (crew_at(count))
+    while (count < CREW_HOTKEYS && crew_at(count))
         count++;
     if (count == 0)
         return;
@@ -2728,31 +2857,33 @@ static void tab_step(int dir)
     game.set_tab(tabbed, (unsigned)((current + dir + n) % n));
 }
 
-/* Runs a builtin on press or release. */
-static void builtin(enum builtin id, bool down, double t)
+/* Runs a builtin on the press or release of input in, NO_INPUT for a wheel plate. */
+static void builtin(enum builtin id, enum input in, bool down, double t)
 {
     switch (id) {
     case BI_CONTEXT_CLICK:
-        if (wheel_open >= 0) {
-            if (down)
-                wheel_act();
+        if (!down) {
+            if (context_done[in] != ACT_NONE)
+                click(context_done[in], false);
+            context_done[in] = ACT_NONE;
+        } else if (wheel_open >= 0 && in != NO_INPUT) {
+            context_done[in] = ACT_NONE;
+            wheel_act();
         } else {
             /* With crew selected and a room under the cursor, A sends them there, which
              * the game does on the right button. */
-            static bool crew_order;
-            if (down) {
-                int under = target_under_cursor();
-                crew_order = crew_selected() && !aiming() && under >= 0
-                             && (targets[under].kind == T_ROOM || targets[under].kind == T_ENEMY_ROOM);
-            }
-            click(crew_order ? ACT_RCLICK : ACT_LCLICK, down);
+            int under = target_under_cursor();
+            bool crew_order = crew_selected() && !aiming() && under >= 0
+                              && (targets[under].kind == T_ROOM || targets[under].kind == T_ENEMY_ROOM);
+            context_done[in] = crew_order ? ACT_RCLICK : ACT_LCLICK;
+            click(context_done[in], true);
         }
         break;
     case BI_CANCEL:
         if (!down)
             break;
         if (wheel_open >= 0)
-            wheel_back();
+            wheel_close();
         else if (gui_ptr() && (window_open((char *)gui_ptr() + GUI_MENU_BOX)
                                || window_open((char *)gui_ptr() + GUI_OPTIONS_BOX)))
             tap_key(KEY_ESCAPE, false);
@@ -2793,7 +2924,7 @@ static void builtin(enum builtin id, bool down, double t)
         break;
     case BI_PRECISION:
         /* Held: doors are the zones for as long as the button is down. */
-        cfg.precision = down;
+        precision = down;
         break;
     case BI_CENTER_SWAP:
         if (down)
@@ -2806,7 +2937,7 @@ static void builtin(enum builtin id, bool down, double t)
         break;
     case BI_HELP:
         if (down)
-            cfg.help = !cfg.help;
+            help_shown = !help_shown;
         break;
     case BI_ROOM_DOORS:
         if (down)
@@ -2876,11 +3007,9 @@ static void perform(const struct binding *b, enum input in, bool down, double t)
     case ACT_WHEEL:
         if (down)
             wheel_show(b->state, in);
-        else if (wheel_open >= 0 && wheel_by == in && !wheel_sticky)
-            wheel_close();
         break;
     case ACT_BUILTIN:
-        builtin((enum builtin)b->state, down, t);
+        builtin((enum builtin)b->state, in, down, t);
         break;
     }
     if (debug && down)
@@ -2907,6 +3036,14 @@ static bool tap_idle(const struct binding *tap)
 
 /* A press runs its binding at once, unless it carries a tap half that would act: then it
  * waits for the threshold (hold) or the release (tap). */
+/* Performs a binding's press and records it for the release. */
+static void start(const struct binding *b, enum input in, double t)
+{
+    perform(b, in, true, t);
+    active[in] = *b;
+    active[in].tap = NULL;
+}
+
 static void press(enum input in, double t)
 {
     const struct binding *b = lookup(in);
@@ -2919,32 +3056,23 @@ static void press(enum input in, double t)
         return;
     }
     if (b->tap && !tap_idle(b->tap)) {
-        pending[in].pending = true;
+        pending[in].bind = b;
         pending[in].since = t;
         return;
     }
-    perform(b, in, true, t);
-    active[in].kind = b->kind;
-    active[in].key = b->key;
-    active[in].shift = b->shift;
-    active[in].state = b->state;
+    start(b, in, t);
 }
 
 static void release(enum input in, double t)
 {
-    if (pending[in].pending) {
-        pending[in].pending = false;
-        const struct binding *b = lookup(in);
-        if (b && b->tap) {
-            perform(b->tap, in, true, t);
-            perform(b->tap, in, false, t);
-        }
+    const struct binding *b = pending[in].bind;
+    if (b) {
+        pending[in].bind = NULL;
+        perform(b->tap, in, true, t);
+        perform(b->tap, in, false, t);
         return;
     }
-    struct binding b = {active[in].kind, active[in].key, active[in].shift, 0, NULL};
-    if (b.kind == ACT_STATE || b.kind == ACT_WHEEL || b.kind == ACT_BUILTIN)
-        b.state = active[in].state;
-    perform(&b, in, false, t);
+    perform(&active[in], in, false, t);
     active[in].kind = ACT_NONE;
 }
 
@@ -2952,17 +3080,11 @@ static void release(enum input in, double t)
 static void settle_pending(double t)
 {
     for (int in = 0; in < IN_COUNT; in++) {
-        if (!pending[in].pending || t - pending[in].since < TAP_HOLD_S)
+        const struct binding *b = pending[in].bind;
+        if (!b || t - pending[in].since < TAP_HOLD_S)
             continue;
-        pending[in].pending = false;
-        const struct binding *b = lookup(in);
-        if (!b)
-            continue;
-        perform(b, (enum input)in, true, t);
-        active[in].kind = b->kind;
-        active[in].key = b->key;
-        active[in].shift = b->shift;
-        active[in].state = b->state;
+        pending[in].bind = NULL;
+        start(b, (enum input)in, t);
     }
 }
 
@@ -2995,8 +3117,8 @@ static void load_sdl_map(void)
     const char *map = getenv(SDL_MAP_ENV);
     if (!map)
         return;
-    for (int i = 0; i < 4; i++) {
-        char token[8];
+    for (int i = 0; i < FACE_COUNT; i++) {
+        char token[NAME_LEN];
         snprintf(token, sizeof token, ",%s:b", sdl_face_names[i]);
         const char *at = strstr(map, token);
         if (at)
@@ -3032,9 +3154,11 @@ static void read_pad(int dev, struct pad *p)
         int idx = joy.button_mapping(dev, b);
         p->down[b] = idx >= 0 && joy.button_state(dev, idx);
     }
-    bool mapped = cfg.nintendo < 0 && sdl_face[0] >= 0 && sdl_face[1] >= 0 && sdl_face[2] >= 0 && sdl_face[3] >= 0;
+    bool mapped = cfg.nintendo < 0;
+    for (int i = 0; i < FACE_COUNT; i++)
+        mapped &= sdl_face[i] >= 0;
     if (mapped) {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < FACE_COUNT; i++)
             p->down[sdl_face_inputs[i]] = joy.button_state(dev, sdl_face[i]);
     } else if (cfg.nintendo != 0) {
         if (cfg.swap_ab) {
@@ -3072,6 +3196,14 @@ static bool is_dpad(int i)
     return i >= IN_DPAD_LEFT && i <= IN_DPAD_DOWN;
 }
 
+/* Makes the game hit-test its buttons at the cursor: a mouse move in place, in window
+ * pixels of the current transform. */
+static void refresh_buttons(void)
+{
+    to_window(cursor.x, cursor.y, &cursor.last_wx, &cursor.last_wy);
+    game.mouse_move(app, cursor.last_wx, cursor.last_wy, 0, 0, false, false, false);
+}
+
 /* Applies one frame of pad state: pointer sources move the cursor or flick the magnet,
  * sticks point an open wheel, everything else goes through the layout. */
 static void apply_pad(struct pad *p, double t, float dt)
@@ -3095,7 +3227,8 @@ static void apply_pad(struct pad *p, double t, float dt)
     }
     bool in_wheel = wheel_open >= 0;
     if (in_wheel) {
-        refresh_wheel();
+        if (--wheel_refresh_wait <= 0)
+            refresh_wheel();
         wheel_point(p->stick[0][0], p->stick[0][1], p->stick[1][0], p->stick[1][1]);
         if (aiming() && !wheel_opened_aiming)
             wheel_close();
@@ -3105,7 +3238,7 @@ static void apply_pad(struct pad *p, double t, float dt)
     bool snapping = cfg.snap_dpad && depth == 0 && ntargets > 0 && mode[SLOT_DPAD] == SLOT_KEYS;
     if (++frame % BUTTON_REFRESH_FRAMES == 0 && cursor.synced && !cursor.l_held && !cursor.r_held
             && nqueued_clicks == 0)
-        game.mouse_move(app, cursor.last_wx, cursor.last_wy, 0, 0, false, false, false);
+        refresh_buttons();
 
     settle_pending(t);
     for (int i = 0; i < IN_COUNT; i++) {
@@ -3113,8 +3246,8 @@ static void apply_pad(struct pad *p, double t, float dt)
             continue;
         held[i] = p->down[i];
         /* Any button closes the help; that press does nothing else. */
-        if (cfg.help && p->down[i] && i < SIL_BUTTONS) {
-            cfg.help = false;
+        if (help_shown && p->down[i] && i < SIL_BUTTONS) {
+            help_shown = false;
             continue;
         }
         if (is_dpad(i)) {
@@ -3164,7 +3297,7 @@ static void apply_pad(struct pad *p, double t, float dt)
             move_cursor((float)p->dpad[0], (float)p->dpad[1], dt);
     }
 
-    /* Y held past the threshold: unpause and run fast. */
+    /* pause_ff held past the threshold: unpause and run fast. */
     if (pause_ff_since > 0 && !fast_forward && t - pause_ff_since >= FF_HOLD_S) {
         if (game_paused())
             tap_key(KEY_SPACE, false);
@@ -3213,9 +3346,9 @@ static void dump_targets(void)
 {
     logmsg("dump: aiming=%d targets=%d cursor=%d,%d under=%d", aiming(), ntargets,
            cursor.last_x, cursor.last_y, target_under_cursor());
-    void *gui = deref(app, CAPP_GUI);
-    void *player = gui ? ship_of(deref(gui, GUI_SHIP_COMPLETE)) : NULL;
-    void *enemy = gui ? ship_of(deref((char *)gui + GUI_COMBAT_CONTROL, COMBAT_CURRENT_TARGET)) : NULL;
+    void *gui = gui_ptr();
+    void *player = ship_of(player_complete());
+    void *enemy = ship_of(enemy_complete());
     for (int i = 0; i < ntargets; i++) {
         struct target *t = &targets[i];
         int cx = t->rect.x + t->rect.w / 2, cy = t->rect.y + t->rect.h / 2;
@@ -3237,13 +3370,13 @@ static void dump_state(void)
 {
     char line[LINE_LEN] = "";
     size_t used = 0;
-    for (int level = 0; level <= depth; level++)
+    for (int level = 0; level <= depth && used < sizeof line; level++)
         used += (size_t)snprintf(line + used, sizeof line - used, " %s", state_at(level)->name);
     static const char *const mode_names[] = {"keys", "mouse", "flick"};
     logmsg("state:%s; wheel %s sel %d; shift %d; dpad %s, left %s, right %s; aiming %d crew %d paused %d precision %d",
            line, wheel_open >= 0 ? wheels[wheel_open].name : "-", wheel_sel, shift_count,
            mode_names[slot_mode(SLOT_DPAD)], mode_names[slot_mode(SLOT_LSTICK)],
-           mode_names[slot_mode(SLOT_RSTICK)], aiming(), crew_selected(), game_paused(), cfg.precision);
+           mode_names[slot_mode(SLOT_RSTICK)], aiming(), crew_selected(), game_paused(), precision);
 }
 
 static void run_command(char *line)
@@ -3297,7 +3430,7 @@ static void run_command(char *line)
     } else if (sscanf(line, "pick %d", &key) == 1) {
         if (wheel_open >= 0 && key >= -1 && key < WHEEL_SLOTS)
             wheel_sel = key;
-    } else if (strncmp(line, "badge", 5) == 0) {
+    } else if (strncmp(line, "badge", 5) == 0 && gui_ptr()) {
         char text[LABEL_LEN * 3];
         badge_text(text, sizeof text);
         logmsg("badge: '%s' width %d", text, text[0] ? text_width(WHEEL_FONT, text) : 0);
@@ -3325,6 +3458,10 @@ static void poll_commands(void)
         start = nl + 1;
     }
     used = strlen(start);
+    if (used == sizeof buf - 1) {
+        logmsg("command too long, dropped");
+        used = 0;
+    }
     memmove(buf, start, used + 1);
 }
 
@@ -3367,7 +3504,7 @@ static void mouse_render_hook(void *self)
 {
     if (wheel_open >= 0)
         draw_wheel();
-    if (cfg.help && cursor.synced)
+    if (help_shown && cursor.synced)
         draw_help();
     if (cursor.synced && cfg.overlay && gui_ptr()) {
         char text[LABEL_LEN * 3];
@@ -3459,7 +3596,7 @@ static void draw_help(void)
             describe_binding(b, hold, sizeof hold);
             describe_binding(b->tap, tap, sizeof tap);
         } else {
-            describe_binding(b, is_hold_action(b) ? hold : tap, LABEL_LEN * 2);
+            describe_binding(b, is_hold_action(b) ? hold : tap, sizeof hold);
         }
         draw_text_left(HELP_FONT, x + HELP_PAD, line_y + WHEEL_TEXT_DY, input_titles[in]);
         draw_text_left(HELP_FONT, x + HELP_COL_TAP, line_y + WHEEL_TEXT_DY, tap);
@@ -3476,11 +3613,9 @@ static void upper_ascii(char *text)
 
 static int text_width(int font, const char *text)
 {
-    void *str = NULL;
-    char alloc = 0;
-    game.string_ctor(&str, text, &alloc);
+    void *str = make_string(text);
     int w = game.measure_width(font, &str);
-    game.string_dtor(&str);
+    free_string(str);
     return w;
 }
 
@@ -3508,9 +3643,8 @@ static void badge_text(char *out, size_t len)
             display_text(bp + BLUEPRINT_SHORT_TITLE, name, sizeof name);
         snprintf(main, sizeof main, name[0] ? "Target: %s" : "Target", name);
     } else if (crew_selected()) {
-        const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
-        size_t n = vector_count(selected, sizeof(void *));
-        const char *member = vector_at(selected, sizeof(void *), 0);
+        size_t n = selected_count();
+        const char *member = first_selected_crew();
         char name[LABEL_LEN] = "";
         if (n == 1 && member)
             display_text(member + CREW_BLUEPRINT + CREWBP_NAME, name, sizeof name);
@@ -3521,9 +3655,9 @@ static void badge_text(char *out, size_t len)
     } else if (window_open(deref(gui, GUI_STAR_MAP))) {
         snprintf(main, sizeof main, "Map");
     }
-    const char *parts[3] = {cfg.precision ? "Doors" : NULL, fast_forward ? "Fast" : NULL, dpad_mouse ? "Mouse" : NULL};
+    const char *parts[] = {precision ? "Doors" : NULL, fast_forward ? "Fast" : NULL, dpad_mouse ? "Mouse" : NULL};
     size_t used = (size_t)snprintf(out, len, "%s", main);
-    for (int i = 0; i < 3; i++)
+    for (size_t i = 0; i < sizeof parts / sizeof *parts; i++)
         if (parts[i] && used < len)
             used += (size_t)snprintf(out + used, len - used, "%s%s", used ? BADGE_SEPARATOR : "", parts[i]);
     upper_ascii(out);
@@ -3534,19 +3668,30 @@ static int get_shift_hook(void)
     return shift_count > 0 || get_shift_orig();
 }
 
+/* Whether a button is already in the set seen since the last frame. */
+static bool button_seen(const void *self)
+{
+    for (int i = 0; i < nbuttons_seen; i++)
+        if (button_objects_seen[i] == self)
+            return true;
+    return false;
+}
+
 static void button_move_hook(void *self, int x, int y, bool silent)
 {
+    buttons_tested = true;
     const char *gui = gui_ptr();
     bool crew_control_button = gui && (const char *)self >= gui + GUI_CREW_CONTROL
                                && (const char *)self < gui + GUI_CREW_CONTROL + CREW_CONTROL_SIZE;
     bool drawn = !*((const unsigned char *)self + BUTTON_RENDER_OFF);
-    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && drawn && !crew_control_button) {
+    if (nbuttons_seen < MAX_BUTTONS && *((const unsigned char *)self + BUTTON_ACTIVE) && drawn && !crew_control_button
+            && !button_seen(self)) {
         Rect r;
         memcpy(&r, (const char *)self + BUTTON_HITBOX, sizeof r);
         /* The armament bars keep their buttons' boxes relative to the bar. */
-        const char *bars[2] = {gui ? weapon_control() : NULL, gui ? drone_control() : NULL};
-        const int bar_sizes[2] = {WEAPON_CONTROL_SIZE, DRONE_CONTROL_SIZE};
-        for (int i = 0; i < 2; i++)
+        const char *bars[] = {gui ? weapon_control() : NULL, gui ? drone_control() : NULL};
+        const int bar_sizes[] = {WEAPON_CONTROL_SIZE, DRONE_CONTROL_SIZE};
+        for (size_t i = 0; i < sizeof bars / sizeof *bars; i++)
             if (bars[i] && (const char *)self >= bars[i] && (const char *)self < bars[i] + bar_sizes[i]) {
                 Point at = read_point(bars[i], ARMAMENT_LOCATION);
                 r.x += at.x;
@@ -3564,6 +3709,7 @@ static void button_move_hook(void *self, int x, int y, bool silent)
 __attribute__((constructor)) static void init(void)
 {
     debug = getenv(DEBUG_ENV) != NULL;
+    cfg = cfg_defaults;
     if (resolve_symbols() != 0) {
         logmsg("unknown build, inactive");
         return;
@@ -3574,17 +3720,17 @@ __attribute__((constructor)) static void init(void)
     }
     /* The engine drops joystick events while the X window lacks focus. */
     joy.enable_unfocused(1);
-    onloop_orig = hook(game.onloop, onloop_hook, onloop_prologue, sizeof onloop_prologue);
+    onloop_orig = hook("OnLoop", game.onloop, onloop_hook, onloop_prologue, sizeof onloop_prologue);
     if (!onloop_orig) {
-        logmsg("OnLoop prologue differs, inactive");
+        logmsg("inactive");
         return;
     }
-    mouse_render_orig = hook(game.mouse_render, mouse_render_hook, mouse_render_prologue,
-                             sizeof mouse_render_prologue);
-    get_shift_orig = hook(game.get_shift, get_shift_hook, get_shift_prologue,
+    mouse_render_orig = hook("MouseControl::OnRender", game.mouse_render, mouse_render_hook,
+                             mouse_render_prologue, sizeof mouse_render_prologue);
+    get_shift_orig = hook("GetShiftState", game.get_shift, get_shift_hook, get_shift_prologue,
                           sizeof get_shift_prologue);
-    button_move_orig = hook(game.button_move, button_move_hook, button_move_prologue,
-                            sizeof button_move_prologue);
+    button_move_orig = hook("GenericButton::MouseMove", game.button_move, button_move_hook,
+                            button_move_prologue, sizeof button_move_prologue);
     logmsg("active: overlay %s, shift %s, buttons %s", mouse_render_orig ? "on" : "off",
            get_shift_orig ? "on" : "off", button_move_orig ? "on" : "off");
 
