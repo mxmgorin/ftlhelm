@@ -93,6 +93,7 @@
 
 /* Game object layout, from the binary's DWARF. */
 #define CAPP_GUI 16
+#define CAPP_MAIN_MENU_OPEN 32
 #define CAPP_MODIFIER_X 14648
 #define CAPP_MODIFIER_Y 14652
 #define CAPP_MOUSE_MODIFIER_X 14668
@@ -127,6 +128,8 @@
 #define LOCATION_LOC 0
 #define GUI_CHOICE_BOX 6688
 #define CHOICE_RECTS 88
+#define CHOICE_TEXT 48
+#define CHOICE_OPEN_TIME 132
 #define BUTTON_HITBOX 16
 #define BUTTON_RENDER_OFF 34
 #define BUTTON_ACTIVE 72
@@ -146,19 +149,25 @@
 #define ARMAMENTBOX_ITEM 496
 #define WEAPON_POWERED 242
 #define WEAPON_BLUEPRINT 32
-#define WEAPON_VISUAL 344
-#define ANIM_STRIP 0
-#define ANIM_INFO 8
-#define ANIMINFO_STRIP_START_Y 12
-#define ANIMINFO_STRIP_START_X 16
-#define ANIMINFO_FRAME_W 20
-#define ANIMINFO_FRAME_H 24
+#define WEAPON_POWER 244
+#define WEAPONBP_ICON 320
 #define SYSTEM_ICON 96
 #define TEXTURE_W 4
 #define TEXTURE_H 8
-#define ICON_PAD 3.0f
-#define ICON_MAX_W 28.0f
 #define DRONE_BLUEPRINT 32
+#define DRONE_POWER 20
+#define DRONEBP_ICON 168
+/* Armament icons as the game's weapon boxes build them: prefix, blueprint icon, suffix. */
+#define WEAPON_ICON_PREFIX "systemUI/weapbox_icon_W_"
+#define DRONE_ICON_PREFIX "systemUI/weapbox_icon_D_"
+#define ICON_SUFFIX ".png"
+/* Weapon art sits right of its texture's centre by this many texture pixels. */
+#define WEAPON_ICON_SHIFT 3.0f
+#define WEAPON_ICON_FALLBACK "icons/s_weapons_overlay.png"
+#define DRONE_ICON_FALLBACK "icons/s_drones_overlay.png"
+#define CREW_ANIM 192
+/* CrewAnimation::RenderIcon draws the face small, centred on the origin. */
+#define CREW_ICON_SCALE 2.0f
 #define BLUEPRINT_TITLE 16
 #define BLUEPRINT_SHORT_TITLE 32
 #define TEXTSTRING_LITERAL 8
@@ -167,6 +176,7 @@
 #define SHIPMANAGER_CREW 192
 #define CREW_ROOM 156
 #define CREW_SHIP 396
+#define PLAYER_SHIP_ID 0
 #define CREW_DEAD 544
 #define CREW_BLUEPRINT 576
 #define CREWBP_NAME 120
@@ -199,6 +209,9 @@
 #define SYS_WEAPONS 3
 #define SYS_DRONES 4
 #define SYS_MEDBAY 5
+#define SYS_PILOT 6
+#define SYS_SENSORS 7
+#define SYS_DOORS 8
 #define SYS_TELEPORTER 9
 #define SYS_CLOAKING 10
 #define SYS_ARTILLERY 11
@@ -260,7 +273,6 @@
 #define TRIGGER_ON 0.0f
 #define EXIT_HOLD_S 0.6
 #define MAX_DT 0.05
-#define OVERLAY_HALF 10
 #define OVERLAY_LINE 1.0f
 
 #define MAX_TARGETS 64
@@ -273,6 +285,8 @@
 #define WHEEL_SLOTS 8
 #define NAME_LEN 32
 #define LABEL_LEN 24
+#define ICON_PATH_LEN 64
+#define IMAGE_CACHE_SIZE 128
 #define MAX_BUTTONS 64
 /* Frames between synthetic mouse moves that refresh the button zones. */
 #define BUTTON_REFRESH_FRAMES 6
@@ -291,28 +305,30 @@
 #define BADGE_PAD 14.0f
 #define BADGE_SEPARATOR " / "
 #define BADGE_MARGIN 8.0f
-/* Plates sit on an ellipse, wider than tall, so neighbours do not touch. */
-#define WHEEL_RADIUS_X 204.0f
-#define WHEEL_RADIUS_Y 128.0f
-/* Diagonal plates sit this much closer to the middle line than the ellipse would put them. */
-#define WHEEL_DIAGONAL_Y 0.5f
-#define WHEEL_PLATE_W 180.0f
-#define WHEEL_PLATE_H 30.0f
+/* Square plates on a circle, leaving the middle to the names. */
+#define WHEEL_RADIUS 125.0f
+#define WHEEL_TILE 60.0f
+/* A plate holds an icon box, and under it a row of power pips when the item takes power. */
+#define TILE_ICON 40.0f
+#define TILE_PAD 5.0f
+#define PIP_H 5.0f
+#define PIP_GAP 2.0f
+#define PIP_MAX_W 9.0f
+#define CORNER_ICON 22.0f
+#define CORNER_INSET 2.0f
 #define WHEEL_MARGIN 8.0f
+/* Lines of the wheel's middle: title, then the pick's name and detail. */
+#define WHEEL_LINE 22.0f
+#define WHEEL_TEXT_H 18.0f
+#define WHEEL_TEXT_PAD 6.0f
+/* The disc under the plates reaches this far past them, drawn as scanlines this tall. */
+#define WHEEL_DISC_PAD 14.0f
+#define DISC_SCANLINE 4.0f
 /* The game's outlined header font, as on its own buttons. */
 #define WHEEL_FONT 62
 #define WHEEL_BEVEL 2
 /* Text baseline sits this far below a plate's top edge. */
 #define WHEEL_TEXT_DY 5.0f
-#define WHEEL_BACKDROP_PAD 14.0f
-/* The ellipse under the plates is scanlines this tall, with its rim dotted this far apart. */
-#define ELLIPSE_SCANLINE 4.0f
-#define ELLIPSE_RIM_STEPS 96
-#define ELLIPSE_RIM_DOT 3.0f
-#define WHEEL_DIM_ALPHA 0.45f
-#define WHEEL_RAY_DOT 4.0f
-#define WHEEL_RAY_STEP 9.0f
-#define WHEEL_RAY_START 24.0f
 #define LINE_LEN 256
 #define CMD_BUF 512
 
@@ -368,6 +384,13 @@ static struct {
     void (*set_color)(GL_Color);
     void (*blit)(void *, float, float, float, float, float, GL_Color, bool);
     void (*blit_partial)(void *, float, float, float, float, float, float, float, float, float, GL_Color, bool);
+    void (*push_matrix)(void);
+    void (*pop_matrix)(void);
+    void (*translate)(float, float, float);
+    void (*scale)(float, float, float);
+    void *(*image_id)(void *, const void *);
+    void *resources;
+    void (*crew_icon)(void *, bool);
     int (*selected_room)(void *, int, int, bool);
     void (*string_ctor)(void *, const char *, const void *);
     void (*string_dtor)(void *);
@@ -376,6 +399,7 @@ static struct {
     int (*measure_width)(int, const void *);
     void *button_move;
     int (*system_room)(void *, int);
+    void *(*system_in_room)(void *, int);
     void (*set_tab)(void *, unsigned);
     void (*clear_crew)(void *);
     void (*deselect_crew)(void *, void *);
@@ -418,6 +442,13 @@ static const struct {
     {"_ZN8CSurface11GL_SetColorE8GL_Color", (void **)&game.set_color},
     {"_ZN8CSurface12GL_BlitImageEP10GL_Texturefffff8GL_Colorb", (void **)&game.blit},
     {"_ZN8CSurface19GL_BlitImagePartialEP10GL_Texturefffffffff8GL_Colorb", (void **)&game.blit_partial},
+    {"_ZN8CSurface13GL_PushMatrixEv", (void **)&game.push_matrix},
+    {"_ZN8CSurface12GL_PopMatrixEv", (void **)&game.pop_matrix},
+    {"_ZN8CSurface12GL_TranslateEfff", (void **)&game.translate},
+    {"_ZN8CSurface8GL_ScaleEfff", (void **)&game.scale},
+    {"_ZN15ResourceControl10GetImageIdERKSs", (void **)&game.image_id},
+    {"_ZN15ResourceControl15GlobalResourcesE", (void **)&game.resources},
+    {"_ZN13CrewAnimation10RenderIconEb", (void **)&game.crew_icon},
     {"_ZNSsC1EPKcRKSaIcE", (void **)&game.string_ctor},
     {"_ZNSsD1Ev", (void **)&game.string_dtor},
     {"_ZN8freetype16easy_printCenterEiffRKSs", (void **)&game.print_center},
@@ -425,6 +456,7 @@ static const struct {
     {"_ZN8freetype17easy_measureWidthEiRKSs", (void **)&game.measure_width},
     {"_ZN13GenericButton9MouseMoveEiib", &game.button_move},
     {"_ZN11ShipManager13GetSystemRoomEi", (void **)&game.system_room},
+    {"_ZN11ShipManager15GetSystemInRoomEi", (void **)&game.system_in_room},
     {"_ZN12TabbedWindow6SetTabEj", (void **)&game.set_tab},
     {"_ZN11CrewControl17ClearSelectedCrewEv", (void **)&game.clear_crew},
     {"_ZN11CrewControl12DeselectCrewEP10CrewMember", (void **)&game.deselect_crew},
@@ -518,10 +550,24 @@ struct plate {
     bool bound;
     bool available;
     bool powered;
-    /* Icon texture, with the region in texture pixels when partial. */
+    /* Icon texture, with the region in texture pixels when partial; a layout may name
+     * the path and region. */
+    char icon_path[ICON_PATH_LEN];
     void *icon;
     bool icon_partial;
     float icon_x, icon_y, icon_w, icon_h;
+    /* Dark art that needs a light box under it, as in the game's weapon boxes. */
+    bool icon_well;
+    /* How far the art sits right of the texture's centre, in texture pixels. */
+    float icon_shift;
+    /* A crew member's animation, drawn as the game's portrait in place of an icon. */
+    void *portrait;
+    /* A small icon in the plate's corner, over its main icon. */
+    void *corner_icon;
+    /* A slot with nothing in it, drawn as a faint frame. */
+    bool empty;
+    /* Power pips: how many, and how many lit. */
+    int pips, pips_on;
     struct binding bind;
     char label[LABEL_LEN];
     char badge[LABEL_LEN];
@@ -556,23 +602,27 @@ static const char default_layout[] =
     "r2 = mouse_left\n"
     "right_analog = mouse_movement\n";
 
-static const GL_Color overlay_color = {0.3f, 0.9f, 1.0f, 0.9f};
-static const GL_Color focus_color = {1.0f, 0.85f, 0.2f, 0.9f};
 /* The game's palette: dark teal panels, pale green frames, yellow for the selection,
  * green for powered items. */
 static const GL_Color plate_color = {0.05f, 0.11f, 0.1f, 0.9f};
-static const GL_Color plate_powered_color = {0.12f, 0.36f, 0.2f, 0.92f};
 static const GL_Color plate_selected_color = {0.42f, 0.38f, 0.1f, 0.95f};
 static const GL_Color plate_edge_color = {0.63f, 0.9f, 0.76f, 0.95f};
 static const GL_Color plate_selected_edge_color = {0.96f, 0.84f, 0.28f, 1.0f};
 static const GL_Color plate_bevel_color = {0.0f, 0.05f, 0.05f, 0.9f};
-static const GL_Color plate_disabled_color = {0.08f, 0.09f, 0.09f, 0.8f};
+/* Wheel plates: the pick solid, the rest see-through. */
+static const GL_Color middle_color = {0.0f, 0.03f, 0.03f, 0.6f};
+static const GL_Color disc_color = {0.02f, 0.06f, 0.06f, 0.5f};
+static const GL_Color plate_disabled_color = {0.05f, 0.07f, 0.07f, 0.6f};
+static const GL_Color plate_empty_edge_color = {0.5f, 0.56f, 0.54f, 0.7f};
+static const GL_Color corner_color = {0.0f, 0.03f, 0.03f, 0.8f};
+static const GL_Color well_color = {0.7f, 0.76f, 0.72f, 1.0f};
+static const GL_Color well_powered_color = {0.55f, 0.88f, 0.55f, 1.0f};
+static const GL_Color plate_idle_color = {0.05f, 0.11f, 0.1f, 0.75f};
+static const GL_Color plate_powered_color = {0.12f, 0.36f, 0.2f, 0.8f};
 static const GL_Color plate_disabled_edge_color = {0.3f, 0.34f, 0.33f, 0.8f};
 static const GL_Color text_color = {1.0f, 1.0f, 1.0f, 1.0f};
 static const GL_Color text_disabled_color = {0.42f, 0.46f, 0.45f, 1.0f};
-static const GL_Color dim_color = {0.0f, 0.0f, 0.0f, WHEEL_DIM_ALPHA};
-static const GL_Color backdrop_color = {0.03f, 0.07f, 0.07f, 0.75f};
-static const GL_Color ray_color = {0.96f, 0.84f, 0.28f, 0.8f};
+static const GL_Color pip_on_color = {0.47f, 0.95f, 0.47f, 1.0f};
 
 /* mov 0x10(%rdi),%eax; movzbl 0x49(%rdi),%r8d */
 static const unsigned char button_move_prologue[] = {0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47, 0x49};
@@ -641,7 +691,8 @@ static bool fast_forward;
 /* dpad_mode toggled: the D-pad and the sticks move the cursor instead of walking zones. */
 static bool dpad_mouse;
 static double pause_ff_since;
-static bool prev_aiming, prev_crew;
+static bool prev_aiming;
+static const void *prev_crew;
 static double flick_last[2];
 static bool flick_armed[2] = {true, true};
 /* Presses waiting to turn into a tap or a hold. */
@@ -1062,8 +1113,21 @@ static void parse_binding(struct layout_set *set, struct state *s, char *key, ch
     s->bound[in] = parse_value(set, key, value, &s->bind[in], &s->taps[in]);
 }
 
-/* Parses one line of a wheel section: "kind = NAME" or a direction with a binding and a
- * quoted label. */
+/* Parses a plate icon, "PATH" or "PATH@X,Y,W,H" with a region in texture pixels. */
+static void parse_icon(struct plate *p, char *spec)
+{
+    char *at = strchr(spec, '@');
+    if (at) {
+        *at = '\0';
+        p->icon_partial = sscanf(at + 1, "%f,%f,%f,%f", &p->icon_x, &p->icon_y, &p->icon_w, &p->icon_h) == 4;
+        if (!p->icon_partial)
+            logmsg("layout: bad icon region %s", at + 1);
+    }
+    strncpy(p->icon_path, spec, ICON_PATH_LEN - 1);
+}
+
+/* Parses one line of a wheel section: "kind = NAME" or a direction with a binding, a
+ * quoted label and an optional icon. */
 static void parse_wheel_line(struct layout_set *set, struct wheel *w, char *key, char *value)
 {
     if (strcmp(key, "kind") == 0) {
@@ -1083,8 +1147,12 @@ static void parse_wheel_line(struct layout_set *set, struct wheel *w, char *key,
     char *quote = strchr(value, '"');
     if (quote) {
         char *end = strchr(quote + 1, '"');
-        if (end)
+        if (end) {
             *end = '\0';
+            char *icon = trim(end + 1);
+            if (*icon)
+                parse_icon(p, icon);
+        }
         strncpy(p->label, quote + 1, LABEL_LEN - 1);
         *quote = '\0';
     }
@@ -1709,6 +1777,84 @@ static void focus_move(float dx, float dy)
     buzz();
 }
 
+/* Screens that open on their first item. */
+enum first_screen { FS_NONE, FS_MAIN_MENU, FS_GAME_MENU, FS_CHOICE };
+/* Frames a newly opened screen gets to show its items before the focus gives up; a
+ * dialog's choices wait for the jump animation. */
+#define FIRST_FOCUS_FRAMES 300
+
+/* The menu or dialog on screen, if it is one that opens on its first item. */
+static enum first_screen first_screen(void)
+{
+    const char *gui = gui_ptr();
+    if (gui && *((const unsigned char *)gui + GUI_CHOICE_BOX + FOCUS_OPEN))
+        return FS_CHOICE;
+    if (gui && window_open(gui + GUI_MENU_BOX))
+        return FS_GAME_MENU;
+    if (*((const unsigned char *)app + CAPP_MAIN_MENU_OPEN))
+        return FS_MAIN_MENU;
+    return FS_NONE;
+}
+
+/* The first item of a screen among the zones: a dialog's first choice, else the topmost
+ * button, leftmost on a tie; -1 while there is none. */
+static int first_item(enum first_screen screen)
+{
+    int best = -1;
+    for (int i = 0; i < ntargets; i++) {
+        const struct target *t = &targets[i];
+        if (screen == FS_CHOICE) {
+            if (t->kind == T_CHOICE && t->id == 0)
+                return i;
+        } else if (t->kind == T_BUTTON && (best < 0 || t->rect.y < targets[best].rect.y
+                       || (t->rect.y == targets[best].rect.y && t->rect.x < targets[best].rect.x))) {
+            best = i;
+        }
+    }
+    return best;
+}
+
+/* Puts the cursor on the first item of a menu or dialog as it opens, unless the cursor
+ * moves first. A dialog that follows another counts as new when its text changes or its
+ * open timer restarts. */
+static void focus_first_on_open(void)
+{
+    static enum first_screen prev;
+    static const void *prev_text;
+    static float prev_open_time;
+    static int waiting;
+    static float open_x, open_y;
+    enum first_screen screen = first_screen();
+    bool opened = screen != prev;
+    if (screen == FS_CHOICE) {
+        const char *box = (const char *)gui_ptr() + GUI_CHOICE_BOX;
+        const void *text = deref(box, CHOICE_TEXT);
+        float open_time;
+        memcpy(&open_time, box + CHOICE_OPEN_TIME, sizeof open_time);
+        opened |= text != prev_text || open_time < prev_open_time;
+        prev_text = text;
+        prev_open_time = open_time;
+    }
+    prev = screen;
+    if (opened) {
+        waiting = screen != FS_NONE ? FIRST_FOCUS_FRAMES : 0;
+        open_x = cursor.x;
+        open_y = cursor.y;
+    }
+    if (waiting == 0 || cursor.x != open_x || cursor.y != open_y) {
+        waiting = 0;
+        return;
+    }
+    waiting--;
+    int first = first_item(screen);
+    if (first < 0)
+        return;
+    cursor.x = targets[first].rect.x + targets[first].rect.w / 2.0f;
+    cursor.y = targets[first].rect.y + targets[first].rect.h / 2.0f;
+    send_cursor();
+    waiting = 0;
+}
+
 /* ---- layout engine ---- */
 
 static const struct state *state_at(int level)
@@ -1768,17 +1914,22 @@ static void draw_text_center(int font, float x, float y, const char *text)
     game.string_dtor(&str);
 }
 
-/* Plate centre for a wheel slot, around a centre kept inside the screen. */
+/* The point the plates circle, kept inside the screen. */
+static void wheel_origin(float *ox, float *oy)
+{
+    float reach = WHEEL_RADIUS + WHEEL_TILE / 2 + WHEEL_MARGIN;
+    *ox = clampf(cursor.x, reach, GAME_W - reach);
+    *oy = clampf(cursor.y, reach, GAME_H - reach);
+}
+
+/* Plate centre for a wheel slot. */
 static void plate_center(int slot, float *cx, float *cy)
 {
-    float reach_x = WHEEL_RADIUS_X + WHEEL_PLATE_W / 2 + WHEEL_MARGIN;
-    float reach_y = WHEEL_RADIUS_Y + WHEEL_PLATE_H / 2 + WHEEL_MARGIN;
-    float ox = clampf(cursor.x, reach_x, GAME_W - reach_x);
-    float oy = clampf(cursor.y, reach_y, GAME_H - reach_y);
+    float ox, oy;
+    wheel_origin(&ox, &oy);
     float angle = (float)slot * (float)M_PI / 4.0f;
-    bool diagonal = slot % 2 == 1;
-    *cx = ox + sinf(angle) * WHEEL_RADIUS_X;
-    *cy = oy - (diagonal ? copysignf(WHEEL_DIAGONAL_Y, cosf(angle)) : cosf(angle)) * WHEEL_RADIUS_Y;
+    *cx = ox + sinf(angle) * WHEEL_RADIUS;
+    *cy = oy - cosf(angle) * WHEEL_RADIUS;
 }
 
 /* A panel in the game's style: a dark bevel around a framed fill. */
@@ -1789,28 +1940,115 @@ static void draw_panel(float x, float y, float w, float h, GL_Color fill, GL_Col
     game.draw_rect_outline((int)x, (int)y, (int)w, (int)h, edge, OVERLAY_LINE);
 }
 
-/* A filled ellipse out of scanlines, with a dotted rim: the game draws no curves. */
-static void draw_ellipse(float cx, float cy, float rx, float ry)
+/* A filled disc out of scanlines: the game draws no curves. */
+static void draw_disc(float cx, float cy, float r, GL_Color color)
 {
-    for (float y = -ry; y < ry; y += ELLIPSE_SCANLINE) {
-        float t = y / ry;
-        float half = rx * sqrtf(fmaxf(0.0f, 1.0f - t * t));
-        game.draw_rect(cx - half, cy + y, 2 * half, ELLIPSE_SCANLINE, backdrop_color);
-    }
-    for (int i = 0; i < ELLIPSE_RIM_STEPS; i++) {
-        float a = (float)i * 2.0f * (float)M_PI / ELLIPSE_RIM_STEPS;
-        game.draw_rect(cx + rx * cosf(a) - ELLIPSE_RIM_DOT / 2, cy + ry * sinf(a) - ELLIPSE_RIM_DOT / 2,
-                       ELLIPSE_RIM_DOT, ELLIPSE_RIM_DOT, plate_edge_color);
+    for (float y = -r; y < r; y += DISC_SCANLINE) {
+        float t = (y + DISC_SCANLINE / 2) / r;
+        float half = r * sqrtf(fmaxf(0.0f, 1.0f - t * t));
+        game.draw_rect(cx - half, cy + y, 2 * half, DISC_SCANLINE, color);
     }
 }
 
-/* The point the plates circle, kept inside the screen. */
-static void wheel_origin(float *ox, float *oy)
+/* Looks up a game image by its path under img/; returns its texture, or NULL when the
+ * game has none. Results are cached, misses included. */
+static void *game_image(const char *path)
 {
-    float reach_x = WHEEL_RADIUS_X + WHEEL_PLATE_W / 2 + WHEEL_MARGIN;
-    float reach_y = WHEEL_RADIUS_Y + WHEEL_PLATE_H / 2 + WHEEL_MARGIN;
-    *ox = clampf(cursor.x, reach_x, GAME_W - reach_x);
-    *oy = clampf(cursor.y, reach_y, GAME_H - reach_y);
+    static struct {
+        char path[ICON_PATH_LEN];
+        void *texture;
+    } cache[IMAGE_CACHE_SIZE];
+    static int ncache;
+    for (int i = 0; i < ncache; i++)
+        if (strcmp(cache[i].path, path) == 0)
+            return cache[i].texture;
+    void *str = NULL;
+    char alloc = 0;
+    game.string_ctor(&str, path, &alloc);
+    void *texture = game.image_id(game.resources, &str);
+    game.string_dtor(&str);
+    if (!texture)
+        logmsg("image missing: %s", path);
+    if (ncache < IMAGE_CACHE_SIZE) {
+        strncpy(cache[ncache].path, path, ICON_PATH_LEN - 1);
+        cache[ncache++].texture = texture;
+    }
+    return texture;
+}
+
+/* Draws a plate's icon or portrait centred at cx,cy. */
+static void draw_plate_icon(const struct plate *pl, float cx, float cy, GL_Color tint)
+{
+    if (pl->portrait) {
+        game.push_matrix();
+        game.translate(cx, cy, 0.0f);
+        game.scale(CREW_ICON_SCALE, CREW_ICON_SCALE, 1.0f);
+        game.crew_icon(pl->portrait, true);
+        game.pop_matrix();
+        return;
+    }
+    float tw = (float)read_int(pl->icon, TEXTURE_W), th = (float)read_int(pl->icon, TEXTURE_H);
+    float sw = pl->icon_partial ? pl->icon_w : tw, sh = pl->icon_partial ? pl->icon_h : th;
+    if (tw <= 0 || th <= 0 || sw <= 0 || sh <= 0)
+        return;
+    float k = TILE_ICON / fmaxf(sw, sh);
+    float w = sw * k, h = sh * k, x = cx - w / 2 - pl->icon_shift * k, y = cy - h / 2;
+    if (pl->icon_partial)
+        /* The region goes in as fractions of the texture. */
+        game.blit_partial(pl->icon, x, y, w, h, pl->icon_x / tw, (pl->icon_x + pl->icon_w) / tw,
+                          pl->icon_y / th, (pl->icon_y + pl->icon_h) / th, 1.0f, tint, false);
+    else
+        game.blit(pl->icon, x, y, w, h, 0.0f, tint, false);
+}
+
+/* Draws a row of power pips centred at cx with its top at y. */
+static void draw_pips(int n, int lit, float cx, float y, bool available)
+{
+    float pw = fminf(PIP_MAX_W, (WHEEL_TILE - 2 * TILE_PAD - (float)(n - 1) * PIP_GAP) / (float)n);
+    float x = cx - ((float)n * pw + (float)(n - 1) * PIP_GAP) / 2;
+    for (int i = 0; i < n; i++, x += pw + PIP_GAP) {
+        if (i < lit)
+            game.draw_rect(x, y, pw, PIP_H, available ? pip_on_color : text_disabled_color);
+        else
+            game.draw_rect_outline((int)x, (int)y, (int)pw, (int)PIP_H, available ? plate_edge_color
+                                   : plate_disabled_edge_color, OVERLAY_LINE);
+    }
+}
+
+static void draw_plate(const struct plate *pl, float cx, float cy, bool selected)
+{
+    float x = cx - WHEEL_TILE / 2, y = cy - WHEEL_TILE / 2;
+    if (pl->empty) {
+        game.draw_rect_outline((int)x, (int)y, (int)WHEEL_TILE, (int)WHEEL_TILE, plate_empty_edge_color, OVERLAY_LINE);
+        return;
+    }
+    if (!pl->available)
+        draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, plate_disabled_color, plate_disabled_edge_color);
+    else if (selected)
+        draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, plate_selected_color, plate_selected_edge_color);
+    else
+        draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, pl->powered ? plate_powered_color : plate_idle_color,
+                   plate_edge_color);
+    /* With pips the icon box sits at the top, without it is centred. */
+    float icon_cy = pl->pips > 0 ? y + TILE_PAD + TILE_ICON / 2 : cy;
+    GL_Color tint = pl->available ? text_color : text_disabled_color;
+    if (pl->icon_well)
+        game.draw_rect(cx - TILE_ICON / 2, icon_cy - TILE_ICON / 2, TILE_ICON, TILE_ICON,
+                       pl->powered ? well_powered_color : well_color);
+    if (pl->icon || pl->portrait)
+        draw_plate_icon(pl, cx, icon_cy, tint);
+    else if (pl->available) {
+        game.set_color(tint);
+        draw_text_center(plate_font, cx, icon_cy - WHEEL_TEXT_H / 2, pl->label);
+        game.set_color(text_color);
+    }
+    if (pl->corner_icon) {
+        float ix = x + WHEEL_TILE - CORNER_ICON - CORNER_INSET, iy = y + WHEEL_TILE - CORNER_ICON - CORNER_INSET;
+        game.draw_rect(ix, iy, CORNER_ICON, CORNER_ICON, corner_color);
+        game.blit(pl->corner_icon, ix, iy, CORNER_ICON, CORNER_ICON, 0.0f, text_color, false);
+    }
+    if (pl->pips > 0)
+        draw_pips(pl->pips, pl->pips_on, cx, y + WHEEL_TILE - TILE_PAD - PIP_H, pl->available);
 }
 
 static void draw_wheel(void)
@@ -1818,57 +2056,38 @@ static void draw_wheel(void)
     const struct wheel *w = &wheels[wheel_open];
     float ox, oy;
     wheel_origin(&ox, &oy);
-    /* Dim the game, then an ellipse under the plates, then the ray to the pick. */
-    game.draw_rect(0, 0, GAME_W, GAME_H, dim_color);
-    draw_ellipse(ox, oy, WHEEL_RADIUS_X + WHEEL_PLATE_W / 2 + WHEEL_BACKDROP_PAD,
-                 WHEEL_RADIUS_Y + WHEEL_PLATE_H / 2 + WHEEL_BACKDROP_PAD);
-    if (wheel_sel >= 0) {
-        float tx, ty;
-        plate_center(wheel_sel, &tx, &ty);
-        float dx = tx - ox, dy = ty - oy, len = hypotf(dx, dy);
-        for (float d = WHEEL_RAY_START; d < len - WHEEL_PLATE_H; d += WHEEL_RAY_STEP)
-            game.draw_rect(ox + dx / len * d - WHEEL_RAY_DOT / 2, oy + dy / len * d - WHEEL_RAY_DOT / 2,
-                           WHEEL_RAY_DOT, WHEEL_RAY_DOT, ray_color);
-    }
+    draw_disc(ox, oy, WHEEL_RADIUS + WHEEL_TILE / 2 + WHEEL_DISC_PAD, disc_color);
+    /* The middle: the wheel's title alone, or above the pick's name and detail. */
     char title[NAME_LEN];
     snprintf(title, sizeof title, "%s", w->name);
     upper_ascii(title);
-    draw_text_center(plate_font, ox, oy - WHEEL_PLATE_H / 2 + WHEEL_TEXT_DY, title);
+    const struct plate *sel = wheel_sel >= 0 ? &w->plates[wheel_sel] : NULL;
+    int lines = !sel ? 1 : sel->badge[0] ? 3 : 2;
+    float text_h = (float)(lines - 1) * WHEEL_LINE + WHEEL_TEXT_H;
+    float top = oy - text_h / 2;
+    /* A shade under the text alone keeps it readable over the ship. */
+    float text_w = (float)text_width(plate_font, title);
+    if (sel)
+        text_w = fmaxf(fmaxf(text_w, (float)text_width(plate_font, sel->label)), (float)text_width(plate_font, sel->badge));
+    game.draw_rect(ox - text_w / 2 - WHEEL_TEXT_PAD, top - WHEEL_TEXT_PAD, text_w + 2 * WHEEL_TEXT_PAD,
+                   text_h + 2 * WHEEL_TEXT_PAD, middle_color);
+    game.set_color(plate_edge_color);
+    draw_text_center(plate_font, ox, top, title);
+    if (sel) {
+        game.set_color(text_color);
+        draw_text_center(plate_font, ox, top + WHEEL_LINE, sel->label);
+        if (sel->badge[0]) {
+            game.set_color(plate_selected_edge_color);
+            draw_text_center(plate_font, ox, top + 2 * WHEEL_LINE, sel->badge);
+        }
+    }
+    game.set_color(text_color);
     for (int i = 0; i < WHEEL_SLOTS; i++) {
-        const struct plate *pl = &w->plates[i];
-        if (!pl->bound)
-            continue;
+        /* A position the layout leaves free looks like an empty slot. */
+        static const struct plate free_slot = {.empty = true};
         float cx, cy;
         plate_center(i, &cx, &cy);
-        float x = cx - WHEEL_PLATE_W / 2, y = cy - WHEEL_PLATE_H / 2;
-        GL_Color fill = !pl->available ? plate_disabled_color : i == wheel_sel ? plate_selected_color
-                        : pl->powered ? plate_powered_color : plate_color;
-        GL_Color edge = !pl->available ? plate_disabled_edge_color
-                        : i == wheel_sel ? plate_selected_edge_color : plate_edge_color;
-        draw_panel(x, y, WHEEL_PLATE_W, WHEEL_PLATE_H, fill, edge);
-        float text_cx = cx;
-        if (pl->icon) {
-            float ih = WHEEL_PLATE_H - 2 * ICON_PAD;
-            float src_w = pl->icon_partial ? pl->icon_w : (float)read_int(pl->icon, TEXTURE_W);
-            float src_h = pl->icon_partial ? pl->icon_h : (float)read_int(pl->icon, TEXTURE_H);
-            float iw = fminf(src_h > 0 ? ih * src_w / src_h : ih, ICON_MAX_W);
-            GL_Color tint = pl->available ? text_color : text_disabled_color;
-            if (pl->icon_partial) {
-                /* The region goes in as fractions of the texture. */
-                float tw = (float)read_int(pl->icon, TEXTURE_W), th = (float)read_int(pl->icon, TEXTURE_H);
-                if (tw > 0 && th > 0)
-                    game.blit_partial(pl->icon, x + ICON_PAD, y + ICON_PAD, iw, ih, pl->icon_x / tw,
-                                      (pl->icon_x + pl->icon_w) / tw, pl->icon_y / th, (pl->icon_y + pl->icon_h) / th,
-                                      1.0f, tint, false);
-            } else
-                game.blit(pl->icon, x + ICON_PAD, y + ICON_PAD, iw, ih, 0.0f, tint, false);
-            text_cx += (iw + ICON_PAD) / 2;
-        }
-        char text[LABEL_LEN * 2];
-        snprintf(text, sizeof text, "%s%s%s", pl->label, pl->badge[0] ? " " : "", pl->badge);
-        game.set_color(pl->available ? text_color : text_disabled_color);
-        draw_text_center(plate_font, text_cx, y + WHEEL_TEXT_DY, text);
-        game.set_color(text_color);
+        draw_plate(w->plates[i].bound ? &w->plates[i] : &free_slot, cx, cy, i == wheel_sel);
     }
 }
 
@@ -1987,6 +2206,12 @@ static const char *system_name(int type)
     case SYS_MIND: return "Mind control";
     case SYS_HACKING: return "Hacking";
     case SYS_ARTILLERY: return "Artillery";
+    case SYS_WEAPONS: return "Weapons";
+    case SYS_DRONES: return "Drones";
+    case SYS_PILOT: return "Piloting";
+    case SYS_SENSORS: return "Sensors";
+    case SYS_DOORS: return "Doors";
+    case SYS_BATTERY: return "Battery";
     default: return "?";
     }
 }
@@ -2027,8 +2252,44 @@ static bool has_system(int type)
     return manager && game.system_room(manager, type) >= 0;
 }
 
+/* Sets a crew plate's corner icon and badge from the system in the member's room, or
+ * the badge alone when the member is aboard the other ship. */
+static void crew_location(struct plate *pl, const void *member)
+{
+    if (read_int(member, CREW_SHIP) != PLAYER_SHIP_ID) {
+        strncpy(pl->badge, "Enemy ship", LABEL_LEN - 1);
+        return;
+    }
+    void *complete = player_complete();
+    void *manager = complete ? deref(complete, COMPLETE_SHIP_MANAGER) : NULL;
+    const char *sys = manager ? game.system_in_room(manager, read_int(member, CREW_ROOM)) : NULL;
+    if (!sys)
+        return;
+    pl->corner_icon = deref(sys, SYSTEM_ICON);
+    strncpy(pl->badge, system_name(read_int(sys, SYSTEM_TYPE)), LABEL_LEN - 1);
+}
+
+/* Sets a weapon or drone plate's icon from its blueprint's icon name, and its pips. */
+static void armament_plate(struct plate *pl, const void *icon_name, const char *prefix, const char *fallback,
+                           float shift, int power)
+{
+    char path[ICON_PATH_LEN];
+    snprintf(path, sizeof path, "%s%s%s", prefix, game_string(icon_name), ICON_SUFFIX);
+    pl->icon = game_image(path);
+    pl->icon_well = true;
+    pl->icon_shift = shift;
+    if (!pl->icon) {
+        pl->icon = game_image(fallback);
+        pl->icon_well = false;
+        pl->icon_shift = 0;
+    }
+    pl->icon_partial = false;
+    pl->pips = power;
+    pl->pips_on = pl->powered ? power : 0;
+}
+
 /* Fills the open wheel's plates from the game: crew and systems wholesale, power and
- * action wheels only their availability and badges. */
+ * action wheels their availability, badges and icons. */
 static void refresh_wheel(void)
 {
     struct wheel *w = &wheels[wheel_open];
@@ -2045,14 +2306,17 @@ static void refresh_wheel(void)
             struct plate *pl = &w->plates[slot++];
             pl->bound = pl->available = true;
             pl->powered = crew_is_selected(member);
+            pl->portrait = deref(member, CREW_ANIM);
+            crew_location(pl, member);
             pl->bind = (struct binding){ACT_KEY, KEY_F1 + i, false, 0, NULL};
             display_text(member + CREW_BLUEPRINT + CREWBP_NAME, pl->label, LABEL_LEN);
         }
-        /* Empty slots stay on the wheel, greyed, so positions never shift. */
+        /* Empty slots keep their places, so positions never shift. */
         for (; slot < WHEEL_SLOTS; slot++) {
             struct plate *pl = &w->plates[slot];
             pl->bound = true;
             pl->available = false;
+            pl->empty = true;
             strncpy(pl->label, "Empty", LABEL_LEN - 1);
         }
         return;
@@ -2070,6 +2334,7 @@ static void refresh_wheel(void)
             struct plate *pl = &w->plates[slot];
             pl->bound = true;
             pl->available = false;
+            pl->empty = true;
             pl->powered = false;
             pl->icon = NULL;
             strncpy(pl->label, system_name(slot_types[slot][0]), LABEL_LEN - 1);
@@ -2081,11 +2346,14 @@ static void refresh_wheel(void)
                 if (type < 0 || (type != slot_types[slot][0] && type != slot_types[slot][1]))
                     continue;
                 pl->available = true;
+                pl->empty = false;
                 pl->powered = read_int(sys, SYSTEM_POWER) > 0;
                 pl->icon = deref(sys, SYSTEM_ICON);
                 pl->icon_partial = false;
+                pl->pips = read_int(sys, SYSTEM_POWER + 4);
+                pl->pips_on = read_int(sys, SYSTEM_POWER);
                 strncpy(pl->label, system_name(type), LABEL_LEN - 1);
-                snprintf(pl->badge, LABEL_LEN, "%d/%d", read_int(sys, SYSTEM_POWER), read_int(sys, SYSTEM_POWER + 4));
+                snprintf(pl->badge, LABEL_LEN, "%d/%d", pl->pips_on, pl->pips);
                 break;
             }
         }
@@ -2095,7 +2363,11 @@ static void refresh_wheel(void)
         struct plate *pl = &w->plates[i];
         pl->badge[0] = '\0';
         pl->powered = false;
-        pl->icon = NULL;
+        pl->pips = pl->pips_on = 0;
+        pl->empty = false;
+        pl->icon_well = false;
+        pl->icon_shift = 0;
+        pl->icon = pl->icon_path[0] ? game_image(pl->icon_path) : NULL;
         if (!pl->bound || pl->bind.kind != ACT_KEY)
             continue;
         int key = pl->bind.key;
@@ -2104,30 +2376,28 @@ static void refresh_wheel(void)
             const char *weapon = weapon_control() ? armament_item(weapon_control(), key - '1') : NULL;
             const char *bp = weapon ? deref(weapon, WEAPON_BLUEPRINT) : NULL;
             pl->available = weapon != NULL;
+            pl->empty = !weapon;
             if (bp)
                 display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
             else
                 strncpy(pl->label, "Empty", LABEL_LEN - 1);
             pl->powered = weapon && *(weapon + WEAPON_POWERED);
-            pl->icon = NULL;
-            if (weapon) {
-                const char *anim = weapon + WEAPON_VISUAL;
-                pl->icon = deref(anim, ANIM_STRIP);
-                pl->icon_partial = true;
-                pl->icon_x = (float)read_int(anim + ANIM_INFO, ANIMINFO_STRIP_START_X);
-                pl->icon_y = (float)read_int(anim + ANIM_INFO, ANIMINFO_STRIP_START_Y);
-                pl->icon_w = (float)read_int(anim + ANIM_INFO, ANIMINFO_FRAME_W);
-                pl->icon_h = (float)read_int(anim + ANIM_INFO, ANIMINFO_FRAME_H);
-            }
+            if (weapon)
+                armament_plate(pl, bp + WEAPONBP_ICON, WEAPON_ICON_PREFIX, WEAPON_ICON_FALLBACK, WEAPON_ICON_SHIFT,
+                               read_int(weapon, WEAPON_POWER));
         } else if (w->kind == WK_POWER && key >= '5' && key < '5' + DRONE_SLOTS) {
             const char *drone = drone_control() ? armament_item(drone_control(), key - '5') : NULL;
             const char *bp = drone ? deref(drone, DRONE_BLUEPRINT) : NULL;
             pl->available = drone != NULL;
+            pl->empty = !drone;
             if (bp)
                 display_text(bp + BLUEPRINT_SHORT_TITLE, pl->label, LABEL_LEN);
             else
                 strncpy(pl->label, "Empty", LABEL_LEN - 1);
             pl->powered = drone && *(drone + DRONE_POWERED);
+            if (drone)
+                armament_plate(pl, bp + DRONEBP_ICON, DRONE_ICON_PREFIX, DRONE_ICON_FALLBACK, 0.0f,
+                               read_int(drone, DRONE_POWER));
         } else if (w->kind == WK_POWER && key == 'v') {
             const char *control = weapon_control();
             pl->powered = control && *(control + WEAPONCTRL_AUTOFIRE);
@@ -2173,6 +2443,10 @@ static void wheel_show(int index, enum input by)
     wheel_sel = -1;
     wheel_opened_aiming = aiming();
     refresh_wheel();
+    /* Opens on the top plate, or the first one clockwise that can be picked. */
+    for (int i = 0; i < WHEEL_SLOTS && wheel_sel < 0; i++)
+        if (wheels[index].plates[i].bound && wheels[index].plates[i].available)
+            wheel_sel = i;
     if (cfg.autopause_wheel && !game_paused()) {
         tap_key(KEY_SPACE, false);
         wheel_paused = true;
@@ -2281,25 +2555,33 @@ static void center_swap(void)
     send_cursor();
 }
 
-/* Moves the cursor to the room of the first selected crew member. */
-static void cursor_to_selected_crew(void)
+/* The first crew member of the current selection, or NULL. */
+static const void *first_selected_crew(void)
 {
     const char *gui = gui_ptr();
     if (!gui)
-        return;
+        return NULL;
     const void *selected = gui + GUI_CREW_CONTROL + CREW_SELECTED;
     if (vector_count(selected, sizeof(void *)) == 0)
-        return;
-    const char *member = vector_at(selected, sizeof(void *), 0);
+        return NULL;
+    return vector_at(selected, sizeof(void *), 0);
+}
+
+/* Moves the cursor to the room of the first selected crew member. */
+static void cursor_to_selected_crew(void)
+{
+    const char *member = first_selected_crew();
     if (!member)
         return;
     int room = read_int(member, CREW_ROOM);
-    bool on_player = read_int(member, CREW_SHIP) == 0;
+    bool on_player = read_int(member, CREW_SHIP) == PLAYER_SHIP_ID;
     for (int i = 0; i < ntargets; i++)
         if (targets[i].id == room && targets[i].kind == (on_player ? T_ROOM : T_ENEMY_ROOM)) {
             cursor.x = targets[i].rect.x + targets[i].rect.w / 2.0f;
             cursor.y = targets[i].rect.y + targets[i].rect.h / 2.0f;
             send_cursor();
+            if (debug)
+                logmsg("cursor to crew room %d", room);
             return;
         }
 }
@@ -2470,6 +2752,9 @@ static void builtin(enum builtin id, bool down, double t)
             break;
         if (wheel_open >= 0)
             wheel_back();
+        else if (gui_ptr() && (window_open((char *)gui_ptr() + GUI_MENU_BOX)
+                               || window_open((char *)gui_ptr() + GUI_OPTIONS_BOX)))
+            tap_key(KEY_ESCAPE, false);
         else if (aiming()) {
             /* The right button cancels targeting. */
             click(ACT_RCLICK, true);
@@ -2603,15 +2888,36 @@ static void perform(const struct binding *b, enum input in, bool down, double t)
                : b->kind == ACT_WHEEL ? "wheel" : b->kind == ACT_STATE ? "state" : "click");
 }
 
-/* A press runs its binding at once, unless it carries a tap half: then it waits for the
- * threshold (hold) or the release (tap). */
+/* Whether a tap binding would do nothing in the current context. */
+static bool tap_idle(const struct binding *tap)
+{
+    if (tap->kind != ACT_BUILTIN)
+        return false;
+    switch ((enum builtin)tap->state) {
+    case BI_PREV_TAB:
+    case BI_NEXT_TAB:
+        return !open_tabbed();
+    case BI_REPEAT_ABILITY:
+        return !last_ability_key;
+    default:
+        return false;
+    }
+}
+
+/* A press runs its binding at once, unless it carries a tap half that would act: then it
+ * waits for the threshold (hold) or the release (tap). */
 static void press(enum input in, double t)
 {
     const struct binding *b = lookup(in);
     active[in].kind = ACT_NONE;
     if (!b)
         return;
-    if (b->tap) {
+    /* The open wheel's own button closes it, its tap half included. */
+    if (b->kind == ACT_WHEEL && b->state == wheel_open) {
+        wheel_close();
+        return;
+    }
+    if (b->tap && !tap_idle(b->tap)) {
         pending[in].pending = true;
         pending[in].since = t;
         return;
@@ -2868,7 +3174,8 @@ static void apply_pad(struct pad *p, double t, float dt)
     }
 
     /* Mode changes read from the game: the cursor starts where the payload wants it. */
-    bool now_aiming = aiming(), now_crew = crew_selected();
+    bool now_aiming = aiming();
+    const void *now_crew = first_selected_crew();
     if (now_aiming && !prev_aiming) {
         void *gui = gui_ptr();
         void *enemy = ship_of(enemy_complete());
@@ -2881,7 +3188,7 @@ static void apply_pad(struct pad *p, double t, float dt)
         if (cfg.autopause_aim && !game_paused())
             tap_key(KEY_SPACE, false);
     }
-    if (now_crew && !prev_crew)
+    if (now_crew && now_crew != prev_crew)
         cursor_to_selected_crew();
     prev_aiming = now_aiming;
     prev_crew = now_crew;
@@ -2980,6 +3287,15 @@ static void run_command(char *line)
             logmsg("button %d at %d,%d %dx%d gui+%ld map+%ld", i, buttons[i].x, buttons[i].y, buttons[i].w, buttons[i].h,
                    gui ? (long)((const char *)button_objects[i] - gui) : -1L,
                    map ? (long)((const char *)button_objects[i] - map) : -1L);
+    } else if (strncmp(line, "wheel ", 6) == 0) {
+        const char *name = trim(line + 6);
+        wheel_close();
+        for (int i = 0; i < nwheels; i++)
+            if (strcmp(wheels[i].name, name) == 0)
+                wheel_show(i, IN_HOME);
+    } else if (sscanf(line, "pick %d", &key) == 1) {
+        if (wheel_open >= 0 && key >= -1 && key < WHEEL_SLOTS)
+            wheel_sel = key;
     } else if (strncmp(line, "badge", 5) == 0) {
         char text[LABEL_LEN * 3];
         badge_text(text, sizeof text);
@@ -3029,6 +3345,7 @@ static void onloop_hook(void *self)
     run_queued_clicks();
     sync_cursor();
     build_targets();
+    focus_first_on_open();
     poll_commands();
     struct pad pad = {{false}, {{0, 0}, {0, 0}}, {0, 0}};
     int dev = active_pad();
@@ -3047,15 +3364,6 @@ static void onloop_hook(void *self)
 
 static void mouse_render_hook(void *self)
 {
-    if (cursor.synced && cfg.overlay) {
-        int under = target_under_cursor();
-        if (under >= 0) {
-            const Rect *r = &targets[under].rect;
-            game.draw_rect_outline(r->x, r->y, r->w, r->h, focus_color, OVERLAY_LINE);
-        }
-        game.draw_rect_outline(cursor.last_x - OVERLAY_HALF, cursor.last_y - OVERLAY_HALF,
-                               2 * OVERLAY_HALF, 2 * OVERLAY_HALF, overlay_color, OVERLAY_LINE);
-    }
     if (wheel_open >= 0)
         draw_wheel();
     if (cfg.help && cursor.synced)
@@ -3070,7 +3378,9 @@ static void mouse_render_hook(void *self)
             draw_text_center(WHEEL_FONT, x + w / 2, y + WHEEL_TEXT_DY, text);
         }
     }
-    mouse_render_orig(self);
+    /* The game's pointer would cover the wheel's middle. */
+    if (wheel_open < 0)
+        mouse_render_orig(self);
 }
 
 static void describe_binding(const struct binding *b, char *out, size_t len)
