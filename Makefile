@@ -13,8 +13,12 @@ $(OUT):
 test:
 	cargo test
 
+lint:
+	cargo fmt --check
+	cargo clippy --release -- -D warnings
+
 clean:
 	cargo clean
 	rm -f $(OUT)
 
-.PHONY: $(OUT) test clean
+.PHONY: $(OUT) test lint clean

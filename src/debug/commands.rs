@@ -48,8 +48,13 @@ fn mode_name(m: SlotMode) -> &'static str {
 impl Layer {
     fn dump_targets(&self) {
         let under = self.target_under_cursor().map_or(-1, |i| i as i64);
-        log!("dump: aiming={} targets={} cursor={},{} under={under}", state::aiming() as i32,
-             self.zones.targets.len(), self.cursor.last_x, self.cursor.last_y);
+        log!(
+            "dump: aiming={} targets={} cursor={},{} under={under}",
+            state::aiming() as i32,
+            self.zones.targets.len(),
+            self.cursor.last_x,
+            self.cursor.last_y
+        );
         let gui = state::gui();
         for t in &self.zones.targets {
             let r = t.rect;
@@ -115,7 +120,12 @@ impl Layer {
                     };
                     let (r1, r2) = (d.i32(DOOR_ROOM1), d.i32(DOOR_ROOM2));
                     if under.is_some_and(|u| u == r1 || u == r2) {
-                        log!("door {i} rooms {r1},{r2} at {},{} open={}", d.i32(DOOR_X), d.i32(DOOR_Y), d.flag(DOOR_OPEN) as i32);
+                        log!(
+                            "door {i} rooms {r1},{r2} at {},{} open={}",
+                            d.i32(DOOR_X),
+                            d.i32(DOOR_Y),
+                            d.flag(DOOR_OPEN) as i32
+                        );
                     }
                 }
             }

@@ -184,7 +184,9 @@ impl Layer {
                 let map = state::star_map()?;
                 let current = map.obj(STARMAP_CURRENT_LOC)?;
                 let locations: Obj = map.at(STARMAP_LOCATIONS);
-                targets.iter().position(|t| t.kind == TargetKind::Beacon && locations.vec_obj(t.id as usize) == Some(current))
+                targets
+                    .iter()
+                    .position(|t| t.kind == TargetKind::Beacon && locations.vec_obj(t.id as usize) == Some(current))
             }
             FirstScreen::Choice => targets.iter().position(|t| t.kind == TargetKind::Choice && t.id == 0),
             _ => targets

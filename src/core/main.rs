@@ -20,7 +20,8 @@ const HEARTBEAT_S: f64 = 10.0;
 const MAX_DT: f64 = 0.05;
 
 /// Used when no layout file is named.
-const DEFAULT_LAYOUT: &str = "[controls]\na = space\nback = esc\nstart = j\nl2 = mouse_right\nr2 = mouse_left\nright_analog = mouse_movement\n";
+const DEFAULT_LAYOUT: &str =
+    "[controls]\na = space\nback = esc\nstart = j\nl2 = mouse_right\nr2 = mouse_left\nright_analog = mouse_movement\n";
 
 /// push %rbp; push %rbx; mov %rdi,%rbx
 const ONLOOP_PROLOGUE: [u8; 5] = [0x55, 0x53, 0x48, 0x89, 0xfb];
@@ -85,7 +86,13 @@ extern "C" fn onloop_hook(app: Ptr) {
         let pad = dev.map(|d| l.read_pad(d)).unwrap_or_default();
         l.apply_pad(pad, t, dt);
         if l.debug && beat {
-            log!("{frames} frames, pad {}, cursor {},{}, depth {}", dev.unwrap_or(-1), l.cursor.last_x, l.cursor.last_y, l.bind.depth());
+            log!(
+                "{frames} frames, pad {}, cursor {},{}, depth {}",
+                dev.unwrap_or(-1),
+                l.cursor.last_x,
+                l.cursor.last_y,
+                l.bind.depth()
+            );
         }
     });
     // SAFETY: the original CApp::OnLoop, called with the CApp it was given.
@@ -146,12 +153,36 @@ pub extern "C" fn init() {
         log!("inactive");
         return;
     }
-    let overlay = install("MouseControl::OnRender", a.mouse_render, mouse_render_hook as *const () as usize, &MOUSE_RENDER_PROLOGUE, &MOUSE_RENDER_ORIG);
-    let shift = install("GetShiftState", a.get_shift, get_shift_hook as *const () as usize, &GET_SHIFT_PROLOGUE, &GET_SHIFT_ORIG);
-    let buttons = install("GenericButton::MouseMove", a.button_move, button_move_hook as *const () as usize, &BUTTON_MOVE_PROLOGUE, &BUTTON_MOVE_ORIG);
+    let overlay = install(
+        "MouseControl::OnRender",
+        a.mouse_render,
+        mouse_render_hook as *const () as usize,
+        &MOUSE_RENDER_PROLOGUE,
+        &MOUSE_RENDER_ORIG,
+    );
+    let shift = install(
+        "GetShiftState",
+        a.get_shift,
+        get_shift_hook as *const () as usize,
+        &GET_SHIFT_PROLOGUE,
+        &GET_SHIFT_ORIG,
+    );
+    let buttons = install(
+        "GenericButton::MouseMove",
+        a.button_move,
+        button_move_hook as *const () as usize,
+        &BUTTON_MOVE_PROLOGUE,
+        &BUTTON_MOVE_ORIG,
+    );
     let step_cap = redirect_step_cap(a.fps_loop);
     let on = |b: bool| if b { "on" } else { "off" };
-    log!("active: overlay {}, shift {}, buttons {}, step cap {}", on(overlay), on(shift), on(buttons), on(step_cap.is_some()));
+    log!(
+        "active: overlay {}, shift {}, buttons {}, step cap {}",
+        on(overlay),
+        on(shift),
+        on(buttons),
+        on(step_cap.is_some())
+    );
     with_layer(|l| {
         l.debug = debug;
         l.actions.step_cap = step_cap;

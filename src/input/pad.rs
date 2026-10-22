@@ -1,8 +1,8 @@
 //! Pad reading through the SIL joystick API: face labels, sticks and triggers as digital
 //! inputs, flicks, and the per-frame dispatch.
 
-use crate::config::settings::FLICK_OFF;
 use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLOT_COUNT};
+use crate::config::settings::FLICK_OFF;
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::actions::{mouse_move, request_exit, tap_key};
@@ -79,7 +79,12 @@ fn stick_directions(x: f32, y: f32, was: &[bool]) -> [bool; 4] {
         return out;
     }
     let horizontal = x.abs() >= y.abs();
-    [horizontal && x <= -STICK_KEY_ON, !horizontal && y <= -STICK_KEY_ON, horizontal && x >= STICK_KEY_ON, !horizontal && y >= STICK_KEY_ON]
+    [
+        horizontal && x <= -STICK_KEY_ON,
+        !horizontal && y <= -STICK_KEY_ON,
+        horizontal && x >= STICK_KEY_ON,
+        !horizontal && y >= STICK_KEY_ON,
+    ]
 }
 
 /// The first connected pad.
@@ -110,7 +115,13 @@ impl PadState {
             });
         }
         let show = |f: Option<i32>| f.unwrap_or(-1);
-        log!("sdl map: a={} b={} x={} y={}", show(self.sdl_face[0]), show(self.sdl_face[1]), show(self.sdl_face[2]), show(self.sdl_face[3]));
+        log!(
+            "sdl map: a={} b={} x={} y={}",
+            show(self.sdl_face[0]),
+            show(self.sdl_face[1]),
+            show(self.sdl_face[2]),
+            show(self.sdl_face[3])
+        );
     }
 }
 
@@ -274,7 +285,8 @@ impl Layer {
                     SlotMode::Mouse => self.move_cursor(x, y, dt),
                     SlotMode::Flick => {
                         let mag = x.hypot(y);
-                        let repeat = self.cfg.flick_repeat > 0.0 && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
+                        let repeat =
+                            self.cfg.flick_repeat > 0.0 && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
                         if mag < FLICK_OFF {
                             self.pad.flick_armed[k] = true;
                         } else if mag >= self.cfg.flick_on && (self.pad.flick_armed[k] || repeat) {
@@ -292,7 +304,9 @@ impl Layer {
         }
 
         // pause_ff held past the threshold: unpause and run fast.
-        if self.bind.pause_ff_since.is_some_and(|s| t - s >= self.cfg.pause_ff_hold as f64) && !self.actions.fast_forward {
+        if self.bind.pause_ff_since.is_some_and(|s| t - s >= self.cfg.pause_ff_hold as f64)
+            && !self.actions.fast_forward
+        {
             if state::game_paused() {
                 tap_key(KEY_SPACE, false);
             }

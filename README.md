@@ -24,6 +24,7 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
     make                 # ftlpad.so, through cargo build --release
     make OUT=path.so
     make test            # unit tests: layout parsing, sticks, wheel geometry
+    make lint            # rustfmt check, clippy with warnings as errors
 
 Needs Rust for x86_64-unknown-linux-gnu; the only dependency is the libc crate. The
 library needs glibc 2.35 or later. `make` fails when it needs any shared library besides

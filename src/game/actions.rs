@@ -135,7 +135,13 @@ impl Layer {
         let (cx, cy) = (self.cursor.x, self.cursor.y);
         let dist = |(x, y): (f32, f32)| (x - cx).hypot(y - cy);
         let to = match (p, e) {
-            (Some(p), Some(e)) => if dist(p) < dist(e) { e } else { p },
+            (Some(p), Some(e)) => {
+                if dist(p) < dist(e) {
+                    e
+                } else {
+                    p
+                }
+            }
             (Some(p), None) => p,
             (None, Some(e)) => e,
             (None, None) => return,

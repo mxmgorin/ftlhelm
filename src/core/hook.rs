@@ -180,8 +180,14 @@ unsafe fn put_far_jmp(at: usize, to: usize) {
 fn map_trampolines(at: usize, flags: libc::c_int) -> Option<usize> {
     // SAFETY: an anonymous private mapping touches nothing else.
     let page = unsafe {
-        libc::mmap(at as *mut libc::c_void, TRAMPOLINE_PAGE, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
-                   libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | flags, -1, 0)
+        libc::mmap(
+            at as *mut libc::c_void,
+            TRAMPOLINE_PAGE,
+            libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
+            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | flags,
+            -1,
+            0,
+        )
     };
     (page != libc::MAP_FAILED).then_some(page as usize)
 }
@@ -272,8 +278,10 @@ pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     let insn = STEP_CAP_LOAD.len() + std::mem::size_of::<i32>();
     // SAFETY: the scan stays within the start of CFPS::OnLoop's code.
     let code = unsafe { std::slice::from_raw_parts(fps_loop as *const u8, STEP_CAP_SCAN) };
-    let mut sites = (0..=STEP_CAP_SCAN - insn - STEP_CAP_NEXT.len())
-        .filter(|&i| code[i..i + STEP_CAP_LOAD.len()] == STEP_CAP_LOAD && code[i + insn..i + insn + STEP_CAP_NEXT.len()] == STEP_CAP_NEXT);
+    let mut sites = (0..=STEP_CAP_SCAN - insn - STEP_CAP_NEXT.len()).filter(|&i| {
+        code[i..i + STEP_CAP_LOAD.len()] == STEP_CAP_LOAD
+            && code[i + insn..i + insn + STEP_CAP_NEXT.len()] == STEP_CAP_NEXT
+    });
     let Some(site) = sites.next() else {
         log!("step cap: load not found");
         return None;

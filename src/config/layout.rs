@@ -16,6 +16,7 @@ pub const LABEL_CHARS: usize = 23;
 
 /// Digital inputs: SIL's named buttons in enum order, then the D-pad and both sticks read
 /// as four directions each.
+#[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Input {
     Home, Start, Select, FaceUp, FaceLeft, FaceRight, FaceDown,
@@ -30,6 +31,7 @@ pub const INPUT_COUNT: usize = 25;
 pub const SIL_BUTTONS: usize = Input::R3 as usize + 1;
 
 impl Input {
+    #[rustfmt::skip]
     pub const ALL: [Input; INPUT_COUNT] = [
         Input::Home, Input::Start, Input::Select, Input::FaceUp, Input::FaceLeft, Input::FaceRight,
         Input::FaceDown, Input::L1, Input::R1, Input::L2, Input::R2, Input::L3, Input::R3,
@@ -39,6 +41,7 @@ impl Input {
     ];
 
     /// Input names as the ini spells them; face buttons by label, A being FaceDown.
+    #[rustfmt::skip]
     pub const INI_NAMES: [&'static str; INPUT_COUNT] = [
         "guide", "start", "back", "y", "x", "b", "a", "l1", "r1", "l2", "r2", "l3", "r3",
         "left", "up", "right", "down",
@@ -84,6 +87,7 @@ pub enum SlotMode {
     Flick,
 }
 
+#[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
     PauseFf, Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
@@ -91,12 +95,14 @@ pub enum Builtin {
 }
 
 impl Builtin {
+    #[rustfmt::skip]
     pub const ALL: [Builtin; 15] = [
         Builtin::PauseFf, Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
         Builtin::DpadMode,
     ];
+    #[rustfmt::skip]
     const NAMES: [&'static str; 15] = [
         "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
@@ -157,6 +163,7 @@ pub enum WheelKind {
 }
 
 impl WheelKind {
+    #[rustfmt::skip]
     const NAMES: [(&'static str, WheelKind); 5] = [
         ("action", WheelKind::Action), ("power", WheelKind::Power), ("crew", WheelKind::Crew),
         ("systems", WheelKind::Systems), ("settings", WheelKind::Settings),
@@ -196,6 +203,7 @@ pub struct Layout {
     pub wheels: Vec<WheelDef>,
 }
 
+#[rustfmt::skip]
 const KEY_NAMES: &[(&str, i32)] = &[
     ("space", KEY_SPACE), ("enter", KEY_ENTER), ("return", KEY_ENTER), ("esc", KEY_ESCAPE),
     ("escape", KEY_ESCAPE), ("tab", 9), ("backspace", 8), ("delete", 127), ("up", 273),
@@ -267,7 +275,8 @@ impl Layout {
         } else if tok == "mouse_right" {
             Action::RClick
         } else if tok == "hold_state" || tok == "wheel" {
-            let idx = toks.next().and_then(|name| if tok == "wheel" { self.find_wheel(name) } else { self.find_state(name) });
+            let idx =
+                toks.next().and_then(|name| if tok == "wheel" { self.find_wheel(name) } else { self.find_state(name) });
             let Some(idx) = idx else {
                 log!("layout: bad {tok} for {key}");
                 return None;
@@ -482,7 +491,8 @@ mod tests {
 
     #[test]
     fn plate_with_label_and_icon_region() {
-        let l = Layout::parse("[wheel:ship]\nup = z \"Open doors\" systemUI/button_door_bottom_off.png@10,33,20,20 # c\n");
+        let l =
+            Layout::parse("[wheel:ship]\nup = z \"Open doors\" systemUI/button_door_bottom_off.png@10,33,20,20 # c\n");
         let p = l.wheels[0].plates[0].as_ref().expect("up is bound");
         assert_eq!(p.action, Action::Key { code: 'z' as i32, shift: false });
         assert_eq!(p.label, "Open doors");
@@ -493,16 +503,25 @@ mod tests {
 
     #[test]
     fn keys_shift_and_slots() {
-        let l = Layout::parse("[controls]\na = f3 add_shift\nleft_analog = mouse_movement\nright_analog = flick\nb = /\n");
+        let l =
+            Layout::parse("[controls]\na = f3 add_shift\nleft_analog = mouse_movement\nright_analog = flick\nb = /\n");
         let s = &l.states[0];
-        assert_eq!(s.bind[Input::FaceDown as usize].map(|b| b.hold), Some(Action::Key { code: KEY_F1 + 2, shift: true }));
-        assert_eq!(s.bind[Input::FaceRight as usize].map(|b| b.hold), Some(Action::Key { code: '/' as i32, shift: false }));
+        assert_eq!(
+            s.bind[Input::FaceDown as usize].map(|b| b.hold),
+            Some(Action::Key { code: KEY_F1 + 2, shift: true })
+        );
+        assert_eq!(
+            s.bind[Input::FaceRight as usize].map(|b| b.hold),
+            Some(Action::Key { code: '/' as i32, shift: false })
+        );
         assert_eq!(s.slot, [SlotMode::Keys, SlotMode::Mouse, SlotMode::Flick]);
     }
 
     #[test]
     fn hold_state_pages() {
-        let l = Layout::parse("[controls]\nl1 = hold_state depower\n[controls:depower]\noverlay = parent\na = 1 add_shift\n");
+        let l = Layout::parse(
+            "[controls]\nl1 = hold_state depower\n[controls:depower]\noverlay = parent\na = 1 add_shift\n",
+        );
         assert_eq!(l.states.len(), 2);
         assert!(l.states[1].parent);
         assert_eq!(l.states[0].bind[Input::L1 as usize].map(|b| b.hold), Some(Action::State(1)));

@@ -7,11 +7,11 @@ use super::draw::*;
 use crate::config::layout::{Action, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
+use crate::game::actions::{tap_key, Button};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::actions::{tap_key, Button};
 use crate::input::bindings::Source;
 
 /// Weapon art sits right of its texture's centre by this many texture pixels.
@@ -97,6 +97,7 @@ const ARMAMENTS: [Armament; 2] = [
 ];
 
 /// Fixed systems plates in power-bar order; a slot takes the medbay or the clone bay.
+#[rustfmt::skip]
 const SYSTEM_SLOTS: [(i32, Option<i32>); WHEEL_SLOTS] = [
     (SYS_SHIELDS, None), (SYS_ENGINES, None), (SYS_OXYGEN, None), (SYS_MEDBAY, Some(SYS_CLONEBAY)),
     (SYS_TELEPORTER, None), (SYS_CLOAKING, None), (SYS_MIND, None), (SYS_HACKING, None),
@@ -292,8 +293,13 @@ impl Layer {
         if let Some(p) = sel {
             text_w = text_w.max(text_width(font, &p.label)).max(text_width(font, &p.badge));
         }
-        draw_rect(ox - text_w / 2.0 - WHEEL_TEXT_PAD, top - WHEEL_TEXT_PAD, text_w + 2.0 * WHEEL_TEXT_PAD,
-                  text_h + 2.0 * WHEEL_TEXT_PAD, MIDDLE_COLOR);
+        draw_rect(
+            ox - text_w / 2.0 - WHEEL_TEXT_PAD,
+            top - WHEEL_TEXT_PAD,
+            text_w + 2.0 * WHEEL_TEXT_PAD,
+            text_h + 2.0 * WHEEL_TEXT_PAD,
+            MIDDLE_COLOR,
+        );
         set_color(PLATE_EDGE_COLOR);
         draw_text_center(font, ox, top, &title);
         if let Some(p) = sel {
@@ -395,14 +401,17 @@ impl Layer {
         let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
         let boxes = state::gui().map(|g| g.at(GUI_SYS_CONTROL + SYSCTRL_BOXES));
         let systems: Vec<Obj> = boxes
-            .map(|b| (0..b.vec_len(std::mem::size_of::<usize>())).filter_map(|i| b.vec_obj(i)?.obj(SYSBOX_SYSTEM)).collect())
+            .map(|b| {
+                (0..b.vec_len(std::mem::size_of::<usize>())).filter_map(|i| b.vec_obj(i)?.obj(SYSBOX_SYSTEM)).collect()
+            })
             .unwrap_or_default();
         for (pl, &(kind, alt)) in plates.iter_mut().zip(SYSTEM_SLOTS.iter()) {
             pl.bound = true;
             pl.empty = true;
             pl.label = state::system_name(kind).to_string();
             pl.action = state::system_key(kind).map(|code| Action::Key { code, shift: false });
-            let Some(sys) = systems.iter().find(|s| s.i32(SYSTEM_TYPE) == kind || Some(s.i32(SYSTEM_TYPE)) == alt) else {
+            let Some(sys) = systems.iter().find(|s| s.i32(SYSTEM_TYPE) == kind || Some(s.i32(SYSTEM_TYPE)) == alt)
+            else {
                 continue;
             };
             pl.available = true;
@@ -435,7 +444,9 @@ impl Layer {
             let Action::Key { code, .. } = pdef.action else {
                 continue;
             };
-            let arm = ARMAMENTS.iter().find(|a| def.kind == WheelKind::Power && code >= a.first_key && code < a.first_key + a.slots);
+            let arm = ARMAMENTS
+                .iter()
+                .find(|a| def.kind == WheelKind::Power && code >= a.first_key && code < a.first_key + a.slots);
             if let Some(arm) = arm {
                 let item = (arm.control)().and_then(|c| state::armament_item(c, (code - arm.first_key) as usize));
                 let bp = item.and_then(|i| i.obj(arm.blueprint));
@@ -573,7 +584,12 @@ impl Layer {
             WheelKind::Power | WheelKind::Systems => {
                 tap_key(code, dir < 0);
                 if self.debug {
-                    log!("wheel {}: {} power {}", self.layout.wheels[w].name, plate.label, if dir < 0 { "down" } else { "up" });
+                    log!(
+                        "wheel {}: {} power {}",
+                        self.layout.wheels[w].name,
+                        plate.label,
+                        if dir < 0 { "down" } else { "up" }
+                    );
                 }
             }
             _ => return,

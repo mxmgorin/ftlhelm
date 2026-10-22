@@ -21,9 +21,11 @@ const BADGE_MARGIN: f32 = 8.0;
 /// Text sits this far below a panel row's top edge.
 const TEXT_DY: f32 = 5.0;
 
-const INPUT_TITLES: [&str; SIL_BUTTONS] = ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
+const INPUT_TITLES: [&str; SIL_BUTTONS] =
+    ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
 
 /// What the game's own hotkeys do, as the help names them.
+#[rustfmt::skip]
 const KEY_TITLES: &[(i32, &str)] = &[
     (KEY_ESCAPE, "Menu"), (KEY_SPACE, "Pause"), ('j' as i32, "Jump"), ('u' as i32, "Upgrades"),
     ('v' as i32, "Autofire"), ('z' as i32, "Open doors"), ('x' as i32, "Close doors"), ('q' as i32, "All crew"),
@@ -151,7 +153,8 @@ impl Layer {
                 .unwrap_or_default();
             parts.push(if weapon.is_empty() { "Target".to_string() } else { format!("Target: {weapon}") });
         }
-        let modes = [(self.bind.precision, "Doors"), (self.actions.fast_forward, "Fast"), (self.bind.dpad_mouse, "Mouse")];
+        let modes =
+            [(self.bind.precision, "Doors"), (self.actions.fast_forward, "Fast"), (self.bind.dpad_mouse, "Mouse")];
         parts.extend(modes.iter().filter(|(on, _)| *on).map(|(_, name)| name.to_string()));
         parts.join(BADGE_SEPARATOR).to_ascii_uppercase()
     }

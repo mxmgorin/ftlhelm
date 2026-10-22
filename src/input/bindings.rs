@@ -137,9 +137,9 @@ impl Layer {
                 } else {
                     // With crew selected and a room under the cursor, A sends them there,
                     // which the game does on the right button.
-                    let room = self
-                        .target_under_cursor()
-                        .is_some_and(|i| matches!(self.zones.targets[i].kind, TargetKind::Room | TargetKind::EnemyRoom));
+                    let room = self.target_under_cursor().is_some_and(|i| {
+                        matches!(self.zones.targets[i].kind, TargetKind::Room | TargetKind::EnemyRoom)
+                    });
                     let crew_order = state::crew_selected() && !state::aiming() && room;
                     let button = if crew_order { Button::Right } else { Button::Left };
                     self.bind.context_done[slot] = Some(button);

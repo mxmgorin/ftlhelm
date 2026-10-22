@@ -172,7 +172,12 @@ pub fn display_text(text: Obj) -> String {
     let mut result: Ptr = std::ptr::null_mut();
     // SAFETY: GetText fills the std::string at `result`, released below.
     unsafe {
-        (a.get_text)(&mut result, a.text_library as Ptr, text.ptr(), (a.text_library + TEXTLIB_LANGUAGE) as *const c_void);
+        (a.get_text)(
+            &mut result,
+            a.text_library as Ptr,
+            text.ptr(),
+            (a.text_library + TEXTLIB_LANGUAGE) as *const c_void,
+        );
     }
     let out = if result.is_null() {
         String::new()
@@ -239,9 +244,7 @@ pub fn ability_system(key: i32) -> Option<i32> {
 
 /// Lockdown needs a living crystal crew member.
 pub fn has_crystal_crew() -> bool {
-    (0..)
-        .map_while(crew_at)
-        .any(|m| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
+    (0..).map_while(crew_at).any(|m| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
 }
 
 pub fn has_system(kind: i32) -> bool {
