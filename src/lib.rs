@@ -46,6 +46,15 @@
 
 #![cfg_attr(test, allow(dead_code))]
 
+mod config;
 mod core;
+mod debug;
 mod game;
+mod input;
 mod ui;
+
+/// Runs at load, before the game's main.
+#[cfg(not(test))]
+#[used]
+#[link_section = ".init_array"]
+static INIT: extern "C" fn() = core::main::init;
