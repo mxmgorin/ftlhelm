@@ -1,7 +1,7 @@
 //! Pad reading through the SIL joystick API: face labels, sticks and triggers as digital
 //! inputs, flicks, and the per-frame dispatch.
 
-use crate::config::config::FLICK_OFF;
+use crate::config::settings::FLICK_OFF;
 use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLOT_COUNT};
 use crate::core::layer::Layer;
 use crate::core::util::log;
@@ -218,7 +218,7 @@ impl Layer {
             && !self.zones.targets.is_empty()
             && mode[Slot::Dpad as usize] == SlotMode::Keys;
         self.pad.frame += 1;
-        if self.pad.frame % BUTTON_REFRESH_FRAMES == 0
+        if self.pad.frame.is_multiple_of(BUTTON_REFRESH_FRAMES)
             && self.cursor.synced
             && !self.cursor.l_held
             && !self.cursor.r_held

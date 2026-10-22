@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, TryLockError};
 
-use crate::config::config::{Config, FileWatch};
+use crate::config::settings::{Config, FileWatch};
 use crate::config::layout::Layout;
 use crate::debug::commands::Commands;
 use crate::game::actions::Actions;

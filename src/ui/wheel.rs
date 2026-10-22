@@ -130,6 +130,7 @@ pub struct Plate {
 }
 
 /// The open wheel and the plate the sticks point at.
+#[derive(Default)]
 pub struct WheelUi {
     pub open: Option<usize>,
     pub sel: Option<usize>,
@@ -140,12 +141,6 @@ pub struct WheelUi {
     paused: bool,
     /// Whether the game was already aiming when the wheel opened; only a new aim closes it.
     pub opened_aiming: bool,
-}
-
-impl Default for WheelUi {
-    fn default() -> Self {
-        WheelUi { open: None, sel: None, plates: Default::default(), refresh_wait: 0, paused: false, opened_aiming: false }
-    }
 }
 
 impl WheelUi {
