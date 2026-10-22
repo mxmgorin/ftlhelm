@@ -4,7 +4,7 @@
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::mouse_move;
-use crate::game::api::Point;
+use crate::game::api::{Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
@@ -122,55 +122,26 @@ impl Layer {
         self.send_cursor();
     }
 
-    /// Moves the cursor to the zone nearest along a direction: inside the narrow cone first,
-    /// then the wide one, scored by distance grown with the angle off the axis. Both are
-    /// measured to a zone's nearest point, or its centre when the cursor is inside it.
+    /// Moves the cursor to the zone `pick_toward` finds along a direction.
     pub fn focus_move(&mut self, dx: f32, dy: f32) {
         let len = dx.hypot(dy);
         if self.zones.targets.is_empty() || len <= 0.0 {
             return;
         }
-        let (dx, dy) = (dx / len, dy / len);
         let from = self.target_under_cursor();
-        let (cx, cy) = (self.cursor.x, self.cursor.y);
-        let mut best: Option<(usize, f32)> = None;
-        for cone in [self.cfg.focus_cone_narrow, self.cfg.focus_cone_wide] {
-            let cos_cone = cone.to_radians().cos();
-            for (i, t) in self.zones.targets.iter().enumerate() {
-                if Some(i) == from {
-                    continue;
-                }
-                let r = t.rect;
-                let mut vx = clampf(cx, r.x as f32, (r.x + r.w) as f32) - cx;
-                let mut vy = clampf(cy, r.y as f32, (r.y + r.h) as f32) - cy;
-                if vx == 0.0 && vy == 0.0 {
-                    let (rx, ry) = r.center();
-                    (vx, vy) = (rx - cx, ry - cy);
-                }
-                let dist = vx.hypot(vy);
-                if dist <= 0.0 {
-                    continue;
-                }
-                let cos_a = (vx * dx + vy * dy) / dist;
-                if cos_a < cos_cone {
-                    continue;
-                }
-                let score = dist * (1.0 + self.cfg.focus_side_weight * (1.0 - cos_a));
-                if best.is_none_or(|(_, s)| score < s) {
-                    best = Some((i, score));
-                }
-            }
-            if best.is_some() {
-                break;
-            }
-        }
+        let rects: Vec<Rect> = self.zones.targets.iter().map(|t| t.rect).collect();
+        let aim = Aim {
+            cones: [self.cfg.focus_cone_narrow, self.cfg.focus_cone_wide],
+            side_weight: self.cfg.focus_side_weight,
+        };
+        let best = pick_toward(&rects, from, (self.cursor.x, self.cursor.y), (dx, dy), aim);
         if self.debug {
-            log!("focus {dx:.0},{dy:.0}: from {} to {}", index(from), index(best.map(|b| b.0)));
+            log!("focus {:.0},{:.0}: from {} to {}", dx / len, dy / len, index(from), index(best));
         }
-        let Some((i, _)) = best else {
+        let Some(best) = best else {
             return;
         };
-        (self.cursor.x, self.cursor.y) = self.zones.targets[i].rect.center();
+        (self.cursor.x, self.cursor.y) = rects[best].center();
         self.send_cursor();
         self.buzz();
     }
@@ -233,7 +204,104 @@ impl Layer {
     }
 }
 
+/// How a focus move weighs the zones it may land on.
+#[derive(Clone, Copy)]
+pub struct Aim {
+    /// Half-angles in degrees, tried narrow first.
+    pub cones: [f32; 2],
+    /// How many times the sideways distance counts against the forward one.
+    pub side_weight: f32,
+}
+
+/// Finds the zone nearest from `at` along `dir`, skipping `from`: inside the narrow cone
+/// first, then the wide one, scored by distance grown with the angle off the axis. Both are
+/// measured to a zone's nearest point, or its centre when `at` is inside it. Returns its index.
+pub fn pick_toward(rects: &[Rect], from: Option<usize>, at: (f32, f32), dir: (f32, f32), aim: Aim) -> Option<usize> {
+    let len = dir.0.hypot(dir.1);
+    if rects.is_empty() || len <= 0.0 {
+        return None;
+    }
+    let (dx, dy) = (dir.0 / len, dir.1 / len);
+    let (cx, cy) = at;
+    let mut best: Option<(usize, f32)> = None;
+    for cone in aim.cones {
+        let cos_cone = cone.to_radians().cos();
+        for (i, r) in rects.iter().enumerate() {
+            if Some(i) == from {
+                continue;
+            }
+            let mut vx = clampf(cx, r.x as f32, (r.x + r.w) as f32) - cx;
+            let mut vy = clampf(cy, r.y as f32, (r.y + r.h) as f32) - cy;
+            if vx == 0.0 && vy == 0.0 {
+                let (rx, ry) = r.center();
+                (vx, vy) = (rx - cx, ry - cy);
+            }
+            let dist = vx.hypot(vy);
+            if dist <= 0.0 {
+                continue;
+            }
+            let cos_a = (vx * dx + vy * dy) / dist;
+            if cos_a < cos_cone {
+                continue;
+            }
+            let score = dist * (1.0 + aim.side_weight * (1.0 - cos_a));
+            if best.is_none_or(|(_, s)| score < s) {
+                best = Some((i, score));
+            }
+        }
+        if best.is_some() {
+            break;
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
 /// A zone index for the log, -1 for none.
 fn index(i: Option<usize>) -> i64 {
     i.map_or(-1, |i| i as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AIM: Aim = Aim { cones: [30.0, 60.0], side_weight: 2.0 };
+
+    fn rect(x: i32, y: i32) -> Rect {
+        Rect { x, y, w: 10, h: 10 }
+    }
+
+    #[test]
+    fn nearest_along_the_axis_wins() {
+        let rects = [rect(100, 0), rect(50, 0), rect(-50, 0)];
+        assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (1.0, 0.0), AIM), Some(1));
+        assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (-1.0, 0.0), AIM), Some(2));
+    }
+
+    #[test]
+    fn narrow_cone_before_a_nearer_zone_off_axis() {
+        // The second zone is nearer but about 45 degrees off, inside only the wide cone.
+        let rects = [rect(200, 0), rect(40, 40)];
+        assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (1.0, 0.0), AIM), Some(0));
+        assert_eq!(pick_toward(&rects[1..], None, (0.0, 5.0), (1.0, 0.0), AIM), Some(0));
+    }
+
+    #[test]
+    fn the_zone_under_the_cursor_is_skipped() {
+        let rects = [rect(0, 0), rect(50, 0)];
+        assert_eq!(pick_toward(&rects, Some(0), (5.0, 5.0), (1.0, 0.0), AIM), Some(1));
+    }
+
+    #[test]
+    fn nothing_that_way_and_no_direction() {
+        let rects = [rect(50, 0)];
+        assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, -1.0), AIM), None);
+        assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, 0.0), AIM), None);
+    }
+
+    #[test]
+    fn inverted_rect_does_not_panic() {
+        let rects = [Rect { x: 50, y: 0, w: -10, h: -10 }];
+        let _ = pick_toward(&rects, None, (0.0, 5.0), (1.0, 0.0), AIM);
+    }
 }
