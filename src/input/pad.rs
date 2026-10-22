@@ -192,7 +192,37 @@ impl Layer {
     /// Applies one frame of pad state: pointer sources move the cursor or flick between
     /// zones, sticks point an open wheel, everything else goes through the layout.
     pub fn apply_pad(&mut self, mut p: Pad, t: f64, dt: f32) {
-        const DIR: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
+        let mode = self.pointer_modes(&mut p);
+        let in_wheel = self.wheel.open.is_some();
+        if in_wheel {
+            self.tick_wheel(&p);
+        }
+        let snapping = self.cfg.snap_dpad
+            && self.bind.depth() == 0
+            && !self.zones.targets.is_empty()
+            && mode[Slot::Dpad as usize] == SlotMode::Keys;
+        self.pad.frame += 1;
+        if self.pad.frame.is_multiple_of(BUTTON_REFRESH_FRAMES)
+            && self.cursor.synced
+            && !self.cursor.l_held
+            && !self.cursor.r_held
+            && !self.actions.clicks_queued()
+        {
+            self.refresh_buttons();
+        }
+        self.settle_pending(t);
+        self.apply_buttons(&p, t, in_wheel, snapping);
+        if !in_wheel {
+            self.move_pointers(&p, mode, t, dt);
+        }
+        self.settle_pause_ff(t);
+        self.follow_game_modes();
+        self.watch_exit_chord(t);
+    }
+
+    /// Each pointer source's mode this frame, after the mode toggle; the directions of a
+    /// source that does not act as keys are cleared from `p`.
+    fn pointer_modes(&self, p: &mut Pad) -> [SlotMode; SLOT_COUNT] {
         let mut mode = [SlotMode::Keys; SLOT_COUNT];
         for slot in Slot::ALL {
             let mut m = self.slot_mode(slot);
@@ -210,35 +240,29 @@ impl Layer {
             }
             mode[slot as usize] = m;
         }
-        let in_wheel = self.wheel.open.is_some();
-        if in_wheel {
-            self.wheel.refresh_wait -= 1;
-            if self.wheel.refresh_wait <= 0 {
-                self.refresh_wheel();
-            }
-            self.wheel_point(p.stick[0], p.stick[1]);
-            if (state::aiming() && !self.wheel.opened_aiming) || !self.wheel_screen() {
-                self.wheel_close();
-            }
-            if !state::aiming() {
-                self.wheel.opened_aiming = false;
-            }
-        }
-        let snapping = self.cfg.snap_dpad
-            && self.bind.depth() == 0
-            && !self.zones.targets.is_empty()
-            && mode[Slot::Dpad as usize] == SlotMode::Keys;
-        self.pad.frame += 1;
-        if self.pad.frame.is_multiple_of(BUTTON_REFRESH_FRAMES)
-            && self.cursor.synced
-            && !self.cursor.l_held
-            && !self.cursor.r_held
-            && !self.actions.clicks_queued()
-        {
-            self.refresh_buttons();
-        }
+        mode
+    }
 
-        self.settle_pending(t);
+    /// Refreshes the open wheel, points it with the sticks, and closes it when aiming starts
+    /// or the screen no longer allows it.
+    fn tick_wheel(&mut self, p: &Pad) {
+        self.wheel.refresh_wait -= 1;
+        if self.wheel.refresh_wait <= 0 {
+            self.refresh_wheel();
+        }
+        self.wheel_point(p.stick[0], p.stick[1]);
+        if (state::aiming() && !self.wheel.opened_aiming) || !self.wheel_screen() {
+            self.wheel_close();
+        }
+        if !state::aiming() {
+            self.wheel.opened_aiming = false;
+        }
+    }
+
+    /// Turns button changes into presses and releases; with a wheel open or snapping on,
+    /// the D-pad steps the wheel or the focus instead, and its release is swallowed.
+    fn apply_buttons(&mut self, p: &Pad, t: f64, in_wheel: bool, snapping: bool) {
+        const DIR: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
         for input in Input::ALL {
             let i = input as usize;
             if p.down[i] == self.pad.held[i] {
@@ -277,33 +301,36 @@ impl Layer {
                 self.release(input, t);
             }
         }
+    }
 
-        if !in_wheel {
-            for (k, slot) in [Slot::LStick, Slot::RStick].into_iter().enumerate() {
-                let [x, y] = p.stick[k];
-                match mode[slot as usize] {
-                    SlotMode::Mouse => self.move_cursor(x, y, dt),
-                    SlotMode::Flick => {
-                        let mag = x.hypot(y);
-                        let repeat =
-                            self.cfg.flick_repeat > 0.0 && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
-                        if mag < FLICK_OFF {
-                            self.pad.flick_armed[k] = true;
-                        } else if mag >= self.cfg.flick_on && (self.pad.flick_armed[k] || repeat) {
-                            self.pad.flick_armed[k] = false;
-                            self.pad.flick_last[k] = t;
-                            self.focus_move(x, y);
-                        }
+    /// Moves the cursor or flicks between zones from the sticks and a cursor-mode D-pad.
+    fn move_pointers(&mut self, p: &Pad, mode: [SlotMode; SLOT_COUNT], t: f64, dt: f32) {
+        for (k, slot) in [Slot::LStick, Slot::RStick].into_iter().enumerate() {
+            let [x, y] = p.stick[k];
+            match mode[slot as usize] {
+                SlotMode::Mouse => self.move_cursor(x, y, dt),
+                SlotMode::Flick => {
+                    let mag = x.hypot(y);
+                    let repeat =
+                        self.cfg.flick_repeat > 0.0 && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
+                    if mag < FLICK_OFF {
+                        self.pad.flick_armed[k] = true;
+                    } else if mag >= self.cfg.flick_on && (self.pad.flick_armed[k] || repeat) {
+                        self.pad.flick_armed[k] = false;
+                        self.pad.flick_last[k] = t;
+                        self.focus_move(x, y);
                     }
-                    SlotMode::Keys => {}
                 }
-            }
-            if mode[Slot::Dpad as usize] == SlotMode::Mouse && (p.dpad[0] != 0 || p.dpad[1] != 0) {
-                self.move_cursor(p.dpad[0] as f32, p.dpad[1] as f32, dt);
+                SlotMode::Keys => {}
             }
         }
+        if mode[Slot::Dpad as usize] == SlotMode::Mouse && (p.dpad[0] != 0 || p.dpad[1] != 0) {
+            self.move_cursor(p.dpad[0] as f32, p.dpad[1] as f32, dt);
+        }
+    }
 
-        // pause_ff held past the threshold: unpause and run fast.
+    /// Unpauses and runs fast once pause_ff is held past its threshold.
+    fn settle_pause_ff(&mut self, t: f64) {
         if self.bind.pause_ff_since.is_some_and(|s| t - s >= self.cfg.pause_ff_hold as f64)
             && !self.actions.fast_forward
         {
@@ -312,8 +339,10 @@ impl Layer {
             }
             self.set_fast(true);
         }
+    }
 
-        // Mode changes read from the game: the cursor starts where the payload wants it.
+    /// Reacts to mode changes read from the game: the cursor starts where the payload wants it.
+    fn follow_game_modes(&mut self) {
         let now_aiming = state::aiming();
         let now_crew = state::first_selected_crew();
         if now_aiming && !self.pad.prev_aiming {
@@ -332,7 +361,10 @@ impl Layer {
         }
         self.pad.prev_aiming = now_aiming;
         self.pad.prev_crew = now_crew;
+    }
 
+    /// Requests the exit once Select and Start are held together long enough.
+    fn watch_exit_chord(&mut self, t: f64) {
         if self.pad.held[Input::Select as usize] && self.pad.held[Input::Start as usize] {
             let since = *self.pad.chord_since.get_or_insert(t);
             if !self.pad.exit_requested && t - since >= EXIT_HOLD_S {
