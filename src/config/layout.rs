@@ -469,7 +469,7 @@ impl Layer {
     /// pushed states and pending presses.
     pub fn load_layout(&mut self, text: &str, origin: &str) {
         let layout = Layout::parse(text);
-        self.wheel_close();
+        self.close_wheel();
         log!("layout: {} states, {} wheels from {origin}", layout.states.len(), layout.wheels.len());
         self.layout = layout;
         self.bind.reset();

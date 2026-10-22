@@ -8,7 +8,7 @@ use crate::game::api::{Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::zones::TargetKind;
+use crate::game::zones::ZoneKind;
 
 /// Frames a newly opened screen gets to show its items before the focus gives up; a
 /// dialog's choices wait for the jump animation.
@@ -125,11 +125,11 @@ impl Layer {
     /// Moves the cursor to the zone `pick_toward` finds along a direction.
     pub fn focus_move(&mut self, dx: f32, dy: f32) {
         let len = dx.hypot(dy);
-        if self.zones.targets.is_empty() || len <= 0.0 {
+        if self.zones.list.is_empty() || len <= 0.0 {
             return;
         }
-        let from = self.target_under_cursor();
-        let rects: Vec<Rect> = self.zones.targets.iter().map(|t| t.rect).collect();
+        let from = self.zone_under_cursor();
+        let rects: Vec<Rect> = self.zones.list.iter().map(|t| t.rect).collect();
         let aim = Aim {
             cones: [self.cfg.focus_cone_narrow, self.cfg.focus_cone_wide],
             side_weight: self.cfg.focus_side_weight,
@@ -149,21 +149,21 @@ impl Layer {
     /// The first item of a screen among the zones: a dialog's first choice, the map's beacon
     /// under the ship, else the topmost button, leftmost on a tie.
     fn first_item(&self, screen: FirstScreen) -> Option<usize> {
-        let targets = &self.zones.targets;
+        let zones = &self.zones.list;
         match screen {
             FirstScreen::Map => {
                 let map = state::star_map()?;
                 let current = map.obj(STARMAP_CURRENT_LOC)?;
                 let locations: Obj = map.at(STARMAP_LOCATIONS);
-                targets
+                zones
                     .iter()
-                    .position(|t| t.kind == TargetKind::Beacon && locations.vec_obj(t.id as usize) == Some(current))
+                    .position(|t| t.kind == ZoneKind::Beacon && locations.vec_obj(t.id as usize) == Some(current))
             }
-            FirstScreen::Choice => targets.iter().position(|t| t.kind == TargetKind::Choice && t.id == 0),
-            _ => targets
+            FirstScreen::Choice => zones.iter().position(|t| t.kind == ZoneKind::Choice && t.id == 0),
+            _ => zones
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.kind == TargetKind::Button)
+                .filter(|(_, t)| t.kind == ZoneKind::Button)
                 .min_by_key(|(_, t)| (t.rect.y, t.rect.x))
                 .map(|(i, _)| i),
         }
@@ -198,7 +198,7 @@ impl Layer {
         let Some(first) = self.first_item(screen) else {
             return;
         };
-        (self.cursor.x, self.cursor.y) = self.zones.targets[first].rect.center();
+        (self.cursor.x, self.cursor.y) = self.zones.list[first].rect.center();
         self.send_cursor();
         self.focus.waiting = 0;
     }

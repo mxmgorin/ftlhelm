@@ -76,7 +76,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.poll_files(t);
         l.run_queued_clicks();
         l.sync_cursor();
-        l.build_targets();
+        l.build_zones();
         if l.cfg.focus_first {
             l.focus_first_on_open();
         }

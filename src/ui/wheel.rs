@@ -7,7 +7,7 @@ use super::draw::*;
 use crate::config::layout::{Action, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
-use crate::game::actions::{tap_key, Button};
+use crate::game::actions::{tap_key, MouseButton};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
@@ -318,7 +318,7 @@ impl Layer {
     }
 
     /// Points the wheel from the stronger stick; the selection stays when both are centred.
-    pub fn wheel_point(&mut self, left: [f32; 2], right: [f32; 2]) {
+    pub fn point_wheel(&mut self, left: [f32; 2], right: [f32; 2]) {
         let [x, y] = if right[0].hypot(right[1]) > left[0].hypot(left[1]) { right } else { left };
         if x.hypot(y) < WHEEL_ON {
             return;
@@ -336,7 +336,7 @@ impl Layer {
     }
 
     /// Steps the selection to the next pickable plate clockwise (1) or counter-clockwise (-1).
-    pub fn wheel_step(&mut self, dir: i32) {
+    pub fn step_wheel(&mut self, dir: i32) {
         let n = WHEEL_SLOTS as i32;
         let mut slot = self.wheel.sel.map_or(if dir > 0 { -1 } else { 0 }, |s| s as i32);
         for _ in 0..n {
@@ -487,7 +487,7 @@ impl Layer {
         };
     }
 
-    pub fn wheel_close(&mut self) {
+    pub fn close_wheel(&mut self) {
         if self.wheel.open.take().is_none() {
             return;
         }
@@ -500,10 +500,10 @@ impl Layer {
 
     /// Opens a wheel on its top plate, or the first pickable one clockwise; a second press
     /// of the open wheel closes it.
-    pub fn wheel_show(&mut self, index: usize, by: Source) {
+    pub fn open_wheel(&mut self, index: usize, by: Source) {
         if let Some(open) = self.wheel.open {
             if open == index {
-                self.wheel_close();
+                self.close_wheel();
             }
             return;
         }
@@ -526,7 +526,7 @@ impl Layer {
 
     /// Performs the selected plate: keys and clicks run as taps; an action wheel closes
     /// after, the others refill. The abilities key is remembered for repeat_ability.
-    pub fn wheel_act(&mut self) {
+    pub fn act_on_plate(&mut self) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
         };
@@ -536,15 +536,15 @@ impl Layer {
         let kind = self.layout.wheels[w].kind;
         match self.wheel.plates[sel].action {
             // With Shift, a crew member joins the selection.
-            Some(Action::Key { code, .. }) if kind == WheelKind::Crew => tap_key(code, state::crew_selected()),
+            Some(Action::Key { code, .. }) if kind == WheelKind::Crew => tap_key(code, state::any_crew_selected()),
             Some(Action::Key { code, shift }) => {
                 tap_key(code, shift);
                 if kind == WheelKind::Action && state::ability_system(code).is_some() {
                     self.bind.last_ability_key = Some(code);
                 }
             }
-            Some(Action::LClick) => self.click_tap(Button::Left),
-            Some(Action::RClick) => self.click_tap(Button::Right),
+            Some(Action::LClick) => self.click_tap(MouseButton::Left),
+            Some(Action::RClick) => self.click_tap(MouseButton::Right),
             Some(Action::Builtin(b)) => self.builtin_tap(b),
             _ => {}
         }
@@ -552,7 +552,7 @@ impl Layer {
             log!("wheel {}: {}", self.layout.wheels[w].name, self.wheel.plates[sel].label);
         }
         if kind == WheelKind::Action {
-            self.wheel_close();
+            self.close_wheel();
         } else if self.wheel.open.is_some() {
             self.refresh_wheel();
         }
@@ -560,7 +560,7 @@ impl Layer {
 
     /// Adds power to the selected item of a power or systems wheel, or takes it away for a
     /// negative dir; on the crew wheel, adds the member to the selection or drops them.
-    pub fn wheel_power(&mut self, dir: i32) {
+    pub fn adjust_plate(&mut self, dir: i32) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
         };
@@ -575,7 +575,7 @@ impl Layer {
                     return;
                 };
                 if dir > 0 {
-                    tap_key(code, state::crew_selected());
+                    tap_key(code, state::any_crew_selected());
                 } else if let Some(gui) = state::gui() {
                     // SAFETY: DeselectCrew on the GUI's CrewControl with one of its crew.
                     unsafe { (api().deselect_crew)(gui.at(GUI_CREW_CONTROL).ptr(), member.ptr()) };

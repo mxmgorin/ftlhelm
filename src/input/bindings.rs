@@ -4,10 +4,10 @@
 use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, Button};
+use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, MouseButton};
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::zones::TargetKind;
+use crate::game::zones::ZoneKind;
 
 /// Who an action runs for: an input, or a wheel plate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,7 +40,7 @@ pub struct Bindings {
     /// What each held input did when pressed, undone on release.
     active: [Option<Action>; INPUT_COUNT],
     /// The button context_click pressed for each source; None when a wheel took the press.
-    context_done: [Option<Button>; INPUT_COUNT + 1],
+    context_done: [Option<MouseButton>; INPUT_COUNT + 1],
     /// Doors are the zones while precision is held.
     pub precision: bool,
     /// The abilities key repeat_ability repeats.
@@ -167,28 +167,28 @@ impl Layer {
                     }
                 } else if self.wheel.open.is_some() && source != Source::Plate {
                     self.bind.context_done[slot] = None;
-                    self.wheel_act();
+                    self.act_on_plate();
                 } else {
                     // With crew selected and a room under the cursor, A sends them there,
                     // which the game does on the right button.
-                    let room = self.target_under_cursor().is_some_and(|i| {
-                        matches!(self.zones.targets[i].kind, TargetKind::Room | TargetKind::EnemyRoom)
-                    });
-                    let crew_order = state::crew_selected() && !state::aiming() && room;
-                    let button = if crew_order { Button::Right } else { Button::Left };
+                    let room = self
+                        .zone_under_cursor()
+                        .is_some_and(|i| matches!(self.zones.list[i].kind, ZoneKind::Room | ZoneKind::EnemyRoom));
+                    let crew_order = state::any_crew_selected() && !state::aiming() && room;
+                    let button = if crew_order { MouseButton::Right } else { MouseButton::Left };
                     self.bind.context_done[slot] = Some(button);
                     self.click(button, true);
                 }
             }
             Builtin::Cancel if down => {
                 if self.wheel.open.is_some() {
-                    self.wheel_close();
+                    self.close_wheel();
                 } else if state::gui_window_open(GUI_MENU_BOX) || state::gui_window_open(GUI_OPTIONS_BOX) {
                     tap_key(KEY_ESCAPE, false);
                 } else if state::aiming() {
                     // The right button cancels targeting.
-                    self.click_tap(Button::Right);
-                } else if state::crew_selected() {
+                    self.click_tap(MouseButton::Right);
+                } else if state::any_crew_selected() {
                     if let Some(gui) = state::gui() {
                         // SAFETY: ClearSelectedCrew on the GUI's CrewControl.
                         unsafe { (crate::game::api::api().clear_crew)(gui.at(GUI_CREW_CONTROL).ptr()) };
@@ -246,8 +246,8 @@ impl Layer {
                     }
                 }
             }
-            Action::LClick => self.click(Button::Left, down),
-            Action::RClick => self.click(Button::Right, down),
+            Action::LClick => self.click(MouseButton::Left, down),
+            Action::RClick => self.click(MouseButton::Right, down),
             Action::State(state) => {
                 let Source::Input(input) = source else {
                     return;
@@ -260,7 +260,7 @@ impl Layer {
             }
             Action::Wheel(wheel) => {
                 if down {
-                    self.wheel_show(wheel, source);
+                    self.open_wheel(wheel, source);
                 }
             }
             Action::Builtin(b) => self.builtin(b, source, down),
@@ -278,7 +278,7 @@ impl Layer {
     }
 
     /// Whether a tap action would do nothing in the current context.
-    fn tap_idle(&self, tap: Action) -> bool {
+    fn tap_is_idle(&self, tap: Action) -> bool {
         match tap {
             Action::Builtin(Builtin::PrevTab | Builtin::NextTab) => state::open_tabbed().is_none(),
             Action::Builtin(Builtin::RepeatAbility) => self.bind.last_ability_key.is_none(),
@@ -287,7 +287,7 @@ impl Layer {
     }
 
     /// Performs an action's press and records it for the release.
-    fn start(&mut self, action: Action, input: Input) {
+    fn start_hold(&mut self, action: Action, input: Input) {
         self.perform(action, Source::Input(input), true);
         self.bind.active[input as usize] = Some(action);
     }
@@ -327,15 +327,15 @@ impl Layer {
             }
             // The open wheel's own button closes it, its tap half included.
             if self.wheel.open == Some(w) {
-                self.wheel_close();
+                self.close_wheel();
                 return;
             }
         }
-        if b.tap.is_some_and(|tap| !self.tap_idle(tap)) {
+        if b.tap.is_some_and(|tap| !self.tap_is_idle(tap)) {
             self.bind.pending[input as usize] = Some((b, t));
             return;
         }
-        self.start(b.hold, input);
+        self.start_hold(b.hold, input);
     }
 
     pub fn release(&mut self, input: Input) {
@@ -354,7 +354,7 @@ impl Layer {
     /// Turns presses that outlived the tap threshold into holds.
     pub fn settle_pending(&mut self, t: f64) {
         for (input, b) in self.bind.take_due(t, self.cfg.tap_hold as f64) {
-            self.start(b.hold, input);
+            self.start_hold(b.hold, input);
         }
     }
 

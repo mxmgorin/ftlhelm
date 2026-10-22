@@ -12,14 +12,14 @@ use crate::core::layer::Layer;
 const DOOR_HALF: i32 = 10;
 /// Half the side of the square a beacon counts as.
 const BEACON_HALF: i32 = 12;
-const MAX_TARGETS: usize = 64;
+const MAX_ZONES: usize = 64;
 const MAX_BUTTONS: usize = 64;
 /// Small unplaced buttons the game parks in this corner.
 const CORNER_BUTTON_MAX: i32 = 40;
 const CORNER_BUTTON_SIZE: i32 = 24;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TargetKind {
+pub enum ZoneKind {
     Room,
     EnemyRoom,
     Beacon,
@@ -30,27 +30,27 @@ pub enum TargetKind {
     Slot,
 }
 
-impl TargetKind {
+impl ZoneKind {
     pub fn name(self) -> &'static str {
         match self {
-            TargetKind::Room => "player room",
-            TargetKind::EnemyRoom => "enemy room",
-            TargetKind::Beacon => "beacon",
-            TargetKind::Sector => "sector",
-            TargetKind::Choice => "choice",
-            TargetKind::Button => "button",
-            TargetKind::Door => "door",
-            TargetKind::Slot => "slot",
+            ZoneKind::Room => "player room",
+            ZoneKind::EnemyRoom => "enemy room",
+            ZoneKind::Beacon => "beacon",
+            ZoneKind::Sector => "sector",
+            ZoneKind::Choice => "choice",
+            ZoneKind::Button => "button",
+            ZoneKind::Door => "door",
+            ZoneKind::Slot => "slot",
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Target {
+pub struct Zone {
     pub rect: Rect,
     /// Room id, or the index in the list the zone came from.
     pub id: i32,
-    pub kind: TargetKind,
+    pub kind: ZoneKind,
 }
 
 /// A button the game hit-tested: its box on screen and the object's address.
@@ -62,7 +62,7 @@ pub struct Button {
 
 #[derive(Default)]
 pub struct Zones {
-    pub targets: Vec<Target>,
+    pub list: Vec<Zone>,
     /// The last whole set of buttons the game hit-tested.
     pub buttons: Vec<Button>,
 }
@@ -130,9 +130,9 @@ pub fn ship_center(ship: Obj, origin: Point) -> Option<(f32, f32)> {
 }
 
 impl Zones {
-    fn push(&mut self, rect: Rect, id: i32, kind: TargetKind) {
-        if self.targets.len() < MAX_TARGETS {
-            self.targets.push(Target { rect, id, kind });
+    fn push(&mut self, rect: Rect, id: i32, kind: ZoneKind) {
+        if self.list.len() < MAX_ZONES {
+            self.list.push(Zone { rect, id, kind });
         }
     }
 
@@ -141,7 +141,7 @@ impl Zones {
             if let Some(door) = doors.vec_obj(i) {
                 let (x, y) = (origin.x + door.i32(DOOR_X), origin.y + door.i32(DOOR_Y));
                 let rect = Rect { x: x - DOOR_HALF, y: y - DOOR_HALF, w: 2 * DOOR_HALF, h: 2 * DOOR_HALF };
-                self.push(rect, i as i32, TargetKind::Door);
+                self.push(rect, i as i32, ZoneKind::Door);
             }
         }
     }
@@ -158,13 +158,13 @@ impl Zones {
             let mut r = room.rect(ROOM_RECT);
             r.x += origin.x;
             r.y += origin.y;
-            self.push(r, room.i32(ROOM_ID), if enemy { TargetKind::EnemyRoom } else { TargetKind::Room });
+            self.push(r, room.i32(ROOM_ID), if enemy { ZoneKind::EnemyRoom } else { ZoneKind::Room });
         }
     }
 
     /// Beacons, or the sector boxes while a new sector is being chosen; false when the map
     /// is closed.
-    fn add_map_targets(&mut self) -> bool {
+    fn add_map_zones(&mut self) -> bool {
         let Some(map) = state::star_map().filter(|m| m.flag(FOCUS_OPEN)) else {
             return false;
         };
@@ -175,7 +175,7 @@ impl Zones {
                 if let Some(mut r) = boxes.vec_get::<Rect>(i) {
                     r.x += offset.x;
                     r.y += offset.y;
-                    self.push(r, i as i32, TargetKind::Sector);
+                    self.push(r, i as i32, ZoneKind::Sector);
                 }
             }
             return true;
@@ -188,14 +188,14 @@ impl Zones {
                 let cx = origin.x + (tx + loc.f32(LOCATION_LOC)).round() as i32;
                 let cy = origin.y + (ty + loc.f32(LOCATION_LOC + 4)).round() as i32;
                 let rect = Rect { x: cx - BEACON_HALF, y: cy - BEACON_HALF, w: 2 * BEACON_HALF, h: 2 * BEACON_HALF };
-                self.push(rect, i as i32, TargetKind::Beacon);
+                self.push(rect, i as i32, ZoneKind::Beacon);
             }
         }
         true
     }
 
     /// The open event box's choices; false when it is closed.
-    fn add_choice_targets(&mut self, gui: Obj) -> bool {
+    fn add_choice_zones(&mut self, gui: Obj) -> bool {
         let choice = gui.at(GUI_CHOICE_BOX);
         if !choice.flag(FOCUS_OPEN) {
             return false;
@@ -203,7 +203,7 @@ impl Zones {
         let rects = choice.at(CHOICE_RECTS);
         for i in 0..rects.vec_len(std::mem::size_of::<Rect>()) {
             if let Some(r) = rects.vec_get::<Rect>(i) {
-                self.push(r, i as i32, TargetKind::Choice);
+                self.push(r, i as i32, ZoneKind::Choice);
             }
         }
         true
@@ -211,7 +211,7 @@ impl Zones {
 
     /// With the map open only its own buttons count, a beacon click jumps by itself; with
     /// another screen or the menu open the HUD's top and bottom rows drop out.
-    fn add_button_targets(&mut self, screen_open: bool, map: Option<Obj>) {
+    fn add_button_zones(&mut self, screen_open: bool, map: Option<Obj>) {
         for i in 0..self.buttons.len() {
             let b = self.buttons[i];
             if map.is_some_and(|m| !m.contains(STARMAP_SIZE, b.object)) {
@@ -220,12 +220,12 @@ impl Zones {
             if screen_open && (b.rect.y < HUD_TOP_HEIGHT || b.rect.y >= HUD_BOTTOM_TOP) {
                 continue;
             }
-            self.push(b.rect, i as i32, TargetKind::Button);
+            self.push(b.rect, i as i32, ZoneKind::Button);
         }
     }
 
     /// Equipment and crew slots of an open ship screen, which are not buttons.
-    fn add_slot_targets(&mut self, gui: Obj) {
+    fn add_slot_zones(&mut self, gui: Obj) {
         for (window, boxes) in [(GUI_EQUIP_SCREEN, EQUIP_BOXES), (GUI_CREW_SCREEN, CREWSCREEN_BOXES)] {
             let window = gui.at(window);
             if !window.flag(FOCUS_OPEN) {
@@ -236,7 +236,7 @@ impl Zones {
                 if let Some(slot) = list.vec_obj(i) {
                     let r = slot.rect(EQUIPBOX_HITBOX);
                     if r.w > 0 && r.h > 0 {
-                        self.push(r, i as i32, TargetKind::Slot);
+                        self.push(r, i as i32, ZoneKind::Slot);
                     }
                 }
             }
@@ -248,9 +248,9 @@ impl Layer {
     /// Rebuilds the zones for the current screen: an event's choices alone while it is open
     /// (it sits over any screen but the game menu), beacons or sector boxes with the map
     /// open, otherwise rooms; the buttons the game hit-tests come on top.
-    pub fn build_targets(&mut self) {
+    pub fn build_zones(&mut self) {
         let zones = &mut self.zones;
-        zones.targets.clear();
+        zones.list.clear();
         {
             let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
             if seen.tested {
@@ -263,14 +263,14 @@ impl Layer {
         };
         let player = state::ship_of(state::player_complete());
         let modal_open = state::modal_window(gui).is_some();
-        if !modal_open && zones.add_choice_targets(gui) {
+        if !modal_open && zones.add_choice_zones(gui) {
             return;
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
         let precision = self.bind.precision;
         if let Some(player) = player {
-            if !screen_open && !zones.add_map_targets() {
+            if !screen_open && !zones.add_map_zones() {
                 let enemy = state::ship_of(state::enemy_complete());
                 let origin = gui.point(GUI_SHIP_POSITION);
                 if state::aiming() {
@@ -278,7 +278,7 @@ impl Layer {
                         zones.add_rooms(enemy, state::enemy_origin(gui), true);
                     }
                     zones.add_rooms(player, origin, false);
-                } else if precision && !state::crew_selected() {
+                } else if precision && !state::any_crew_selected() {
                     zones.add_doors(player, origin);
                 } else {
                     zones.add_rooms(player, origin, false);
@@ -289,15 +289,15 @@ impl Layer {
             }
         }
         if screen_open {
-            zones.add_slot_targets(gui);
+            zones.add_slot_zones(gui);
         }
-        if !precision || state::aiming() || state::crew_selected() {
-            zones.add_button_targets(screen_open, map);
+        if !precision || state::aiming() || state::any_crew_selected() {
+            zones.add_button_zones(screen_open, map);
         }
     }
 
     /// The zone under the cursor's last reported position.
-    pub fn target_under_cursor(&self) -> Option<usize> {
-        self.zones.targets.iter().position(|t| t.rect.contains(self.cursor.last_x, self.cursor.last_y))
+    pub fn zone_under_cursor(&self) -> Option<usize> {
+        self.zones.list.iter().position(|t| t.rect.contains(self.cursor.last_x, self.cursor.last_y))
     }
 }

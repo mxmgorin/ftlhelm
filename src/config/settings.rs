@@ -45,7 +45,7 @@ const FOCUS_SIDE_WEIGHT: f32 = 2.0;
 const FOCUS_SIDE_WEIGHT_MAX: f32 = 10.0;
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct Settings {
     pub cursor_speed: f32,
     pub cursor_deadzone: f32,
     pub cursor_curve: f32,
@@ -55,7 +55,7 @@ pub struct Config {
     pub autopause_aim: bool,
     pub speed_level: i32,
     pub rumble: bool,
-    pub flick_on: f32,
+    pub flick_threshold: f32,
     pub flick_repeat: f32,
     /// Which raw pairs to swap for the labels when no SDL mapping names the face buttons:
     /// A/B (east/south) and X/Y (north/west).
@@ -75,9 +75,9 @@ pub struct Config {
     pub rumble_time: f32,
 }
 
-impl Default for Config {
+impl Default for Settings {
     fn default() -> Self {
-        Config {
+        Settings {
             cursor_speed: CURSOR_SPEED,
             cursor_deadzone: STICK_DEADZONE,
             cursor_curve: CURSOR_CURVE,
@@ -87,7 +87,7 @@ impl Default for Config {
             autopause_aim: false,
             speed_level: SPEED_LEVEL_DEFAULT,
             rumble: true,
-            flick_on: FLICK_ON,
+            flick_threshold: FLICK_ON,
             flick_repeat: FLICK_REPEAT_S,
             swap_ab: true,
             swap_xy: false,
@@ -106,9 +106,9 @@ impl Default for Config {
 
 /// Where an option's value goes.
 enum Field {
-    Float(fn(&mut Config) -> &mut f32, f32, f32),
-    Int(fn(&mut Config) -> &mut i32, f32, f32),
-    Bool(fn(&mut Config) -> &mut bool),
+    Float(fn(&mut Settings) -> &mut f32, f32, f32),
+    Int(fn(&mut Settings) -> &mut i32, f32, f32),
+    Bool(fn(&mut Settings) -> &mut bool),
 }
 
 /// Config file keys: the field each sets and the range a number is clamped to.
@@ -124,7 +124,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("rumble", Field::Bool(|c| &mut c.rumble)),
     ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
     ("swap_xy", Field::Bool(|c| &mut c.swap_xy)),
-    ("flick_threshold", Field::Float(|c| &mut c.flick_on, FLICK_OFF + FLICK_GAP, 1.0)),
+    ("flick_threshold", Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
     ("flick_repeat", Field::Float(|c| &mut c.flick_repeat, 0.0, f32::INFINITY)),
     ("tap_hold", Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
     ("focus_cone_narrow", Field::Float(|c| &mut c.focus_cone_narrow, CONE_DEG_MIN, CONE_DEG_MAX)),
@@ -137,11 +137,11 @@ const OPTIONS: &[(&str, Field)] = &[
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
 ];
 
-impl Config {
+impl Settings {
     /// Parses "key = value" lines with '#' comments over the defaults; unknown keys and
     /// unreadable values are logged and skipped.
-    pub fn parse(text: &str) -> Config {
-        let mut cfg = Config::default();
+    pub fn parse(text: &str) -> Settings {
+        let mut cfg = Settings::default();
         for line in text.lines() {
             let line = line.split('#').next().unwrap_or("");
             let Some((key, value)) = line.split_once('=') else {
@@ -216,7 +216,7 @@ impl Layer {
         if let Ok(path) = std::env::var(CONFIG_ENV) {
             if changed(Path::new(&path), &mut self.files.config_mtime) {
                 if let Ok(text) = std::fs::read_to_string(&path) {
-                    self.cfg = Config::parse(&text);
+                    self.cfg = Settings::parse(&text);
                     log!("config:{}", self.cfg.describe());
                 }
             }
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn values_keep_their_numeric_prefix() {
-        let cfg = Config::parse("tap_hold = 0.3;\ncursor_speed = 900px\nspeed_level = 3 levels\n");
+        let cfg = Settings::parse("tap_hold = 0.3;\ncursor_speed = 900px\nspeed_level = 3 levels\n");
         assert_eq!(cfg.tap_hold, 0.3);
         assert_eq!(cfg.cursor_speed, 900.0);
         assert_eq!(cfg.speed_level, 3);
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn nan_takes_the_lower_bound() {
-        let cfg = Config::parse("cursor_speed = nan\nspeed_level = nan\n");
+        let cfg = Settings::parse("cursor_speed = nan\nspeed_level = nan\n");
         assert_eq!(cfg.cursor_speed, CURSOR_SPEED_MIN);
         assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32);
     }

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use super::api::api;
 use super::offsets::*;
 use super::state;
-use super::zones::{ship_center, TargetKind};
+use super::zones::{ship_center, ZoneKind};
 use crate::core::layer::Layer;
 use crate::core::util::log;
 
@@ -29,7 +29,7 @@ pub fn shift_count() -> i32 {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Button {
+pub enum MouseButton {
     Left,
     Right,
 }
@@ -92,13 +92,13 @@ pub fn mouse_move(wx: i32, wy: i32, dx: i32, dy: i32, left: bool, right: bool) {
     unsafe { (api().mouse_move)(state::app_ptr(), wx, wy, dx, dy, left, false, right) }
 }
 
-pub fn mouse_button(button: Button, down: bool, wx: i32, wy: i32) {
+pub fn mouse_button(button: MouseButton, down: bool, wx: i32, wy: i32) {
     let a = api();
     let f = match (button, down) {
-        (Button::Left, true) => a.lbutton_down,
-        (Button::Left, false) => a.lbutton_up,
-        (Button::Right, true) => a.rbutton_down,
-        (Button::Right, false) => a.rbutton_up,
+        (MouseButton::Left, true) => a.lbutton_down,
+        (MouseButton::Left, false) => a.lbutton_up,
+        (MouseButton::Right, true) => a.rbutton_down,
+        (MouseButton::Right, false) => a.rbutton_up,
     };
     // SAFETY: the game's mouse handler on its CApp.
     unsafe { f(state::app_ptr(), wx, wy) }
@@ -111,16 +111,16 @@ pub fn request_exit() {
 
 impl Layer {
     /// Presses or releases a mouse button at the cursor.
-    pub fn click(&mut self, button: Button, down: bool) {
+    pub fn click(&mut self, button: MouseButton, down: bool) {
         let (wx, wy) = self.to_window(self.cursor.x, self.cursor.y);
         mouse_button(button, down, wx, wy);
         match button {
-            Button::Left => self.cursor.l_held = down,
-            Button::Right => self.cursor.r_held = down,
+            MouseButton::Left => self.cursor.l_held = down,
+            MouseButton::Right => self.cursor.r_held = down,
         }
     }
 
-    pub fn click_tap(&mut self, button: Button) {
+    pub fn click_tap(&mut self, button: MouseButton) {
         self.click(button, true);
         self.click(button, false);
     }
@@ -157,8 +157,8 @@ impl Layer {
             return;
         };
         let room = member.i32(CREW_ROOM);
-        let kind = if member.i32(CREW_SHIP) == PLAYER_SHIP_ID { TargetKind::Room } else { TargetKind::EnemyRoom };
-        let Some(t) = self.zones.targets.iter().find(|t| t.id == room && t.kind == kind).copied() else {
+        let kind = if member.i32(CREW_SHIP) == PLAYER_SHIP_ID { ZoneKind::Room } else { ZoneKind::EnemyRoom };
+        let Some(t) = self.zones.list.iter().find(|t| t.id == room && t.kind == kind).copied() else {
             return;
         };
         (self.cursor.x, self.cursor.y) = t.rect.center();
@@ -188,9 +188,9 @@ impl Layer {
         let (wx, wy) = self.to_window(gx, gy);
         match self.actions.queued_phase {
             0 => mouse_move(wx, wy, 0, 0, false, false),
-            1 => mouse_button(Button::Left, true, wx, wy),
+            1 => mouse_button(MouseButton::Left, true, wx, wy),
             _ => {
-                mouse_button(Button::Left, false, wx, wy);
+                mouse_button(MouseButton::Left, false, wx, wy);
                 self.actions.queued.remove(0);
                 if self.actions.queued.is_empty() {
                     let (wx, wy) = self.to_window(self.cursor.x, self.cursor.y);
@@ -205,10 +205,10 @@ impl Layer {
     /// Toggles the doors of the player room under the cursor: closes them all while any is
     /// open, else opens them all, clicking each as the game toggles them.
     pub fn room_doors(&mut self) {
-        let Some(under) = self.target_under_cursor().map(|i| self.zones.targets[i]) else {
+        let Some(under) = self.zone_under_cursor().map(|i| self.zones.list[i]) else {
             return;
         };
-        if under.kind != TargetKind::Room {
+        if under.kind != ZoneKind::Room {
             return;
         }
         let room = under.id;

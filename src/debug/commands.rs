@@ -7,11 +7,11 @@ use std::os::unix::fs::OpenOptionsExt;
 use crate::config::layout::{Input, Slot, SlotMode};
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::actions::{key_down, key_up, shift_count, Button};
+use crate::game::actions::{key_down, key_up, shift_count, MouseButton};
 use crate::game::api::api;
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::zones::TargetKind;
+use crate::game::zones::ZoneKind;
 use crate::input::bindings::Source;
 use crate::ui::draw::{text_width, WHEEL_FONT};
 
@@ -46,20 +46,20 @@ fn mode_name(m: SlotMode) -> &'static str {
 }
 
 impl Layer {
-    fn dump_targets(&self) {
-        let under = self.target_under_cursor().map_or(-1, |i| i as i64);
+    fn dump_zones(&self) {
+        let under = self.zone_under_cursor().map_or(-1, |i| i as i64);
         log!(
             "dump: aiming={} targets={} cursor={},{} under={under}",
             state::aiming() as i32,
-            self.zones.targets.len(),
+            self.zones.list.len(),
             self.cursor.last_x,
             self.cursor.last_y
         );
         let gui = state::gui();
-        for t in &self.zones.targets {
+        for t in &self.zones.list {
             let r = t.rect;
-            if matches!(t.kind, TargetKind::Room | TargetKind::EnemyRoom) {
-                let enemy = t.kind == TargetKind::EnemyRoom;
+            if matches!(t.kind, ZoneKind::Room | ZoneKind::EnemyRoom) {
+                let enemy = t.kind == ZoneKind::EnemyRoom;
                 let complete = if enemy { state::enemy_complete() } else { state::player_complete() };
                 let check = match (state::ship_of(complete), gui) {
                     (Some(ship), Some(gui)) => {
@@ -82,7 +82,7 @@ impl Layer {
         log!("state: {}; wheel {wheel} sel {}; shift {}; dpad {}, left {}, right {}; aiming {} crew {} paused {} precision {}",
              self.stack_names().join(" "), self.wheel.sel.map_or(-1, |s| s as i64), shift_count(),
              mode_name(self.slot_mode(Slot::Dpad)), mode_name(self.slot_mode(Slot::LStick)),
-             mode_name(self.slot_mode(Slot::RStick)), state::aiming() as i32, state::crew_selected() as i32,
+             mode_name(self.slot_mode(Slot::RStick)), state::aiming() as i32, state::any_crew_selected() as i32,
              state::game_paused() as i32, self.bind.precision as i32);
         let fps = state::fps_control();
         // SAFETY: the step cap float placed by redirect_step_cap.
@@ -99,17 +99,17 @@ impl Layer {
                 (self.cursor.x, self.cursor.y) = (x as f32, y as f32);
                 self.send_cursor();
             }
-            ("click", _) => self.click_tap(Button::Left),
-            ("rclick", _) => self.click_tap(Button::Right),
+            ("click", _) => self.click_tap(MouseButton::Left),
+            ("rclick", _) => self.click_tap(MouseButton::Right),
             ("key", &[code]) => {
                 key_down(code);
                 key_up(code);
             }
-            ("dump", _) => self.dump_targets(),
+            ("dump", _) => self.dump_zones(),
             ("state", _) => self.dump_state(),
             ("font", &[font]) => self.plate_font = font,
             ("doors", _) => {
-                let under = self.target_under_cursor().map(|i| self.zones.targets[i].id);
+                let under = self.zone_under_cursor().map(|i| self.zones.list[i].id);
                 let Some(ship) = state::ship_of(state::player_complete()) else {
                     return;
                 };
@@ -141,9 +141,9 @@ impl Layer {
             }
             ("wheel", _) => {
                 let name = line["wheel".len()..].trim();
-                self.wheel_close();
+                self.close_wheel();
                 if let Some(i) = self.layout.wheels.iter().position(|w| w.name == name) {
-                    self.wheel_show(i, Source::Input(Input::Home));
+                    self.open_wheel(i, Source::Input(Input::Home));
                 }
             }
             ("pick", &[slot]) => {

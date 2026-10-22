@@ -3,7 +3,7 @@
 use std::sync::{Mutex, TryLockError};
 
 use crate::config::layout::Layout;
-use crate::config::settings::{Config, FileWatch};
+use crate::config::settings::{FileWatch, Settings};
 use crate::debug::commands::Commands;
 use crate::game::actions::Actions;
 use crate::game::zones::Zones;
@@ -16,7 +16,7 @@ use crate::ui::wheel::WheelUi;
 /// Everything the hooks share; each module adds its methods.
 pub struct Layer {
     pub debug: bool,
-    pub cfg: Config,
+    pub cfg: Settings,
     pub files: FileWatch,
     pub layout: Layout,
     pub bind: Bindings,
@@ -37,7 +37,7 @@ impl Default for Layer {
     fn default() -> Self {
         Layer {
             debug: false,
-            cfg: Config::default(),
+            cfg: Settings::default(),
             files: FileWatch::default(),
             layout: Layout::default(),
             bind: Bindings::default(),

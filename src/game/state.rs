@@ -70,7 +70,7 @@ pub fn selected_count() -> usize {
     selected_crew().map_or(0, |v| v.vec_len(std::mem::size_of::<usize>()))
 }
 
-pub fn crew_selected() -> bool {
+pub fn any_crew_selected() -> bool {
     selected_count() > 0
 }
 
