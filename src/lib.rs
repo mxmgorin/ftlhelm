@@ -46,4 +46,5 @@
 
 #![cfg_attr(test, allow(dead_code))]
 
+mod core;
 mod game;
