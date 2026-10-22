@@ -1,0 +1,19 @@
+[package]
+name = "ftlpad"
+version = "0.2.0"
+edition = "2021"
+description = "Gamepad layer for the Linux build of FTL: Faster Than Light"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
