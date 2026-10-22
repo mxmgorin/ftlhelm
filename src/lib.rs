@@ -45,3 +45,5 @@
 //! constructors in the binary. Everything logs to stderr under one prefix.
 
 #![cfg_attr(test, allow(dead_code))]
+
+mod game;
