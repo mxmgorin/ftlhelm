@@ -232,6 +232,8 @@ impl Layer {
         if let Ok(path) = std::env::var(LAYOUT_ENV) {
             if changed(Path::new(&path), &mut self.files.layout_mtime) {
                 match std::fs::read_to_string(&path) {
+                    // An empty file is a save caught midway; the current layout stays.
+                    Ok(text) if text.is_empty() => {}
                     Ok(text) => self.load_layout(&text, &path),
                     Err(_) => log!("layout: cannot open {path}"),
                 }
