@@ -8,11 +8,10 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
 
 | Path | Contents |
 |---|---|
-| `src/ftlpad.h` | shared types and declarations; the overview of the design |
-| `src/game/offsets.h` | the game's object layout, ids and key codes |
-| `src/core/` | symbol lookup, hooks, the per-frame entry |
+| `src/lib.rs` | the overview of the design; the load-time entry |
+| `src/core/` | symbol lookup, hooks, the layer's state, the per-frame entry |
 | `src/config/` | `ftlpad.ini` and layout parsing |
-| `src/game/` | game state readers, D-pad zones, actions on the game |
+| `src/game/` | the game's API and object layout, state readers, D-pad zones, actions |
 | `src/input/` | pad reading, bindings, cursor and focus |
 | `src/ui/` | wheels, help, mode badge |
 | `src/debug/` | the FIFO test channel |
@@ -22,10 +21,12 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
 
 ## Build
 
-    make                 # ftlpad.so
+    make                 # ftlpad.so, through cargo build --release
     make OUT=path.so
+    make test            # unit tests: layout parsing, sticks, wheel geometry
 
-Needs gcc for x86_64 and libm.
+Needs Rust for x86_64-unknown-linux-gnu; the only dependency is the libc crate. The
+library needs glibc 2.35 or later.
 
 ## Run
 

@@ -1,13 +1,15 @@
-# Builds the x86_64 library preloaded into the game; OUT names where it goes.
+# Builds the library with cargo and copies it to OUT, for scripts that call make.
 OUT ?= ftlpad.so
-CFLAGS := -O2 -Wall -Wextra -fPIC -fno-stack-protector -Isrc
-SRC := $(wildcard src/*/*.c)
-HDR := $(wildcard src/*.h src/*/*.h)
 
-$(OUT): $(SRC) $(HDR)
-	$(CC) $(CFLAGS) -shared -o $@ $(SRC) -lm
+$(OUT):
+	cargo build --release
+	cp target/release/libftlpad.so $(OUT)
+
+test:
+	cargo test
 
 clean:
+	cargo clean
 	rm -f $(OUT)
 
-.PHONY: clean
+.PHONY: $(OUT) test clean
