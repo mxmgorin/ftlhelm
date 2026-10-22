@@ -156,7 +156,7 @@ impl Config {
                 continue;
             };
             let (key, value) = (key.trim(), value.trim());
-            let Ok(value) = value.parse::<f32>() else {
+            let Some(value) = float_prefix(value) else {
                 if !key.is_empty() {
                     log!("config: bad value for {key}");
                 }
@@ -237,5 +237,31 @@ impl Layer {
                 }
             }
         }
+    }
+}
+
+/// Parses the longest leading part of `s` that is a number, as strtof does; returns None
+/// when no prefix is.
+fn float_prefix(s: &str) -> Option<f32> {
+    s.char_indices().map(|(i, c)| i + c.len_utf8()).rev().find_map(|end| s[..end].parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn values_keep_their_numeric_prefix() {
+        let cfg = Config::parse("tap_hold = 0.3;\ncursor_speed = 900px\nspeed_level = 3 levels\n");
+        assert_eq!(cfg.tap_hold, 0.3);
+        assert_eq!(cfg.cursor_speed, 900.0);
+        assert_eq!(cfg.speed_level, 3);
+    }
+
+    #[test]
+    fn nan_takes_the_lower_bound() {
+        let cfg = Config::parse("cursor_speed = nan\nspeed_level = nan\n");
+        assert_eq!(cfg.cursor_speed, CURSOR_SPEED_MIN);
+        assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32);
     }
 }
