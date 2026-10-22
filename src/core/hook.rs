@@ -48,7 +48,11 @@ fn read_u64(f: &File, at: u64) -> Option<u64> {
     Some(u64::from_le_bytes(b))
 }
 
+/// Reads `len` bytes at `at`; None when they run past the end of the file.
 fn read_vec(f: &File, at: u64, len: usize) -> Option<Vec<u8>> {
+    if at.checked_add(len as u64)? > f.metadata().ok()?.len() {
+        return None;
+    }
     let mut v = vec![0u8; len];
     f.read_exact_at(&mut v, at).ok()?;
     Some(v)
