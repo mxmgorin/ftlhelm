@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use crate::core::layer::Layer;
-use crate::core::util::log;
+use crate::core::util::{clampf, log};
 
 const CONFIG_ENV: &str = "FTLPAD_CONFIG";
 const LAYOUT_ENV: &str = "FTLPAD_LAYOUT";
@@ -172,8 +172,8 @@ impl Config {
 
     fn set(&mut self, field: &Field, value: f32) {
         match *field {
-            Field::Float(f, lo, hi) => *f(self) = value.clamp(lo, hi),
-            Field::Int(f, lo, hi) => *f(self) = value.clamp(lo, hi) as i32,
+            Field::Float(f, lo, hi) => *f(self) = clampf(value, lo, hi),
+            Field::Int(f, lo, hi) => *f(self) = clampf(value, lo, hi) as i32,
             Field::Bool(f) => *f(self) = value != 0.0,
         }
     }

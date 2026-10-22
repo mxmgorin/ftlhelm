@@ -6,7 +6,7 @@ use std::f32::consts::PI;
 use super::draw::*;
 use crate::config::layout::{Action, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
-use crate::core::util::log;
+use crate::core::util::{clampf, log};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
@@ -157,7 +157,7 @@ impl WheelUi {
 /// The point the plates circle, kept inside the screen.
 fn wheel_origin(cx: f32, cy: f32) -> (f32, f32) {
     let reach = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_MARGIN;
-    (cx.clamp(reach, GAME_W as f32 - reach), cy.clamp(reach, GAME_H as f32 - reach))
+    (clampf(cx, reach, GAME_W as f32 - reach), clampf(cy, reach, GAME_H as f32 - reach))
 }
 
 /// Plate centre for a wheel slot around an origin.

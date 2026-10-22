@@ -2,7 +2,7 @@
 //! between zones, and the first item a screen opens on.
 
 use crate::core::layer::Layer;
-use crate::core::util::log;
+use crate::core::util::{clampf, log};
 use crate::game::actions::mouse_move;
 use crate::game::api::Point;
 use crate::game::mem::Obj;
@@ -115,10 +115,10 @@ impl Layer {
         if mag <= dz {
             return;
         }
-        let k = ((mag - dz) / (1.0 - dz)).clamp(0.0, 1.0).powf(self.cfg.cursor_curve);
+        let k = clampf((mag - dz) / (1.0 - dz), 0.0, 1.0).powf(self.cfg.cursor_curve);
         let step = k * self.cfg.cursor_speed * dt;
-        self.cursor.x = (self.cursor.x + rx / mag * step).clamp(0.0, (GAME_W - 1) as f32);
-        self.cursor.y = (self.cursor.y + ry / mag * step).clamp(0.0, (GAME_H - 1) as f32);
+        self.cursor.x = clampf(self.cursor.x + rx / mag * step, 0.0, (GAME_W - 1) as f32);
+        self.cursor.y = clampf(self.cursor.y + ry / mag * step, 0.0, (GAME_H - 1) as f32);
         self.send_cursor();
     }
 
@@ -141,8 +141,8 @@ impl Layer {
                     continue;
                 }
                 let r = t.rect;
-                let mut vx = cx.clamp(r.x as f32, (r.x + r.w) as f32) - cx;
-                let mut vy = cy.clamp(r.y as f32, (r.y + r.h) as f32) - cy;
+                let mut vx = clampf(cx, r.x as f32, (r.x + r.w) as f32) - cx;
+                let mut vy = clampf(cy, r.y as f32, (r.y + r.h) as f32) - cy;
                 if vx == 0.0 && vy == 0.0 {
                     let (rx, ry) = r.center();
                     (vx, vy) = (rx - cx, ry - cy);
