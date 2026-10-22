@@ -1,7 +1,7 @@
 //! The binding engine: state stack lookup, tap and hold resolution, builtins, and where
 //! wheels may open.
 
-use crate::config::layout::{Action, Binding, Builtin, Input, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
+use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
 use crate::core::layer::Layer;
 use crate::core::util::{log, now_s};
 use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, Button};
@@ -76,15 +76,13 @@ impl Bindings {
     pub fn depth(&self) -> usize {
         self.stack.len()
     }
-}
 
-impl Layer {
     /// The states from the top of the stack down to the base, as far as lookups reach.
-    fn state_chain(&self) -> Vec<&State> {
+    fn chain<'a>(&self, layout: &'a Layout) -> Vec<&'a State> {
         let mut chain = Vec::new();
-        for level in (0..=self.bind.stack.len()).rev() {
-            let index = if level == 0 { 0 } else { self.bind.stack[level - 1].0 };
-            let Some(s) = self.layout.states.get(index) else {
+        for level in (0..=self.stack.len()).rev() {
+            let index = if level == 0 { 0 } else { self.stack[level - 1].0 };
+            let Some(s) = layout.states.get(index) else {
                 break;
             };
             chain.push(s);
@@ -95,23 +93,15 @@ impl Layer {
         chain
     }
 
-    /// The names of the states on the stack, base first.
-    pub fn stack_names(&self) -> Vec<String> {
-        std::iter::once(0)
-            .chain(self.bind.stack.iter().map(|&(s, _)| s))
-            .filter_map(|i| self.layout.states.get(i).map(|s| s.name.clone()))
-            .collect()
-    }
-
     /// The binding an input resolves to in the active state chain.
-    fn lookup(&self, input: Input) -> Option<Binding> {
-        self.state_chain().into_iter().find_map(|s| s.bind[input as usize])
+    pub fn lookup(&self, layout: &Layout, input: Input) -> Option<Binding> {
+        self.chain(layout).into_iter().find_map(|s| s.bind[input as usize])
     }
 
     /// What a pointer source does in the active state chain: keys once any state binds its
     /// directions, else the mode the nearest state sets.
-    pub fn slot_mode(&self, slot: Slot) -> SlotMode {
-        for s in self.state_chain() {
+    pub fn slot_mode(&self, layout: &Layout, slot: Slot) -> SlotMode {
+        for s in self.chain(layout) {
             if (0..4).any(|d| s.bind[slot.first_input() + d].is_some()) {
                 return SlotMode::Keys;
             }
@@ -120,6 +110,53 @@ impl Layer {
             }
         }
         SlotMode::Keys
+    }
+
+    /// The names of the states on the stack, base first.
+    pub fn stack_names(&self, layout: &Layout) -> Vec<String> {
+        std::iter::once(0)
+            .chain(self.stack.iter().map(|&(s, _)| s))
+            .filter_map(|i| layout.states.get(i).map(|s| s.name.clone()))
+            .collect()
+    }
+
+    /// Pushes a state held by an input, while the stack has room.
+    fn push_state(&mut self, state: usize, input: Input) {
+        if self.stack.len() + 1 < MAX_STATES {
+            self.stack.push((state, input));
+        }
+    }
+
+    /// Pops the topmost state the input pushed, with every state above it.
+    fn pop_states(&mut self, input: Input) {
+        if let Some(level) = self.stack.iter().rposition(|&(_, by)| by == input) {
+            self.stack.truncate(level);
+        }
+    }
+
+    /// Takes the presses held for at least `hold_s` by `t`, in input order.
+    fn take_due(&mut self, t: f64, hold_s: f64) -> Vec<(Input, Binding)> {
+        let mut due = Vec::new();
+        for input in Input::ALL {
+            let Some((b, since)) = self.pending[input as usize] else {
+                continue;
+            };
+            if t - since >= hold_s {
+                self.pending[input as usize] = None;
+                due.push((input, b));
+            }
+        }
+        due
+    }
+}
+
+impl Layer {
+    pub fn stack_names(&self) -> Vec<String> {
+        self.bind.stack_names(&self.layout)
+    }
+
+    pub fn slot_mode(&self, slot: Slot) -> SlotMode {
+        self.bind.slot_mode(&self.layout, slot)
     }
 
     /// Runs a builtin on the press or release of a source.
@@ -230,11 +267,9 @@ impl Layer {
                     return;
                 };
                 if down {
-                    if self.bind.stack.len() + 1 < MAX_STATES {
-                        self.bind.stack.push((state, input));
-                    }
-                } else if let Some(level) = self.bind.stack.iter().rposition(|&(_, by)| by == input) {
-                    self.bind.stack.truncate(level);
+                    self.bind.push_state(state, input);
+                } else {
+                    self.bind.pop_states(input);
                 }
             }
             Action::Wheel(wheel) => {
@@ -292,7 +327,7 @@ impl Layer {
     /// it waits for the threshold (hold) or the release (tap).
     pub fn press(&mut self, input: Input, t: f64) {
         self.bind.active[input as usize] = None;
-        let Some(b) = self.lookup(input) else {
+        let Some(b) = self.bind.lookup(&self.layout, input) else {
             return;
         };
         if let Action::Wheel(w) = b.hold {
@@ -332,14 +367,7 @@ impl Layer {
 
     /// Turns presses that outlived the tap threshold into holds.
     pub fn settle_pending(&mut self, t: f64) {
-        for input in Input::ALL {
-            let Some((b, since)) = self.bind.pending[input as usize] else {
-                continue;
-            };
-            if t - since < self.cfg.tap_hold as f64 {
-                continue;
-            }
-            self.bind.pending[input as usize] = None;
+        for (input, b) in self.bind.take_due(t, self.cfg.tap_hold as f64) {
             self.start(b.hold, input, t);
         }
     }
@@ -348,5 +376,73 @@ impl Layer {
     pub fn builtin_tap(&mut self, b: Builtin) {
         self.builtin(b, Source::Plate, true, now_s());
         self.builtin(b, Source::Plate, false, now_s());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PAGES: &str = "[controls]\nl1 = hold_state depower\nr1 = hold_state solo\na = space\nb = esc\n\
+                         [controls:depower]\noverlay = parent\na = 1 add_shift\n\
+                         [controls:solo]\nleft_analog = mouse_movement\n";
+
+    fn key(code: char) -> Option<Action> {
+        Some(Action::Key { code: code as i32, shift: false })
+    }
+
+    #[test]
+    fn overlay_page_falls_through_to_the_base() {
+        let layout = Layout::parse(PAGES);
+        let mut b = Bindings::default();
+        b.push_state(1, Input::L1);
+        assert_eq!(
+            b.lookup(&layout, Input::FaceDown).map(|b| b.hold),
+            Some(Action::Key { code: '1' as i32, shift: true })
+        );
+        assert_eq!(
+            b.lookup(&layout, Input::FaceRight).map(|b| b.hold),
+            Some(Action::Key { code: KEY_ESCAPE, shift: false })
+        );
+        assert_eq!(b.stack_names(&layout), ["controls", "depower"]);
+    }
+
+    #[test]
+    fn page_without_overlay_hides_the_base() {
+        let layout = Layout::parse(PAGES);
+        let mut b = Bindings::default();
+        assert_eq!(b.lookup(&layout, Input::FaceDown).map(|b| b.hold), key(' '));
+        b.push_state(2, Input::R1);
+        assert_eq!(b.lookup(&layout, Input::FaceDown), None);
+        assert_eq!(b.slot_mode(&layout, Slot::LStick), SlotMode::Mouse);
+    }
+
+    #[test]
+    fn release_pops_its_page_and_those_above() {
+        let mut b = Bindings::default();
+        b.push_state(1, Input::L1);
+        b.push_state(2, Input::R1);
+        b.pop_states(Input::L1);
+        assert_eq!(b.depth(), 0);
+    }
+
+    #[test]
+    fn stack_stops_below_the_state_limit() {
+        let mut b = Bindings::default();
+        for _ in 0..MAX_STATES * 2 {
+            b.push_state(1, Input::L1);
+        }
+        assert_eq!(b.depth(), MAX_STATES - 1);
+    }
+
+    #[test]
+    fn a_press_turns_into_a_hold_after_the_threshold() {
+        let layout = Layout::parse("[controls]\nx = wheel w | arm_next\n[wheel:w]\n");
+        let mut b = Bindings::default();
+        let binding = b.lookup(&layout, Input::FaceLeft).expect("x is bound");
+        b.pending[Input::FaceLeft as usize] = Some((binding, 1.0));
+        assert!(b.take_due(1.15, 0.2).is_empty());
+        assert_eq!(b.take_due(1.25, 0.2), [(Input::FaceLeft, binding)]);
+        assert!(b.take_due(2.0, 0.2).is_empty());
     }
 }
