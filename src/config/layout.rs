@@ -90,21 +90,21 @@ pub enum SlotMode {
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
-    PauseFf, Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
+    Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
     PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode,
 }
 
 impl Builtin {
     #[rustfmt::skip]
-    pub const ALL: [Builtin; 15] = [
-        Builtin::PauseFf, Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
+    pub const ALL: [Builtin; 14] = [
+        Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
         Builtin::DpadMode,
     ];
     #[rustfmt::skip]
-    const NAMES: [&'static str; 15] = [
-        "pause_ff", "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
+    const NAMES: [&'static str; 14] = [
+        "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
         "fast_forward", "dpad_mode",
     ];

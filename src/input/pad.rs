@@ -215,7 +215,6 @@ impl Layer {
         if !in_wheel {
             self.move_pointers(&p, mode, t, dt);
         }
-        self.settle_pause_ff(t);
         self.follow_game_modes();
         self.watch_exit_chord(t);
     }
@@ -298,7 +297,7 @@ impl Layer {
             if p.down[i] {
                 self.press(input, t);
             } else {
-                self.release(input, t);
+                self.release(input);
             }
         }
     }
@@ -326,18 +325,6 @@ impl Layer {
         }
         if mode[Slot::Dpad as usize] == SlotMode::Mouse && (p.dpad[0] != 0 || p.dpad[1] != 0) {
             self.move_cursor(p.dpad[0] as f32, p.dpad[1] as f32, dt);
-        }
-    }
-
-    /// Unpauses and runs fast once pause_ff is held past its threshold.
-    fn settle_pause_ff(&mut self, t: f64) {
-        if self.bind.pause_ff_since.is_some_and(|s| t - s >= self.cfg.pause_ff_hold as f64)
-            && !self.actions.fast_forward
-        {
-            if state::game_paused() {
-                tap_key(KEY_SPACE, false);
-            }
-            self.set_fast(true);
         }
     }
 

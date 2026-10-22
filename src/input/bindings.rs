@@ -3,7 +3,7 @@
 
 use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
 use crate::core::layer::Layer;
-use crate::core::util::{log, now_s};
+use crate::core::util::log;
 use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, Button};
 use crate::game::offsets::*;
 use crate::game::state;
@@ -47,8 +47,6 @@ pub struct Bindings {
     pub last_ability_key: Option<i32>,
     /// dpad_mode toggled: the D-pad and the sticks move the cursor.
     pub dpad_mouse: bool,
-    /// When pause_ff went down, while it is held.
-    pub pause_ff_since: Option<f64>,
 }
 
 impl Default for Bindings {
@@ -61,7 +59,6 @@ impl Default for Bindings {
             precision: false,
             last_ability_key: None,
             dpad_mouse: false,
-            pause_ff_since: None,
         }
     }
 }
@@ -160,7 +157,7 @@ impl Layer {
     }
 
     /// Runs a builtin on the press or release of a source.
-    pub fn builtin(&mut self, id: Builtin, source: Source, down: bool, t: f64) {
+    pub fn builtin(&mut self, id: Builtin, source: Source, down: bool) {
         match id {
             Builtin::ContextClick => {
                 let slot = source.index();
@@ -200,17 +197,6 @@ impl Layer {
                     tap_key(KEY_ESCAPE, false);
                 }
             }
-            Builtin::PauseFf => {
-                if down {
-                    tap_key(KEY_SPACE, false);
-                    self.bind.pause_ff_since = Some(t);
-                } else {
-                    if self.actions.fast_forward {
-                        self.set_fast(false);
-                    }
-                    self.bind.pause_ff_since = None;
-                }
-            }
             Builtin::ArmNext if down => actions::arm_next(),
             // On a tabbed screen the tap walks its tabs instead.
             Builtin::AimCrew if down => {
@@ -245,7 +231,7 @@ impl Layer {
     }
 
     /// Performs an action's press or release.
-    pub fn perform(&mut self, action: Action, source: Source, down: bool, t: f64) {
+    pub fn perform(&mut self, action: Action, source: Source, down: bool) {
         match action {
             Action::Key { code, shift } => {
                 if down {
@@ -277,7 +263,7 @@ impl Layer {
                     self.wheel_show(wheel, source);
                 }
             }
-            Action::Builtin(b) => self.builtin(b, source, down, t),
+            Action::Builtin(b) => self.builtin(b, source, down),
         }
         if self.debug && down {
             let what = match action {
@@ -301,8 +287,8 @@ impl Layer {
     }
 
     /// Performs an action's press and records it for the release.
-    fn start(&mut self, action: Action, input: Input, t: f64) {
-        self.perform(action, Source::Input(input), true, t);
+    fn start(&mut self, action: Action, input: Input) {
+        self.perform(action, Source::Input(input), true);
         self.bind.active[input as usize] = Some(action);
     }
 
@@ -334,8 +320,8 @@ impl Layer {
             // Off the ship view a wheel button is its tap alone, at once.
             if self.wheel.open.is_none() && !self.wheel_screen() {
                 if let Some(tap) = b.tap {
-                    self.perform(tap, Source::Input(input), true, t);
-                    self.perform(tap, Source::Input(input), false, t);
+                    self.perform(tap, Source::Input(input), true);
+                    self.perform(tap, Source::Input(input), false);
                 }
                 return;
             }
@@ -349,33 +335,33 @@ impl Layer {
             self.bind.pending[input as usize] = Some((b, t));
             return;
         }
-        self.start(b.hold, input, t);
+        self.start(b.hold, input);
     }
 
-    pub fn release(&mut self, input: Input, t: f64) {
+    pub fn release(&mut self, input: Input) {
         if let Some((b, _)) = self.bind.pending[input as usize].take() {
             if let Some(tap) = b.tap {
-                self.perform(tap, Source::Input(input), true, t);
-                self.perform(tap, Source::Input(input), false, t);
+                self.perform(tap, Source::Input(input), true);
+                self.perform(tap, Source::Input(input), false);
             }
             return;
         }
         if let Some(action) = self.bind.active[input as usize].take() {
-            self.perform(action, Source::Input(input), false, t);
+            self.perform(action, Source::Input(input), false);
         }
     }
 
     /// Turns presses that outlived the tap threshold into holds.
     pub fn settle_pending(&mut self, t: f64) {
         for (input, b) in self.bind.take_due(t, self.cfg.tap_hold as f64) {
-            self.start(b.hold, input, t);
+            self.start(b.hold, input);
         }
     }
 
     /// Runs a plate's builtin as a tap.
     pub fn builtin_tap(&mut self, b: Builtin) {
-        self.builtin(b, Source::Plate, true, now_s());
-        self.builtin(b, Source::Plate, false, now_s());
+        self.builtin(b, Source::Plate, true);
+        self.builtin(b, Source::Plate, false);
     }
 }
 

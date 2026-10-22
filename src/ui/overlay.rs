@@ -34,7 +34,6 @@ const KEY_TITLES: &[(i32, &str)] = &[
 
 fn builtin_title(b: Builtin) -> &'static str {
     match b {
-        Builtin::PauseFf => "Pause, hold: fast",
         Builtin::Cancel => "Cancel",
         Builtin::ContextClick => "Click",
         Builtin::ArmNext => "Next weapon",

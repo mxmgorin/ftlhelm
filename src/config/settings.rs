@@ -27,7 +27,6 @@ const CURSOR_CURVE: f32 = 2.0;
 const CURSOR_CURVE_MIN: f32 = 0.5;
 const CURSOR_CURVE_MAX: f32 = 4.0;
 const TAP_HOLD_S: f32 = 0.2;
-const FF_HOLD_S: f32 = 0.25;
 const HOLD_S_MIN: f32 = 0.05;
 const HOLD_S_MAX: f32 = 2.0;
 pub const FLICK_ON: f32 = 0.8;
@@ -65,7 +64,6 @@ pub struct Config {
     pub swap_ab: bool,
     pub swap_xy: bool,
     pub tap_hold: f32,
-    pub pause_ff_hold: f32,
     pub focus_cone_narrow: f32,
     pub focus_cone_wide: f32,
     pub focus_side_weight: f32,
@@ -97,7 +95,6 @@ impl Default for Config {
             swap_ab: true,
             swap_xy: false,
             tap_hold: TAP_HOLD_S,
-            pause_ff_hold: FF_HOLD_S,
             focus_cone_narrow: CONE_NARROW_DEG,
             focus_cone_wide: CONE_WIDE_DEG,
             focus_side_weight: FOCUS_SIDE_WEIGHT,
@@ -134,7 +131,6 @@ const OPTIONS: &[(&str, Field)] = &[
     ("flick_threshold", Field::Float(|c| &mut c.flick_on, FLICK_OFF + FLICK_GAP, 1.0)),
     ("flick_repeat", Field::Float(|c| &mut c.flick_repeat, 0.0, f32::INFINITY)),
     ("tap_hold", Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
-    ("pause_ff_hold", Field::Float(|c| &mut c.pause_ff_hold, HOLD_S_MIN, HOLD_S_MAX)),
     ("focus_cone_narrow", Field::Float(|c| &mut c.focus_cone_narrow, CONE_DEG_MIN, CONE_DEG_MAX)),
     ("focus_cone_wide", Field::Float(|c| &mut c.focus_cone_wide, CONE_DEG_MIN, CONE_DEG_MAX)),
     ("focus_side_weight", Field::Float(|c| &mut c.focus_side_weight, 0.0, FOCUS_SIDE_WEIGHT_MAX)),

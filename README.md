@@ -86,7 +86,7 @@ below.
 | `precision` | doors become the zones while held |
 | `room_doors` | toggle the doors of the room under the cursor |
 | `center_swap` | the cursor to the centre of the farther ship |
-| `pause`, `fast_forward`, `pause_ff` | pause; run fast while held; tap pauses, hold runs fast |
+| `pause`, `fast_forward` | pause; run fast while held |
 | `dpad_mode` | the D-pad and sticks switch between zones and a free cursor |
 | `help` | show the controls table; any button closes it |
 
