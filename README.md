@@ -26,7 +26,8 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
     make test            # unit tests: layout parsing, sticks, wheel geometry
 
 Needs Rust for x86_64-unknown-linux-gnu; the only dependency is the libc crate. The
-library needs glibc 2.35 or later.
+library needs glibc 2.35 or later. `make` fails when it needs any shared library besides
+libc, libm and ld-linux.
 
 ## Run
 
