@@ -1,10 +1,12 @@
 //! Layout parsing: gptokeyb2-style [controls] states, HOLD | TAP bindings, builtins, and
 //! [wheel:NAME] sections with plate labels and icons.
 
+use crate::config::settings::Settings;
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::offsets::{KEY_ENTER, KEY_ESCAPE, KEY_F1, KEY_F_COUNT, KEY_LSHIFT, KEY_SPACE};
 
+const CONFIG_SECTION: &str = "config";
 const BASE_SECTION: &str = "controls";
 const STATE_SECTION: &str = "controls:";
 const WHEEL_SECTION: &str = "wheel:";
@@ -201,6 +203,8 @@ impl WheelDef {
 pub struct Layout {
     pub states: Vec<State>,
     pub wheels: Vec<WheelDef>,
+    /// The [config] section over the defaults.
+    pub settings: Settings,
 }
 
 #[rustfmt::skip]
@@ -377,6 +381,7 @@ impl Layout {
         let mut wheel_defined = [false; MAX_WHEELS];
         enum Section {
             None,
+            Config,
             State(usize),
             Wheel(usize),
         }
@@ -398,7 +403,9 @@ impl Layout {
             }
             if let Some(rest) = line.strip_prefix('[') {
                 let name = rest.split(']').next().unwrap_or(rest);
-                section = if name == BASE_SECTION {
+                section = if name == CONFIG_SECTION {
+                    Section::Config
+                } else if name == BASE_SECTION {
                     Section::State(base)
                 } else if let Some(state) = name.strip_prefix(STATE_SECTION) {
                     match set.find_state(state) {
@@ -428,6 +435,7 @@ impl Layout {
             match section {
                 Section::State(i) => set.parse_binding(i, key, value),
                 Section::Wheel(i) => set.parse_wheel_line(i, key, value),
+                Section::Config => set.settings.apply(key, value),
                 Section::None => {}
             }
         }
@@ -465,12 +473,14 @@ fn parse_icon(spec: &str) -> Option<IconSpec> {
 }
 
 impl Layer {
-    /// Replaces the layout with one parsed from `text`, closing any wheel and dropping
-    /// pushed states and pending presses.
+    /// Replaces the layout and the settings with those parsed from `text`, closing any wheel
+    /// and dropping pushed states and pending presses.
     pub fn load_layout(&mut self, text: &str, origin: &str) {
         let layout = Layout::parse(text);
         self.close_wheel();
         log!("layout: {} states, {} wheels from {origin}", layout.states.len(), layout.wheels.len());
+        self.cfg = layout.settings.clone();
+        log!("config:{}", self.cfg.describe());
         self.layout = layout;
         self.bind.reset();
     }
@@ -531,5 +541,22 @@ mod tests {
     fn hash_inside_quotes_is_kept() {
         let l = Layout::parse("[wheel:w]\nup = a \"No # comment\"\n");
         assert_eq!(l.wheels[0].plates[0].as_ref().map(|p| p.label.as_str()), Some("No # comment"));
+    }
+
+    #[test]
+    fn config_section_sets_the_settings() {
+        let l = Layout::parse("[config]\ntap_hold = 0.3 # s\nswap_ab = 0\n[controls]\na = space\n");
+        assert_eq!(l.settings.tap_hold, 0.3);
+        assert!(!l.settings.swap_ab);
+        assert_eq!(l.settings.cursor_speed, Settings::default().cursor_speed);
+        assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
+    }
+
+    #[test]
+    fn shipped_scheme_reads_its_settings() {
+        let l = Layout::parse(include_str!("../../config/ftlpad.ini"));
+        assert_eq!(l.settings.cursor_deadzone, 0.25);
+        assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
+        assert!(!l.wheels.is_empty());
     }
 }

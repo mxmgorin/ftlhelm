@@ -10,7 +10,7 @@
 //! itself loads far away. The game binary on disk is never changed.
 //!
 //! Modules: `core` resolves symbols, places hooks and runs the per-frame entry; `config`
-//! reads ftlpad.ini and the layout; `game` reads the game's objects, builds the zones and
+//! reads the layout and its settings; `game` reads the game's objects, builds the zones and
 //! performs actions on the game; `input` reads the pad, resolves bindings and moves the
 //! cursor; `ui` draws wheels, help and the mode badge; `debug` serves the FIFO test
 //! channel.

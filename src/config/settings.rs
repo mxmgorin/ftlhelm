@@ -1,5 +1,5 @@
-//! ftlpad.ini: settings with their defaults and ranges, and the mtime poll that reloads it
-//! and the layout while the game runs.
+//! Settings with their defaults and ranges, read from the layout's [config] section, and
+//! the mtime poll that reloads the layout while the game runs.
 
 use std::path::Path;
 use std::time::SystemTime;
@@ -7,7 +7,6 @@ use std::time::SystemTime;
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 
-const CONFIG_ENV: &str = "FTLPAD_CONFIG";
 const LAYOUT_ENV: &str = "FTLPAD_LAYOUT";
 const FILE_POLL_S: f64 = 1.0;
 
@@ -138,28 +137,17 @@ const OPTIONS: &[(&str, Field)] = &[
 ];
 
 impl Settings {
-    /// Parses "key = value" lines with '#' comments over the defaults; unknown keys and
-    /// unreadable values are logged and skipped.
-    pub fn parse(text: &str) -> Settings {
-        let mut cfg = Settings::default();
-        for line in text.lines() {
-            let line = line.split('#').next().unwrap_or("");
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let (key, value) = (key.trim(), value.trim());
-            let Some(value) = float_prefix(value) else {
-                if !key.is_empty() {
-                    log!("config: bad value for {key}");
-                }
-                continue;
-            };
-            match OPTIONS.iter().find(|(name, _)| *name == key) {
-                Some((_, field)) => cfg.set(field, value),
-                None => log!("config: unknown key {key}"),
-            }
+    /// Sets one option from a "key = value" line; unknown keys and unreadable values are
+    /// logged and skipped.
+    pub fn apply(&mut self, key: &str, value: &str) {
+        let Some(value) = float_prefix(value) else {
+            log!("config: bad value for {key}");
+            return;
+        };
+        match OPTIONS.iter().find(|(name, _)| *name == key) {
+            Some((_, field)) => self.set(field, value),
+            None => log!("config: unknown key {key}"),
         }
-        cfg
     }
 
     fn set(&mut self, field: &Field, value: f32) {
@@ -185,11 +173,10 @@ impl Settings {
     }
 }
 
-/// When the files were last read.
+/// When the layout file was last read.
 #[derive(Default)]
 pub struct FileWatch {
     last_poll: Option<f64>,
-    config_mtime: Option<SystemTime>,
     layout_mtime: Option<SystemTime>,
 }
 
@@ -206,21 +193,12 @@ fn changed(path: &Path, last: &mut Option<SystemTime>) -> bool {
 }
 
 impl Layer {
-    /// Re-reads the config and the layout when their mtimes change, at most once per poll
-    /// interval.
+    /// Re-reads the layout when its mtime changes, at most once per poll interval.
     pub fn poll_files(&mut self, t: f64) {
         if self.files.last_poll.is_some_and(|last| t - last < FILE_POLL_S) {
             return;
         }
         self.files.last_poll = Some(t);
-        if let Ok(path) = std::env::var(CONFIG_ENV) {
-            if changed(Path::new(&path), &mut self.files.config_mtime) {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    self.cfg = Settings::parse(&text);
-                    log!("config:{}", self.cfg.describe());
-                }
-            }
-        }
         if let Ok(path) = std::env::var(LAYOUT_ENV) {
             if changed(Path::new(&path), &mut self.files.layout_mtime) {
                 match std::fs::read_to_string(&path) {
@@ -246,7 +224,10 @@ mod tests {
 
     #[test]
     fn values_keep_their_numeric_prefix() {
-        let cfg = Settings::parse("tap_hold = 0.3;\ncursor_speed = 900px\nspeed_level = 3 levels\n");
+        let mut cfg = Settings::default();
+        cfg.apply("tap_hold", "0.3;");
+        cfg.apply("cursor_speed", "900px");
+        cfg.apply("speed_level", "3 levels");
         assert_eq!(cfg.tap_hold, 0.3);
         assert_eq!(cfg.cursor_speed, 900.0);
         assert_eq!(cfg.speed_level, 3);
@@ -254,7 +235,9 @@ mod tests {
 
     #[test]
     fn nan_takes_the_lower_bound() {
-        let cfg = Settings::parse("cursor_speed = nan\nspeed_level = nan\n");
+        let mut cfg = Settings::default();
+        cfg.apply("cursor_speed", "nan");
+        cfg.apply("speed_level", "nan");
         assert_eq!(cfg.cursor_speed, CURSOR_SPEED_MIN);
         assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32);
     }

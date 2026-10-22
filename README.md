@@ -10,13 +10,12 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
 |---|---|
 | `src/lib.rs` | the overview of the design; the load-time entry |
 | `src/core/` | symbol lookup, hooks, the layer's state, the per-frame entry |
-| `src/config/` | `ftlpad.ini` and layout parsing |
+| `src/config/` | layout and settings parsing |
 | `src/game/` | the game's API and object layout, state readers, D-pad zones, actions |
 | `src/input/` | pad reading, bindings, cursor and focus |
 | `src/ui/` | wheels, help, mode badge |
 | `src/debug/` | the FIFO test channel |
-| `config/ftl_scheme.ini` | the layout: buttons, taps and holds, wheels |
-| `config/ftlpad.ini` | settings, each documented in place |
+| `config/ftlpad.ini` | the layout: settings, buttons, taps and holds, wheels |
 | `tools/vpad.py` | uinput virtual pad for desktop tests (python-evdev) |
 
 ## Build
@@ -37,25 +36,25 @@ Environment of the game process:
 | Variable | Value |
 |---|---|
 | `LD_PRELOAD` | path to `ftlpad.so` (under box64: `BOX64_LD_PRELOAD`) |
-| `FTLPAD_LAYOUT` | path to `ftl_scheme.ini`; without it a minimal built-in layout |
-| `FTLPAD_CONFIG` | path to `ftlpad.ini` |
+| `FTLPAD_LAYOUT` | path to `ftlpad.ini`; without it a minimal built-in layout |
 | `FTLPAD_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
 | `FTLPAD_CMD` | optional FIFO for test commands |
 | `FTLPAD_DEBUG` | set: log presses, picks and D-pad steps to stderr |
 
 Steam launch options (Linux, Steam Deck):
 
-    LD_PRELOAD=/path/ftlpad.so FTLPAD_LAYOUT=/path/config/ftl_scheme.ini FTLPAD_CONFIG=/path/config/ftlpad.ini %command%
+    LD_PRELOAD=/path/ftlpad.so FTLPAD_LAYOUT=/path/config/ftlpad.ini %command%
 
-The library stays inactive in processes that are not FTL. Both ini files are re-read while
-the game runs. Xbox-style pads without an SDL mapping take `swap_ab = 0` in `ftlpad.ini`.
+The library stays inactive in processes that are not FTL. The layout is re-read while the
+game runs. Xbox-style pads without an SDL mapping take `swap_ab = 0` in its `[config]`.
 
 ## Layout format
 
-`ftl_scheme.ini` is gptokeyb2's ini format with wheels and built-in actions on top.
+`ftlpad.ini` is gptokeyb2's ini format with wheels and built-in actions on top.
 
 | Section | Contents |
 |---|---|
+| `[config]` | settings, each documented in place in `ftlpad.ini` |
 | `[controls]` | the base state |
 | `[controls:NAME]` | a state pushed while a `hold_state NAME` button is held |
 | `[wheel:NAME]` | a wheel opened by `wheel NAME` |
