@@ -57,10 +57,8 @@ pub struct Config {
     pub rumble: bool,
     pub flick_on: f32,
     pub flick_repeat: f32,
-    /// Face buttons by label: -1 from the SDL mapping, with the swaps below when there is
-    /// none; 1 forces the swaps, 0 forces none.
-    pub nintendo: i32,
-    /// Which raw pairs to swap for the labels: A/B (east/south) and X/Y (north/west).
+    /// Which raw pairs to swap for the labels when no SDL mapping names the face buttons:
+    /// A/B (east/south) and X/Y (north/west).
     pub swap_ab: bool,
     pub swap_xy: bool,
     pub tap_hold: f32,
@@ -91,7 +89,6 @@ impl Default for Config {
             rumble: true,
             flick_on: FLICK_ON,
             flick_repeat: FLICK_REPEAT_S,
-            nintendo: -1,
             swap_ab: true,
             swap_xy: false,
             tap_hold: TAP_HOLD_S,
@@ -125,7 +122,6 @@ const OPTIONS: &[(&str, Field)] = &[
     ("autopause_aim", Field::Bool(|c| &mut c.autopause_aim)),
     ("speed_level", Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
     ("rumble", Field::Bool(|c| &mut c.rumble)),
-    ("nintendo_labels", Field::Int(|c| &mut c.nintendo, -1.0, 1.0)),
     ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
     ("swap_xy", Field::Bool(|c| &mut c.swap_xy)),
     ("flick_threshold", Field::Float(|c| &mut c.flick_on, FLICK_OFF + FLICK_GAP, 1.0)),

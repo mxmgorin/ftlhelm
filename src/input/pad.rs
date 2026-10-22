@@ -135,12 +135,12 @@ impl Layer {
             p.down[b] = idx >= 0 && unsafe { (a.joy_button_state)(dev, idx) } != 0;
         }
         let faces = self.pad.sdl_face;
-        if self.cfg.nintendo < 0 && faces.iter().all(Option::is_some) {
+        if faces.iter().all(Option::is_some) {
             for ((_, input), idx) in FACE_LABELS.iter().zip(faces.into_iter().flatten()) {
                 // SAFETY: as above.
                 p.down[*input as usize] = unsafe { (a.joy_button_state)(dev, idx) } != 0;
             }
-        } else if self.cfg.nintendo != 0 {
+        } else {
             if self.cfg.swap_ab {
                 p.down.swap(Input::FaceDown as usize, Input::FaceRight as usize);
             }
