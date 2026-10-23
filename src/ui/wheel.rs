@@ -38,6 +38,9 @@ const WHEEL_LINE: f32 = 22.0;
 const WHEEL_TEXT_H: f32 = 18.0;
 const WHEEL_TEXT_PAD: f32 = 6.0;
 /// The disc under the plates reaches this far past them.
+/// The selected plate grows by this much on each side, inside a solid frame this thick.
+const SELECTED_GROW: f32 = 4.0;
+const SELECTED_FRAME: f32 = 3.0;
 const WHEEL_DISC_PAD: f32 = 14.0;
 
 const PLATE_SELECTED_COLOR: GlColor = GlColor::new(0.42, 0.38, 0.1, 0.95);
@@ -230,7 +233,15 @@ fn draw_plate(pl: &Plate, font: i32, cx: f32, cy: f32, selected: bool) {
     } else {
         (if pl.powered { PLATE_POWERED_COLOR } else { PLATE_IDLE_COLOR }, PLATE_EDGE_COLOR)
     };
-    draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, fill, edge);
+    if selected && pl.available {
+        let frame = SELECTED_GROW + SELECTED_FRAME;
+        let side = WHEEL_TILE + 2.0 * frame;
+        draw_rect(x - frame, y - frame, side, side, PLATE_SELECTED_EDGE_COLOR);
+        let side = WHEEL_TILE + 2.0 * SELECTED_GROW;
+        draw_panel(x - SELECTED_GROW, y - SELECTED_GROW, side, side, fill, edge);
+    } else {
+        draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, fill, edge);
+    }
     // With pips the icon box sits at the top, without it is centred.
     let icon_cy = if pl.pips > 0 { y + TILE_PAD + TILE_ICON / 2.0 } else { cy };
     let tint = if pl.available { TEXT_COLOR } else { TEXT_DISABLED_COLOR };
