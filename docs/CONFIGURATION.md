@@ -20,4 +20,4 @@ switches.
 | `FTLPAD_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
 | `FTLPAD_CMD` | path to a FIFO for test commands, see [Building](BUILDING.md#test-channel) |
 | `FTLPAD_DEBUG` | set: log every press, wheel pick and D-pad step |
-| `SDL_GAMECONTROLLERCONFIG` | an SDL mapping that names the face buttons |
+| `SDL_GAMECONTROLLERCONFIG` | an SDL mapping that names the pad's buttons |

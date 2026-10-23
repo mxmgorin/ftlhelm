@@ -86,6 +86,8 @@ game_api! {
     fps_control: usize = "_ZN4CFPS10FPSControlE",
     fps_loop: usize = "_ZN4CFPS6OnLoopEv",
     scan_joystick: usize = "scan_joystick",
+    sil_joysticks: usize = "joysticks",
+    sil_event_info: usize = "event_info",
     get_text: unsafe extern "C" fn(*mut Ptr, Ptr, *const c_void, *const c_void) = "_ZN11TextLibrary7GetTextERKSsS1_",
     text_library: usize = "_ZN7Globals7LibraryE",
     onloop: usize = "_ZN4CApp6OnLoopEv",

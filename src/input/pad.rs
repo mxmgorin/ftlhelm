@@ -8,12 +8,17 @@ use crate::core::util::log;
 use crate::game::actions::{mouse_move, request_exit, tap_key};
 use crate::game::api::api;
 use crate::game::mem::Obj;
-use crate::game::offsets::KEY_SPACE;
+use crate::game::offsets::{
+    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, KEY_SPACE, SILJOY_EVENT_DEV, SILJOY_KEYMAP_HIGH,
+    SILJOY_KEYMAP_LOW, SILJOY_SIZE,
+};
 use crate::game::state;
 use crate::game::zones::ship_center;
+use crate::input::sdl_map::{
+    self, Resolved, SdlMap, BTN_JOYSTICK, BTN_TRIGGER_HAPPY, SIL_KEYMAP_HIGH_LEN, SIL_KEYMAP_LOW_LEN,
+};
 
-/// PortMaster's per-device SDL mapping; its button indices match SIL's for pads whose
-/// buttons all sit in the gamepad key range.
+/// PortMaster's per-device SDL mapping.
 const SDL_MAP_ENV: &str = "SDL_GAMECONTROLLERCONFIG";
 const STICK_KEY_ON: f32 = 0.5;
 const STICK_KEY_OFF: f32 = 0.3;
@@ -25,9 +30,6 @@ const BUTTON_REFRESH_FRAMES: u64 = 6;
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
-/// Face buttons the mapping names, with the inputs they are.
-const FACE_LABELS: [(&str, Input); 4] =
-    [("a", Input::FaceDown), ("b", Input::FaceRight), ("x", Input::FaceLeft), ("y", Input::FaceUp)];
 
 /// One frame of pad state.
 #[derive(Default)]
@@ -38,8 +40,9 @@ pub struct PadFrame {
 }
 
 pub struct PadState {
-    /// SIL button index per face label from the SDL mapping.
-    sdl_face: [Option<i32>; 4],
+    sdl: Option<SdlMap>,
+    /// The mapping resolved for one pad, keyed by SIL pad and input device.
+    resolved: Option<((i32, i32), Resolved)>,
     held: [bool; INPUT_COUNT],
     dpad_spent: [bool; 4],
     flick_last: [f64; 2],
@@ -55,7 +58,8 @@ pub struct PadState {
 impl Default for PadState {
     fn default() -> Self {
         PadState {
-            sdl_face: [None; 4],
+            sdl: None,
+            resolved: None,
             held: [false; INPUT_COUNT],
             dpad_spent: [false; 4],
             flick_last: [0.0; 2],
@@ -115,26 +119,55 @@ fn read_stick(dev: i32, stick: i32) -> (f32, f32) {
 }
 
 impl PadState {
-    /// Reads a:bN .. y:bN out of the SDL mapping string.
+    /// Reads the SDL mapping's button entries.
     pub fn load_sdl_map(&mut self) {
-        let Ok(map) = std::env::var(SDL_MAP_ENV) else {
+        self.sdl = std::env::var(SDL_MAP_ENV).ok().and_then(|m| sdl_map::parse(&m));
+        log!("sdl map: {}", if self.sdl.is_some() { "buttons named" } else { "none" });
+    }
+
+    /// Resolves the SDL mapping against the pad's key codes, once per pad and device.
+    pub fn resolve_sdl_map(&mut self, dev: i32) {
+        let Some(map) = &self.sdl else {
             return;
         };
-        for (i, (label, _)) in FACE_LABELS.iter().enumerate() {
-            let token = format!(",{label}:b");
-            self.sdl_face[i] = map.find(&token).and_then(|at| {
-                let digits: String = map[at + token.len()..].chars().take_while(char::is_ascii_digit).collect();
-                digits.parse().ok()
-            });
+        let a = api();
+        // SAFETY: SIL's pad table, indexed by a connected pad.
+        let joy = unsafe { Obj::from_addr(a.sil_joysticks + dev as usize * SILJOY_SIZE) }
+            .expect("SIL's pad table is a static of the game");
+        let event_dev = joy.i32(SILJOY_EVENT_DEV);
+        if self.resolved.as_ref().is_some_and(|(k, _)| *k == (dev, event_dev)) {
+            return;
         }
-        let show = |f: Option<i32>| f.unwrap_or(-1);
+        // SAFETY: SIL's device table, indexed by the pad's device.
+        let info = unsafe { Obj::from_addr(a.sil_event_info + event_dev as usize * EVDEV_INFO_SIZE) }
+            .expect("SIL's device table is a static of the game");
+        let bits: [u8; EVDEV_KEY_CODES / 8] = info.get(EVDEV_KEY_BITS);
+        let codes: Vec<u16> =
+            (0..EVDEV_KEY_CODES as u16).filter(|&c| bits[c as usize / 8] >> (c % 8) & 1 != 0).collect();
+        let sil_button = |code: u16| {
+            let slot = if (BTN_JOYSTICK..BTN_JOYSTICK + SIL_KEYMAP_LOW_LEN).contains(&code) {
+                SILJOY_KEYMAP_LOW + (code - BTN_JOYSTICK) as usize
+            } else if (BTN_TRIGGER_HAPPY..BTN_TRIGGER_HAPPY + SIL_KEYMAP_HIGH_LEN).contains(&code) {
+                SILJOY_KEYMAP_HIGH + (code - BTN_TRIGGER_HAPPY) as usize
+            } else {
+                return None;
+            };
+            let raw = joy.get::<i8>(slot);
+            (raw >= 0).then_some(raw as i32)
+        };
+        let r = sdl_map::resolve(map, &codes, sil_button);
+        let show = |i: Input| r.buttons[i as usize].unwrap_or(-1);
         log!(
-            "sdl map: a={} b={} x={} y={}",
-            show(self.sdl_face[0]),
-            show(self.sdl_face[1]),
-            show(self.sdl_face[2]),
-            show(self.sdl_face[3])
+            "sdl map on pad {dev}: a={} b={} x={} y={} start={} back={}, {} order",
+            show(Input::FaceDown),
+            show(Input::FaceRight),
+            show(Input::FaceLeft),
+            show(Input::FaceUp),
+            show(Input::Start),
+            show(Input::Select),
+            if r.ascending { "ascending" } else { "gamepad-first" }
         );
+        self.resolved = Some(((dev, event_dev), r));
     }
 }
 
@@ -142,18 +175,18 @@ impl Layer {
     pub fn read_pad(&self, dev: i32) -> PadFrame {
         let a = api();
         let mut p = PadFrame::default();
+        let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).map(|(_, r)| r);
+        // SAFETY: the engine's button queries on a connected pad.
+        let raw_button = |b: usize| match sdl {
+            Some(r) => r.buttons[b].unwrap_or(-1),
+            None => unsafe { (a.joy_button_mapping)(dev, b as i32) },
+        };
+        // SAFETY: as above.
+        let pressed = |raw: i32| raw >= 0 && unsafe { (a.joy_button_state)(dev, raw) } != 0;
         for b in 0..SIL_BUTTONS {
-            // SAFETY: the engine's button queries on a connected pad.
-            let idx = unsafe { (a.joy_button_mapping)(dev, b as i32) };
-            p.down[b] = idx >= 0 && unsafe { (a.joy_button_state)(dev, idx) } != 0;
+            p.down[b] = pressed(raw_button(b));
         }
-        let faces = self.pad.sdl_face;
-        if faces.iter().all(Option::is_some) {
-            for ((_, input), idx) in FACE_LABELS.iter().zip(faces.into_iter().flatten()) {
-                // SAFETY: as above.
-                p.down[*input as usize] = unsafe { (a.joy_button_state)(dev, idx) } != 0;
-            }
-        } else {
+        if sdl.is_none() {
             if self.cfg.swap_ab {
                 p.down.swap(Input::FaceDown as usize, Input::FaceRight as usize);
             }
@@ -165,8 +198,7 @@ impl Layer {
         if unsafe { (a.joy_num_sticks)(dev) } > TRIGGER_STICK {
             let (l2, r2) = read_stick(dev, TRIGGER_STICK);
             for (input, value) in [(Input::L2, l2), (Input::R2, r2)] {
-                // SAFETY: as above.
-                if unsafe { (a.joy_button_mapping)(dev, input as i32) } < 0 {
+                if raw_button(input as usize) < 0 {
                     p.down[input as usize] = value > TRIGGER_ON;
                 }
             }
@@ -177,6 +209,13 @@ impl Layer {
         p.down[Input::DpadRight as usize] = p.dpad[0] > 0;
         p.down[Input::DpadUp as usize] = p.dpad[1] < 0;
         p.down[Input::DpadDown as usize] = p.dpad[1] > 0;
+        if let Some(r) = sdl {
+            for (k, raw) in r.dpad.iter().enumerate() {
+                p.down[Input::DpadLeft as usize + k] |= pressed(raw.unwrap_or(-1));
+            }
+            let axis = |neg: Input, pos: Input| p.down[pos as usize] as i32 - p.down[neg as usize] as i32;
+            p.dpad = [axis(Input::DpadLeft, Input::DpadRight), axis(Input::DpadUp, Input::DpadDown)];
+        }
         for (k, (stick, first)) in [(LEFT_STICK, Input::LsLeft), (RIGHT_STICK, Input::RsLeft)].into_iter().enumerate() {
             let (x, y) = read_stick(dev, stick);
             p.stick[k] = [x, y];

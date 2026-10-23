@@ -170,6 +170,16 @@ pub const SYS_HACKING: i32 = 15;
 pub const WEAPON_SLOTS: i32 = 4;
 pub const DRONE_SLOTS: i32 = 3;
 
+/// SIL's Linux tables, one entry per pad and per input device.
+pub const SILJOY_SIZE: usize = 832;
+pub const SILJOY_EVENT_DEV: usize = 0;
+pub const SILJOY_KEYMAP_LOW: usize = 664;
+pub const SILJOY_KEYMAP_HIGH: usize = 696;
+pub const EVDEV_INFO_SIZE: usize = 408;
+/// The device's EV_KEY bitmap, one bit per key code.
+pub const EVDEV_KEY_BITS: usize = 297;
+pub const EVDEV_KEY_CODES: usize = 768;
+
 /// Key codes the game's key handlers take: SDL1 keysyms, ASCII for letters and digits.
 pub const KEY_LSHIFT: i32 = 0x130;
 pub const KEY_F1: i32 = 0x11a;

@@ -83,6 +83,9 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.poll_commands();
         let dev = active_pad();
         l.pad.index = dev;
+        if let Some(d) = dev {
+            l.pad.resolve_sdl_map(d);
+        }
         let pad = dev.map(|d| l.read_pad(d)).unwrap_or_default();
         l.apply_pad(pad, t, dt);
         if l.debug && beat {
