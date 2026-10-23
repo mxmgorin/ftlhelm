@@ -10,7 +10,6 @@ use crate::core::util::{clampf, log};
 const LAYOUT_ENV: &str = "FTLPAD_LAYOUT";
 const FILE_POLL_S: f64 = 1.0;
 
-pub const SPEED_LEVEL_DEFAULT: i32 = 5;
 const SPEED_LEVEL_MIN: f32 = 1.0;
 const SPEED_LEVEL_MAX: f32 = 6.0;
 const RUMBLE_STRENGTH: f32 = 0.4;
@@ -84,7 +83,7 @@ impl Default for Settings {
             snap_dpad: true,
             autopause_wheel: true,
             autopause_aim: false,
-            speed_level: SPEED_LEVEL_DEFAULT,
+            speed_level: SPEED_LEVEL_MAX as i32,
             rumble: true,
             flick_threshold: FLICK_ON,
             flick_repeat: FLICK_REPEAT_S,
@@ -95,7 +94,7 @@ impl Default for Settings {
             focus_cone_wide: CONE_WIDE_DEG,
             focus_side_weight: FOCUS_SIDE_WEIGHT,
             focus_first: true,
-            crew_follow: true,
+            crew_follow: false,
             wheels_ship_only: true,
             rumble_strength: RUMBLE_STRENGTH,
             rumble_time: RUMBLE_S,
