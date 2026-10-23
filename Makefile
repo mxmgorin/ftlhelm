@@ -2,6 +2,8 @@
 # x86_64 probe program launchers run under box64 to check that the library loads.
 OUT ?= ftlpad.so
 PROBE ?= ftlpad_probe
+# The archive a Linux player unpacks: the library, its layout and the launch wrapper.
+DIST := ftlpad-linux-x86_64
 LIB := target/release/libftlpad.so
 # Shared libraries box64 provides to an x86_64 preload; any other NEEDED entry fails to load.
 ALLOWED_NEEDED := libc.so.6 libm.so.6 ld-linux-x86-64.so.2
@@ -17,6 +19,12 @@ $(OUT):
 $(PROBE): tools/probe.c
 	$(CC) -O1 -s -o $@ $<
 
+dist: $(OUT)
+	rm -rf dist/$(DIST)
+	mkdir -p dist/$(DIST)
+	cp $(OUT) config/ftlpad.ini tools/ftlpad.sh dist/$(DIST)/
+	tar -C dist -czf dist/$(DIST).tar.gz $(DIST)
+
 test:
 	cargo test
 
@@ -26,6 +34,6 @@ lint:
 
 clean:
 	cargo clean
-	rm -f $(OUT) $(PROBE)
+	rm -rf $(OUT) $(PROBE) dist
 
-.PHONY: all $(OUT) test lint clean
+.PHONY: all $(OUT) dist test lint clean

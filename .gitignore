@@ -2,3 +2,4 @@ ftlpad.so
 ftlpad_probe
 __pycache__/
 /target/
+/dist/
