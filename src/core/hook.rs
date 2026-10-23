@@ -98,7 +98,7 @@ fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
         let st = section(link);
         let strtab = read_vec(f, le_u64(st, 24), le_u64(st, 32) as usize)?;
         let syms = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
-        for sym in syms.chunks_exact(SYM_SIZE) {
+        for sym in syms.as_chunks::<SYM_SIZE>().0 {
             let value = le_u64(sym, 8) as usize;
             let name_at = le_u32(sym, 0) as usize;
             if value == 0 || name_at >= strtab.len() {

@@ -251,7 +251,7 @@ pub fn select_next_crew() {
     }
     let start = (0..count).find(|&i| state::crew_at(i).is_some_and(state::crew_is_selected));
     for n in 1..=count {
-        let i = (start.map_or(count - 1, |s| s) + n) % count;
+        let i = (start.unwrap_or(count - 1) + n) % count;
         if state::crew_at(i).is_some_and(|m| !state::crew_dead(m)) {
             tap_key(KEY_F1 + i as i32, false);
             return;
@@ -268,7 +268,7 @@ pub fn arm_next() {
     let armed = control.obj(WEAPONCTRL_ARMED);
     let start = armed.and_then(|a| (0..slots).rev().find(|&i| state::armament_item(control, i) == Some(a)));
     for n in 1..=slots {
-        let i = (start.map_or(slots - 1, |s| s) + n) % slots;
+        let i = (start.unwrap_or(slots - 1) + n) % slots;
         if state::armament_item(control, i).is_some_and(|w| w.flag(WEAPON_POWERED)) {
             tap_key('1' as i32 + i as i32, false);
             return;
