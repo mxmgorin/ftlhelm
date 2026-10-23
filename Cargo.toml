@@ -1,8 +1,9 @@
 [package]
 name = "ftlpad"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
-description = "Gamepad layer for the Linux build of FTL: Faster Than Light"
+description = "Gamepad layer for FTL: Faster Than Light"
+repository = "https://github.com/mxmgorin/ftlpad"
 publish = false
 
 [lib]
