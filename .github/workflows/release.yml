@@ -1,0 +1,51 @@
+name: Release
+
+# Builds the Linux archive and attaches it to a published release.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # glibc 2.35: the oldest the library runs on is the one it was built against.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify tag matches Cargo.toml version
+        if: github.event_name == 'release'
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME#v}"
+          crate="$(grep -m1 '^version = "' Cargo.toml | sed -E 's/^version = "([^"]*)".*/\1/')"
+          if [ "$tag" != "$crate" ]; then
+            echo "::error::release tag '$GITHUB_REF_NAME' != Cargo.toml version '$crate'"
+            exit 1
+          fi
+
+      - name: Toolchain
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - name: Build
+        run: |
+          make dist
+          cd dist && sha256sum ftlpad-linux-x86_64.tar.gz > ftlpad-linux-x86_64.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ftlpad-linux-x86_64
+          path: dist/ftlpad-linux-x86_64/
+          retention-days: 14
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/ftlpad-linux-x86_64.tar.gz
+            dist/ftlpad-linux-x86_64.tar.gz.sha256

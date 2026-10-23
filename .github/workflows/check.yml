@@ -1,0 +1,35 @@
+name: Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # The release build's image, so a glibc or link problem shows up here first.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # Also fails when the library needs a shared library box64 cannot load.
+      - name: Build
+        run: make
