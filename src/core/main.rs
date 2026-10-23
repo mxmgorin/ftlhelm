@@ -135,10 +135,22 @@ fn install(name: &str, func: usize, repl: usize, prologue: &[u8], slot: &AtomicU
 /// a process that is not the game.
 pub extern "C" fn init() {
     let debug = std::env::var_os(DEBUG_ENV).is_some();
-    let Some(addrs) = resolve_symbols(SYMBOLS) else {
+    let addrs = resolve_symbols(SYMBOLS);
+    if addrs.iter().all(|&a| a == 0) {
+        // Not the game: a launcher script or a tool it runs, which stays silent.
+        if debug {
+            log!("not FTL, inactive");
+        }
+        return;
+    }
+    let missing: Vec<_> = SYMBOLS.iter().zip(&addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
+    if !missing.is_empty() {
+        for name in missing {
+            log!("symbol missing: {name}");
+        }
         log!("unknown build, inactive");
         return;
-    };
+    }
     // SAFETY: every symbol resolved in this FTL build, in SYMBOLS order.
     api::install(unsafe { Api::from_addresses(&addrs) });
     let a = api();

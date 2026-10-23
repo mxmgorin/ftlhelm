@@ -67,8 +67,8 @@ fn le_u64(b: &[u8], at: usize) -> u64 {
 }
 
 /// Looks up the wanted symbols in the executable's .symtab; returns their addresses in
-/// order, or None with each missing name logged.
-pub fn resolve_symbols(wanted: &[&str]) -> Option<Vec<usize>> {
+/// order, 0 for each one missing.
+pub fn resolve_symbols(wanted: &[&str]) -> Vec<usize> {
     let path = std::env::var(EXE_ENV).unwrap_or_else(|_| EXE_FALLBACK.to_string());
     let mut found = vec![0usize; wanted.len()];
     match File::open(&path) {
@@ -77,11 +77,7 @@ pub fn resolve_symbols(wanted: &[&str]) -> Option<Vec<usize>> {
         }
         Err(_) => log!("cannot open the executable"),
     }
-    let missing: Vec<_> = wanted.iter().zip(&found).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
-    for name in &missing {
-        log!("symbol missing: {name}");
-    }
-    missing.is_empty().then_some(found)
+    found
 }
 
 fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
