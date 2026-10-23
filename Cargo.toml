@@ -4,6 +4,7 @@ version = "1.0.0"
 edition = "2021"
 description = "Gamepad layer for FTL: Faster Than Light"
 repository = "https://github.com/mxmgorin/ftlpad"
+license = "GPL-3.0-or-later"
 publish = false
 
 [lib]
