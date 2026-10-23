@@ -498,16 +498,14 @@ impl Layer {
         self.wheel.sel = None;
     }
 
-    /// Opens a wheel on its top plate, or the first pickable one clockwise; a second press
-    /// of the open wheel closes it.
+    /// Opens a wheel on its top plate, or the first pickable one clockwise, in place of the
+    /// open one; a second press of the open wheel closes it.
     pub fn open_wheel(&mut self, index: usize, by: Source) {
-        if let Some(open) = self.wheel.open {
-            if open == index {
-                self.close_wheel();
-            }
+        if self.wheel.open == Some(index) {
+            self.close_wheel();
             return;
         }
-        if index >= self.layout.wheels.len() || !self.wheel_screen() {
+        if index >= self.layout.wheels.len() || (self.wheel.open.is_none() && !self.wheel_screen()) {
             return;
         }
         self.wheel.open = Some(index);

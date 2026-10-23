@@ -15,6 +15,7 @@ released.
 | D-pad up, down | add, take power; on the crew wheel, add to the selection, drop from it |
 | A | act on the plate |
 | B, or the wheel's own button | close |
+| hold another wheel's button | switch to that wheel |
 
 ## Custom layouts
 
