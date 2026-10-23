@@ -19,8 +19,8 @@ released.
 
 ## Custom layouts
 
-`ftlpad.ini` is gptokeyb2's ini format with wheels and built-in actions on top. `#` starts
-a comment outside quotes.
+`ftlpad.ini` holds the settings, the button states and the wheels. `#` starts a comment
+outside quotes.
 
 | Section | Contents |
 | --- | --- |
