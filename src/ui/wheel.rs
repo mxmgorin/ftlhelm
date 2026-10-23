@@ -101,7 +101,7 @@ const ARMAMENTS: [Armament; 2] = [
 /// Fixed systems plates in power-bar order; a slot takes the medbay or the clone bay.
 #[rustfmt::skip]
 const SYSTEM_SLOTS: [(i32, Option<i32>); WHEEL_SLOTS] = [
-    (SYS_SHIELDS, None), (SYS_ENGINES, None), (SYS_OXYGEN, None), (SYS_MEDBAY, Some(SYS_CLONEBAY)),
+    (SYS_SHIELDS, None), (SYS_ENGINES, None), (SYS_MEDBAY, Some(SYS_CLONEBAY)), (SYS_OXYGEN, None),
     (SYS_TELEPORTER, None), (SYS_CLOAKING, None), (SYS_MIND, None), (SYS_HACKING, None),
 ];
 
