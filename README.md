@@ -63,8 +63,9 @@ pairs.
 
 Inputs: `a`, `b`, `x`, `y` (by label), `l1`, `r1`, `l2`, `r2`, `l3`, `r3`, `start`,
 `back`, `guide`, `up`, `down`, `left`, `right`, `left_analog_up` and the other stick
-directions. `left_analog`, `right_analog` and `dpad` take `mouse_movement` (cursor) or
-`flick` (jump between zones). `overlay = parent` lets a state fall through to the one
+directions. `left_analog` and `right_analog` take `flick` or `mouse_movement`: the stick
+jumps between zones, and moves the cursor in the free cursor mode. `dpad = mouse_movement`
+makes the D-pad move the cursor. `overlay = parent` lets a state fall through to the one
 below.
 
 | Action | Effect |

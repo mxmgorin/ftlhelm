@@ -94,6 +94,19 @@ pub fn active_pad() -> Option<i32> {
     unsafe { (0..(a.joy_count)()).find(|&i| (a.joy_connected)(i) != 0) }
 }
 
+/// A pointer source's mode under the mode toggle: with `free_cursor` the D-pad and every
+/// pointer stick move the cursor, else the sticks flick and the D-pad keeps the layout's
+/// mode. A stick the layout binds as keys stays keys.
+fn toggled_mode(slot: Slot, layout_mode: SlotMode, free_cursor: bool) -> SlotMode {
+    match (slot, layout_mode, free_cursor) {
+        (Slot::Dpad, _, true) => SlotMode::Mouse,
+        (Slot::Dpad, m, false) => m,
+        (_, SlotMode::Keys, _) => SlotMode::Keys,
+        (_, _, true) => SlotMode::Mouse,
+        (_, _, false) => SlotMode::Flick,
+    }
+}
+
 fn read_stick(dev: i32, stick: i32) -> (f32, f32) {
     let (mut x, mut y) = (0.0f32, 0.0f32);
     // SAFETY: the engine writes both axes of a stick of a connected pad.
@@ -224,16 +237,11 @@ impl Layer {
     fn pointer_modes(&self, p: &mut PadFrame) -> [SlotMode; SLOT_COUNT] {
         let mut mode = [SlotMode::Keys; SLOT_COUNT];
         for slot in Slot::ALL {
-            let mut m = self.slot_mode(slot);
-            // The mode toggle: cursor on the D-pad and the sticks, or zones and flicks.
-            if self.wheel.open.is_none() {
-                if slot == Slot::Dpad && self.bind.dpad_mouse {
-                    m = SlotMode::Mouse;
-                }
-                if slot != Slot::Dpad && !self.bind.dpad_mouse && m == SlotMode::Mouse {
-                    m = SlotMode::Flick;
-                }
-            }
+            let m = if self.wheel.open.is_some() {
+                self.slot_mode(slot)
+            } else {
+                toggled_mode(slot, self.slot_mode(slot), self.bind.dpad_mouse)
+            };
             if m != SlotMode::Keys {
                 p.down[slot.first_input()..slot.first_input() + 4].fill(false);
             }
@@ -368,6 +376,19 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_toggle_switches_the_dpad_and_both_sticks() {
+        for stick in [Slot::LStick, Slot::RStick] {
+            for m in [SlotMode::Mouse, SlotMode::Flick] {
+                assert_eq!(toggled_mode(stick, m, false), SlotMode::Flick);
+                assert_eq!(toggled_mode(stick, m, true), SlotMode::Mouse);
+            }
+            assert_eq!(toggled_mode(stick, SlotMode::Keys, true), SlotMode::Keys);
+        }
+        assert_eq!(toggled_mode(Slot::Dpad, SlotMode::Keys, false), SlotMode::Keys);
+        assert_eq!(toggled_mode(Slot::Dpad, SlotMode::Keys, true), SlotMode::Mouse);
+    }
 
     #[test]
     fn sticks_keep_one_direction_with_hysteresis() {
