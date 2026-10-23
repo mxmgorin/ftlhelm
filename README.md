@@ -1,113 +1,43 @@
 # ftlpad
 
-Gamepad layer for the Linux build of FTL: Faster Than Light 1.6.13 (`FTL.amd64`). An
-x86_64 shared library preloaded into the game; it reads the pad through the game's own
-joystick layer and drives the cursor, clicks and hotkeys. The game files stay unchanged.
+Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux with a gamepad. FTL has no controller support; ftlpad adds it without changing the game files.
 
-## Files
+Works with the Steam build of FTL 1.6.13.
 
-| Path | Contents |
-|---|---|
-| `src/lib.rs` | the overview of the design; the load-time entry |
-| `src/core/` | symbol lookup, hooks, the layer's state, the per-frame entry |
-| `src/config/` | layout and settings parsing |
-| `src/game/` | the game's API and object layout, state readers, D-pad zones, actions |
-| `src/input/` | pad reading, bindings, cursor and focus |
-| `src/ui/` | wheels, help, mode badge |
-| `src/debug/` | the FIFO test channel |
-| `config/ftlpad.ini` | the layout: settings, buttons, taps and holds, wheels |
-| `tools/probe.c` | `ftlpad_probe`: an empty x86_64 program to check the box64 preload |
-| `tools/vpad.py` | uinput virtual pad for desktop tests (python-evdev) |
+## Features
 
-## Build
+- **Zones**: the D-pad and sticks jump between rooms, doors, event choices, beacons and buttons
+- **Free cursor mode**: the D-pad and sticks move the game's cursor
+- **Wheels** for weapons, crew, systems and abilities, in the game's own art
+- **Tap and hold** actions on every button
+- **Fast forward** while a button is held
+- **Controls table** in the game
+- **Editable layout** in gptokeyb2's ini format, re-read while the game runs
 
-    make                 # ftlpad.so through cargo build --release, and ftlpad_probe
-    make OUT=path.so
-    make test            # unit tests: layout parsing, sticks, wheel geometry
-    make lint            # rustfmt check, clippy with warnings as errors
+## Install
 
-Needs Rust for x86_64-unknown-linux-gnu; the only dependency is the libc crate. The
-library needs glibc 2.35 or later. `make` fails when it needs any shared library besides
-libc, libm and ld-linux.
+1. Download [`ftlpad-linux-x86_64.tar.gz`](../../releases/latest/download/ftlpad-linux-x86_64.tar.gz) from the [latest release](../../releases/latest) and unpack it anywhere, e.g. `~/ftlpad/`.
+2. In Steam, open FTL's **Properties > General > Launch Options** and enter:
 
-## Run
+       ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh %command%
 
-Environment of the game process:
+3. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
 
-| Variable | Value |
-|---|---|
-| `LD_PRELOAD` | path to `ftlpad.so` (under box64: `BOX64_LD_PRELOAD`) |
-| `FTLPAD_LAYOUT` | path to `ftlpad.ini`; without it a minimal built-in layout |
-| `FTLPAD_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
-| `FTLPAD_CMD` | optional FIFO for test commands |
-| `FTLPAD_DEBUG` | set: log presses, picks and D-pad steps to stderr |
+See **[Linux](docs/LINUX.md)** for running without Steam and troubleshooting.
 
-Steam launch options (Linux, Steam Deck):
+## Controls
 
-    LD_PRELOAD=/path/ftlpad.so FTLPAD_LAYOUT=/path/config/ftlpad.ini %command%
+Hold **Start** in the game for the controls table. See **[Controls](docs/CONTROLS.md)**.
 
-The library stays inactive in processes that are not FTL. The layout is re-read while the
-game runs. Without an SDL mapping, `swap_ab` and `swap_xy` in its `[config]` swap the raw A/B and X/Y
-pairs.
+## Configuration
 
-## Layout format
+Settings and bindings are in `ftlpad.ini`. See **[Configuration](docs/CONFIGURATION.md)**.
 
-`ftlpad.ini` is gptokeyb2's ini format with wheels and built-in actions on top.
+## Building
 
-| Section | Contents |
-|---|---|
-| `[config]` | settings, each documented in place in `ftlpad.ini` |
-| `[controls]` | the base state |
-| `[controls:NAME]` | a state pushed while a `hold_state NAME` button is held |
-| `[wheel:NAME]` | a wheel opened by `wheel NAME` |
+See **[Building](docs/BUILDING.md)**.
 
-Inputs: `a`, `b`, `x`, `y` (by label), `l1`, `r1`, `l2`, `r2`, `l3`, `r3`, `start`,
-`back`, `guide`, `up`, `down`, `left`, `right`, `left_analog_up` and the other stick
-directions. `left_analog` and `right_analog` take `flick` or `mouse_movement`: the stick
-jumps between zones, and moves the cursor in the free cursor mode. `dpad = mouse_movement`
-makes the D-pad move the cursor. `overlay = parent` lets a state fall through to the one
-below.
+## Credits
 
-| Action | Effect |
-|---|---|
-| a key name | `a`..`z`, `0`..`9`, `f1`..`f15`, `space`, `enter`, `esc`, `tab`, `up`, `/`, ...; `add_shift` after it adds Shift |
-| `mouse_left`, `mouse_right` | click at the cursor |
-| `hold_state NAME` | push a state while held |
-| `wheel NAME` | open a wheel |
-| a built-in | see below |
-| `HOLD \| TAP` | the hold action past `tap_hold` seconds, the tap action on a shorter press |
-
-| Built-in | Effect |
-|---|---|
-| `context_click` | click; with crew selected, a room orders them there; in a wheel, act |
-| `cancel` | close the wheel, cancel the aim, clear the crew, close the menu or a screen |
-| `arm_next` | arm the next powered weapon |
-| `aim_crew` | select the next crew member; on a ship screen, the next tab |
-| `prev_tab`, `next_tab` | ship and store screen tabs |
-| `repeat_ability` | the last ability used from a wheel |
-| `precision` | doors become the zones while held |
-| `room_doors` | toggle the doors of the room under the cursor |
-| `center_swap` | the cursor to the centre of the farther ship |
-| `pause`, `fast_forward` | pause; run fast while held |
-| `dpad_mode` | the D-pad and sticks switch between zones and a free cursor |
-| `help` | show the controls table; any button closes it |
-
-Wheel sections: `kind = action|power|crew|systems`, then plates by direction, `up`,
-`up_right`, `right`, `down_right`, `down`, `down_left`, `left`, `up_left`:
-
-    up = z "Open doors" systemUI/button_door_bottom_off.png@10,33,20,20
-
-An action, a quoted label, and an optional icon: a game image path under `img/`, with
-`@X,Y,W,H` for a region in pixels. `crew` and `systems` wheels fill their plates from the
-game; `power` wheels show power pips and take power with D-pad up and down.
-
-## Test channel
-
-With `FTLPAD_CMD` set to a FIFO: `move X Y`, `click`, `rclick`, `key N`, `dump`, `state`,
-`wheel NAME`, `pick N`, `buttons`, `doors`, `roomdoors`, `badge`, `font N`. Output goes
-to stderr. `tools/vpad.py --fifo PATH` drives the pad and the channel together.
-
-## Used by
-
-The FTL PortMaster port in handheld-porting (`ports/portmaster/ftl`) runs this library
-under box64 and ships both ini files.
+- [FTL: Faster Than Light](https://subsetgames.com/ftl.html) by Subset Games
+- The layout format follows [gptokeyb2](https://github.com/PortsMaster/gptokeyb2)
