@@ -16,11 +16,12 @@ joystick layer and drives the cursor, clicks and hotkeys. The game files stay un
 | `src/ui/` | wheels, help, mode badge |
 | `src/debug/` | the FIFO test channel |
 | `config/ftlpad.ini` | the layout: settings, buttons, taps and holds, wheels |
+| `tools/probe.c` | `ftlpad_probe`: an empty x86_64 program to check the box64 preload |
 | `tools/vpad.py` | uinput virtual pad for desktop tests (python-evdev) |
 
 ## Build
 
-    make                 # ftlpad.so, through cargo build --release
+    make                 # ftlpad.so through cargo build --release, and ftlpad_probe
     make OUT=path.so
     make test            # unit tests: layout parsing, sticks, wheel geometry
     make lint            # rustfmt check, clippy with warnings as errors
