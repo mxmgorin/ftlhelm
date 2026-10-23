@@ -66,7 +66,7 @@ inputs it does not bind.
 | `context_click` | click; with crew selected, a room orders them there; in a wheel, act |
 | `cancel` | close the wheel, cancel the aim, clear the crew, close the menu or a screen |
 | `arm_next` | arm the next powered weapon |
-| `aim_crew` | select the next crew member; on a ship screen, the next tab |
+| `aim_crew` | select the next crew member |
 | `prev_tab`, `next_tab` | ship and store screen tabs |
 | `repeat_ability` | the last ability used from a wheel |
 | `precision` | doors become the zones while held |

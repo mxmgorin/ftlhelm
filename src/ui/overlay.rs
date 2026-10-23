@@ -37,7 +37,7 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::Cancel => "Cancel",
         Builtin::ContextClick => "Click",
         Builtin::ArmNext => "Next weapon",
-        Builtin::AimCrew => "Next crew / tab",
+        Builtin::AimCrew => "Next crew",
         Builtin::RepeatAbility => "Repeat ability",
         Builtin::Precision => "Doors mode",
         Builtin::CenterSwap => "Other ship",

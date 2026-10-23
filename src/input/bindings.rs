@@ -198,14 +198,7 @@ impl Layer {
                 }
             }
             Builtin::ArmNext if down => actions::arm_next(),
-            // On a tabbed screen the tap walks its tabs instead.
-            Builtin::AimCrew if down => {
-                if state::open_tabbed().is_some() {
-                    actions::tab_step(1);
-                } else {
-                    actions::select_next_crew();
-                }
-            }
+            Builtin::AimCrew if down => actions::select_next_crew(),
             Builtin::RepeatAbility if down => {
                 if let Some(key) = self.bind.last_ability_key {
                     tap_key(key, false);
