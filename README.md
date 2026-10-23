@@ -47,7 +47,8 @@ Steam launch options (Linux, Steam Deck):
     LD_PRELOAD=/path/ftlpad.so FTLPAD_LAYOUT=/path/config/ftlpad.ini %command%
 
 The library stays inactive in processes that are not FTL. The layout is re-read while the
-game runs. Xbox-style pads without an SDL mapping take `swap_ab = 0` in its `[config]`.
+game runs. Without an SDL mapping, `swap_ab` and `swap_xy` in its `[config]` swap the raw A/B and X/Y
+pairs.
 
 ## Layout format
 

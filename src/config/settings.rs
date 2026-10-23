@@ -88,7 +88,7 @@ impl Default for Settings {
             rumble: true,
             flick_threshold: FLICK_ON,
             flick_repeat: FLICK_REPEAT_S,
-            swap_ab: true,
+            swap_ab: false,
             swap_xy: false,
             tap_hold: TAP_HOLD_S,
             focus_cone_narrow: CONE_NARROW_DEG,
