@@ -17,6 +17,11 @@ const MAX_BUTTONS: usize = 64;
 /// Small unplaced buttons the game parks in this corner.
 const CORNER_BUTTON_MAX: i32 = 40;
 const CORNER_BUTTON_SIZE: i32 = 24;
+/// A box pointer field of a screen and the flag that shows it.
+type ShownBox = (usize, usize);
+/// Equipment's overflow boxes.
+const EQUIP_OVERFLOW: [ShownBox; 2] =
+    [(EQUIP_OVERCAPACITY_BOX, EQUIP_OVER_CAPACITY), (EQUIP_OVERAUG_BOX, EQUIP_OVER_AUG_CAPACITY)];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ZoneKind {
@@ -224,16 +229,24 @@ impl Zones {
         }
     }
 
-    /// Equipment and crew slots of an open ship screen, which are not buttons.
+    /// Equipment and crew slots of an open ship screen, which are not buttons; the overflow
+    /// boxes only while shown.
     fn add_slot_zones(&mut self, gui: Obj) {
-        for (window, boxes) in [(GUI_EQUIP_SCREEN, EQUIP_BOXES), (GUI_CREW_SCREEN, CREWSCREEN_BOXES)] {
+        let screens: [(usize, usize, &[ShownBox]); 2] =
+            [(GUI_EQUIP_SCREEN, EQUIP_BOXES, &EQUIP_OVERFLOW), (GUI_CREW_SCREEN, CREWSCREEN_BOXES, &[])];
+        for (window, boxes, overflow) in screens {
             let window = gui.at(window);
             if !window.flag(FOCUS_OPEN) {
                 continue;
             }
+            let hidden: Vec<Obj> = overflow
+                .iter()
+                .filter(|&&(_, shown)| !window.flag(shown))
+                .filter_map(|&(b, _)| window.obj(b))
+                .collect();
             let list = window.at(boxes);
             for i in 0..list.vec_len(std::mem::size_of::<usize>()) {
-                if let Some(slot) = list.vec_obj(i) {
+                if let Some(slot) = list.vec_obj(i).filter(|s| !hidden.contains(s)) {
                     let r = slot.rect(EQUIPBOX_HITBOX);
                     if r.w > 0 && r.h > 0 {
                         self.push(r, i as i32, ZoneKind::Slot);

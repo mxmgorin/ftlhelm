@@ -115,6 +115,11 @@ pub const CREW_SELECTED: usize = 8;
 pub const CREW_HOTKEYS: usize = 8;
 
 pub const EQUIP_BOXES: usize = 472;
+/// The overflow boxes Equipment keeps in its box list, and the flags that show them.
+pub const EQUIP_OVERCAPACITY_BOX: usize = 520;
+pub const EQUIP_OVERAUG_BOX: usize = 528;
+pub const EQUIP_OVER_CAPACITY: usize = 808;
+pub const EQUIP_OVER_AUG_CAPACITY: usize = 809;
 pub const CREWSCREEN_BOXES: usize = 184;
 pub const EQUIPBOX_HITBOX: usize = 96;
 pub const TABBED_BUTTONS: usize = 32;
