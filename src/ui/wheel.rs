@@ -35,13 +35,12 @@ const CORNER_INSET: f32 = 2.0;
 const WHEEL_MARGIN: f32 = 8.0;
 /// Lines of the wheel's middle: title, then the pick's name and detail.
 const WHEEL_LINE: f32 = 22.0;
-const WHEEL_TEXT_H: f32 = 18.0;
 const WHEEL_TEXT_PAD: f32 = 6.0;
 /// The disc under the plates reaches this far past them.
+const WHEEL_DISC_PAD: f32 = 14.0;
 /// The selected plate grows by this much on each side, inside a solid frame this thick.
 const SELECTED_GROW: f32 = 4.0;
 const SELECTED_FRAME: f32 = 3.0;
-const WHEEL_DISC_PAD: f32 = 14.0;
 
 const PLATE_SELECTED_COLOR: GlColor = GlColor::new(0.42, 0.38, 0.1, 0.95);
 pub const PLATE_SELECTED_EDGE_COLOR: GlColor = GlColor::new(0.96, 0.84, 0.28, 1.0);
@@ -253,7 +252,7 @@ fn draw_plate(pl: &Plate, font: i32, cx: f32, cy: f32, selected: bool) {
         draw_plate_icon(pl, cx, icon_cy, tint);
     } else if pl.available {
         set_color(tint);
-        draw_text_center(font, cx, icon_cy - WHEEL_TEXT_H / 2.0, &pl.label);
+        draw_text_center(font, cx, icon_cy - WHEEL_FONT_H / 2.0, &pl.label);
         set_color(TEXT_COLOR);
     }
     if let Some(corner) = pl.corner_icon {
@@ -297,7 +296,7 @@ impl Layer {
             Some(p) if p.badge.is_empty() => 2,
             Some(_) => 3,
         };
-        let text_h = (lines - 1) as f32 * WHEEL_LINE + WHEEL_TEXT_H;
+        let text_h = (lines - 1) as f32 * WHEEL_LINE + WHEEL_FONT_H;
         let top = oy - text_h / 2.0;
         // A shade under the text alone keeps it readable over the ship.
         let mut text_w = text_width(font, &title);

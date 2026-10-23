@@ -14,6 +14,12 @@ const HELP_PAD: f32 = 12.0;
 const HELP_COL_TAP: f32 = 130.0;
 const HELP_COL_HOLD: f32 = 430.0;
 const HELP_RULE_H: f32 = 1.0;
+/// A rule sits this far above the top of the row it opens.
+const HELP_RULE_GAP: f32 = 2.0;
+const HELP_VERSION: &str = concat!("ftlpad ", env!("CARGO_PKG_VERSION"));
+const URL_SCHEME: &str = "https://";
+/// A held click drags: a selection box over the ship, an item on a screen.
+const CLICK_HOLD_TITLE: &str = "Drag select";
 const BADGE_H: f32 = 30.0;
 const BADGE_PAD: f32 = 14.0;
 const BADGE_SEPARATOR: &str = " / ";
@@ -49,6 +55,11 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::FastForward => "Fast forward",
         Builtin::DpadMode => "Cursor / zones",
     }
+}
+
+/// The top of a line of text centred between `top` and `bottom`.
+fn band_text_top(top: f32, bottom: f32) -> f32 {
+    (top + bottom - WHEEL_FONT_H) / 2.0
 }
 
 /// Whether an action acts while held: wheels, states, doors mode, fast forward.
@@ -108,6 +119,9 @@ impl Layer {
     fn help_row(&self, b: Binding) -> (String, String) {
         match b.tap {
             Some(tap) => (self.describe(tap), self.describe(b.hold)),
+            None if b.hold == Action::Builtin(Builtin::ContextClick) => {
+                (self.describe(b.hold), CLICK_HOLD_TITLE.to_string())
+            }
             None if is_hold_action(b.hold) => (String::new(), self.describe(b.hold)),
             None => (self.describe(b.hold), String::new()),
         }
@@ -119,15 +133,17 @@ impl Layer {
             return;
         };
         let rows: Vec<(usize, Binding)> = (0..SIL_BUTTONS).filter_map(|i| base.bind[i].map(|b| (i, b))).collect();
-        let h = HELP_LINE * (rows.len() + 1) as f32 + 2.0 * HELP_PAD;
+        // A header row, the bindings, then the footer.
+        let h = HELP_LINE * (rows.len() + 2) as f32 + 2.0 * HELP_PAD;
         let (x, y) = ((GAME_W as f32 - HELP_W) / 2.0, (GAME_H as f32 - h) / 2.0);
         draw_panel(x, y, HELP_W, h, PLATE_COLOR, PLATE_EDGE_COLOR);
-        let mut line_y = y + HELP_PAD;
-        draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, "BUTTON");
-        draw_text_left(HELP_FONT, x + HELP_COL_TAP, line_y + TEXT_DY, "TAP");
-        draw_text_left(HELP_FONT, x + HELP_COL_HOLD, line_y + TEXT_DY, "HOLD");
-        line_y += HELP_LINE;
-        draw_rect(x + HELP_PAD, line_y - 2.0, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+        let mut line_y = y + HELP_PAD + HELP_LINE;
+        let rule_y = line_y - HELP_RULE_GAP;
+        let header_y = band_text_top(y, rule_y);
+        draw_text_left(HELP_FONT, x + HELP_PAD, header_y, "BUTTON");
+        draw_text_left(HELP_FONT, x + HELP_COL_TAP, header_y, "TAP");
+        draw_text_left(HELP_FONT, x + HELP_COL_HOLD, header_y, "HOLD");
+        draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
         for (i, b) in rows {
             let (tap, hold) = self.help_row(b);
             draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, INPUT_TITLES[i]);
@@ -135,6 +151,14 @@ impl Layer {
             draw_text_left(HELP_FONT, x + HELP_COL_HOLD, line_y + TEXT_DY, &hold);
             line_y += HELP_LINE;
         }
+        let rule_y = line_y - HELP_RULE_GAP;
+        draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+        let footer_y = band_text_top(rule_y + HELP_RULE_H, y + h);
+        let url = env!("CARGO_PKG_REPOSITORY").trim_start_matches(URL_SCHEME);
+        set_color(TEXT_DISABLED_COLOR);
+        draw_text_left(HELP_FONT, x + HELP_PAD, footer_y, HELP_VERSION);
+        draw_text_left(HELP_FONT, x + HELP_W - HELP_PAD - text_width(HELP_FONT, url), footer_y, url);
+        set_color(TEXT_COLOR);
     }
 
     /// The mode badge text, empty in the plain state: the weapon waiting for a target and

@@ -12,6 +12,8 @@ const BEVEL: f32 = 2.0;
 pub const OVERLAY_LINE: f32 = 1.0;
 /// The game's outlined header font, as on its own buttons.
 pub const WHEEL_FONT: i32 = 62;
+/// The height of a WHEEL_FONT line.
+pub const WHEEL_FONT_H: f32 = 18.0;
 
 /// The game's palette: dark teal panels, pale green frames, white text.
 pub const PLATE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.9);
