@@ -85,6 +85,7 @@ game_api! {
     joy_rumble: unsafe extern "C" fn(c_int, f32, f32, f32) = "input_joystick_rumble",
     fps_control: usize = "_ZN4CFPS10FPSControlE",
     fps_loop: usize = "_ZN4CFPS6OnLoopEv",
+    scan_joystick: usize = "scan_joystick",
     get_text: unsafe extern "C" fn(*mut Ptr, Ptr, *const c_void, *const c_void) = "_ZN11TextLibrary7GetTextERKSsS1_",
     text_library: usize = "_ZN7Globals7LibraryE",
     onloop: usize = "_ZN4CApp6OnLoopEv",

@@ -1,5 +1,6 @@
 //! Symbol resolution from the executable's .symtab, the trampoline page near the binary,
-//! inline hooks, and the redirected step cap of CFPS::OnLoop.
+//! inline hooks, the redirected step cap of CFPS::OnLoop, and the widened pad test of the
+//! engine's joystick scan.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -32,6 +33,18 @@ const NOP: u8 = 0x90;
 const STEP_CAP_SCAN: usize = 0x100;
 const STEP_CAP_LOAD: [u8; 4] = [0xf3, 0x0f, 0x10, 0x0d];
 const STEP_CAP_NEXT: [u8; 4] = [0x66, 0x0f, 0x14, 0xc0];
+
+/// scan_joystick takes a device without ABS_X/ABS_Y only when it reports BTN_DPAD_UP,
+/// tested as "testb $mask,keybits+BTN_DPAD_UP/8(%rax); je reject" within this many bytes.
+const PAD_TEST_SCAN: usize = 0x200;
+const BTN_DPAD_UP: i64 = 0x220;
+const BTN_SOUTH: i64 = 0x130;
+const TESTB_ABS: [u8; 2] = [0xf6, 0x80];
+const JE_REL32: [u8; 2] = [0x0f, 0x84];
+const TESTB_LEN: usize = 7;
+const JE_LEN: usize = 6;
+const JNZ_REL8: u8 = 0x75;
+const JNZ_LEN: usize = 2;
 
 /// The trampoline page and how much of it is taken, as addresses.
 static TRAMPOLINES: Mutex<(usize, usize)> = Mutex::new((0, 0));
@@ -266,6 +279,74 @@ pub fn hook(name: &str, func: usize, repl: usize, prologue: &[u8]) -> Option<usi
     }
     protect(func, prologue.len(), libc::PROT_READ | libc::PROT_EXEC);
     Some(orig)
+}
+
+fn bit_mask(code: i64) -> u8 {
+    1 << (code % 8)
+}
+
+/// Makes scan_joystick also take a device reporting BTN_SOUTH, a pad with neither sticks
+/// nor D-pad buttons; returns false with the reason logged when the test is not found.
+pub fn accept_buttons_only_pads(scan: usize) -> bool {
+    let site_len = TESTB_LEN + JE_LEN;
+    let mask = bit_mask(BTN_DPAD_UP);
+    // SAFETY: the scan stays within the start of scan_joystick's code.
+    let code = unsafe { std::slice::from_raw_parts(scan as *const u8, PAD_TEST_SCAN) };
+    let mut sites = (0..=PAD_TEST_SCAN - site_len).filter(|&i| {
+        code[i..i + TESTB_ABS.len()] == TESTB_ABS
+            && code[i + TESTB_LEN - 1] == mask
+            && code[i + TESTB_LEN..i + TESTB_LEN + JE_REL32.len()] == JE_REL32
+    });
+    let Some(site) = sites.next() else {
+        log!("pad scan: test not found");
+        return false;
+    };
+    if sites.next().is_some() {
+        log!("pad scan: test not unique");
+        return false;
+    }
+    let at = scan + site;
+    let dpad_disp = le_u32(code, site + TESTB_ABS.len()) as i32;
+    let je_rel = le_u32(code, site + TESTB_LEN + JE_REL32.len()) as i32;
+    let reject = (at as i64 + site_len as i64 + je_rel as i64) as usize;
+    let Ok(south_disp) = i32::try_from(dpad_disp as i64 - BTN_DPAD_UP / 8 + BTN_SOUTH / 8) else {
+        log!("pad scan: key bitmap out of reach");
+        return false;
+    };
+
+    // testb dpad; jnz accept; testb south; jnz accept; jmp reject; accept: jmp back.
+    let tests_len = 2 * (TESTB_LEN + JNZ_LEN);
+    let Some(t) = take_trampoline(at, tests_len + 2 * JMP_LEN, 1) else {
+        log!("pad scan: no trampoline room within reach");
+        return false;
+    };
+    let accept = t + tests_len + JMP_LEN;
+    // SAFETY: t lies in the writable trampoline page with the whole sequence taken.
+    unsafe {
+        let mut p = t;
+        for (disp, bit) in [(dpad_disp, mask), (south_disp, bit_mask(BTN_SOUTH))] {
+            std::ptr::copy_nonoverlapping(TESTB_ABS.as_ptr(), p as *mut u8, TESTB_ABS.len());
+            ((p + TESTB_ABS.len()) as *mut i32).write_unaligned(disp);
+            ((p + TESTB_LEN - 1) as *mut u8).write(bit);
+            p += TESTB_LEN;
+            (p as *mut u8).write(JNZ_REL8);
+            ((p + 1) as *mut u8).write((accept - (p + JNZ_LEN)) as u8);
+            p += JNZ_LEN;
+        }
+        put_jmp(p, reject);
+        put_jmp(accept, at + site_len);
+    }
+    if !protect(at, site_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
+        log!("pad scan: code not writable");
+        return false;
+    }
+    // SAFETY: the test's bytes were just made writable; the input scan has not run yet.
+    unsafe {
+        put_jmp(at, t);
+        std::ptr::write_bytes((at + JMP_LEN) as *mut u8, NOP, site_len - JMP_LEN);
+    }
+    protect(at, site_len, libc::PROT_READ | libc::PROT_EXEC);
+    true
 }
 
 /// Points CFPS::OnLoop's step cap load at a float in the trampoline page, so the fast

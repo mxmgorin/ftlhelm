@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::hook::{hook, mapped_executable, redirect_step_cap, resolve_symbols};
+use super::hook::{accept_buttons_only_pads, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
 use super::util::{log, now_s};
 use crate::game::actions::shift_held;
@@ -187,13 +187,15 @@ pub extern "C" fn init() {
         &BUTTON_MOVE_ORIG,
     );
     let step_cap = redirect_step_cap(a.fps_loop);
+    let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
-        "active: overlay {}, shift {}, buttons {}, step cap {}",
+        "active: overlay {}, shift {}, buttons {}, step cap {}, pad scan {}",
         on(overlay),
         on(shift),
         on(buttons),
-        on(step_cap.is_some())
+        on(step_cap.is_some()),
+        on(pad_scan)
     );
     with_layer(|l| {
         l.debug = debug;
