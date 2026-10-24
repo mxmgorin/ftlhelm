@@ -1,6 +1,6 @@
-//! Symbol resolution from the executable's .symtab, the trampoline page near the binary,
-//! inline hooks, the redirected step cap of CFPS::OnLoop, and the widened pad test of the
-//! engine's joystick scan.
+//! Symbol resolution from the executable's .symtab, PLT slot redirection, and code patches
+//! through a trampoline page mapped within rel32 reach of the executable: inline hooks, the
+//! step cap of CFPS::OnLoop, and the widened pad test of the engine's joystick scan.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -14,7 +14,11 @@ const EXE_FALLBACK: &str = "/proc/self/exe";
 const MAPS: &str = "/proc/self/maps";
 
 const SHT_SYMTAB: u32 = 2;
+const SHT_RELA: u32 = 4;
 const SHT_NOTE: u32 = 7;
+const SHT_DYNSYM: u32 = 11;
+const RELA_SIZE: usize = 24;
+const R_X86_64_JUMP_SLOT: u32 = 7;
 const NT_GNU_BUILD_ID: u32 = 3;
 const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
 const NOTE_HDR_SIZE: usize = 12;
@@ -173,6 +177,62 @@ fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
         }
     }
     Some(())
+}
+
+/// Finds the PLT slot through which the executable calls the library function `name`;
+/// returns the slot's address.
+pub fn plt_slot(name: &str) -> Option<usize> {
+    let f = open_exe()?;
+    let sh = section_headers(&f)?;
+    let shnum = sh.len() / SHDR_SIZE;
+    let section = |i: usize| &sh[i * SHDR_SIZE..(i + 1) * SHDR_SIZE];
+    for i in 0..shnum {
+        let s = section(i);
+        let dynsym_at = le_u32(s, 40) as usize;
+        if le_u32(s, 4) != SHT_RELA || dynsym_at >= shnum {
+            continue;
+        }
+        let dynsym = section(dynsym_at);
+        let strtab_at = le_u32(dynsym, 40) as usize;
+        if le_u32(dynsym, 4) != SHT_DYNSYM || strtab_at >= shnum {
+            continue;
+        }
+        let st = section(strtab_at);
+        let strtab = read_vec(&f, le_u64(st, 24), le_u64(st, 32) as usize)?;
+        let syms = read_vec(&f, le_u64(dynsym, 24), le_u64(dynsym, 32) as usize)?;
+        let relas = read_vec(&f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        for rela in relas.as_chunks::<RELA_SIZE>().0 {
+            let info = le_u64(rela, 8);
+            if info as u32 != R_X86_64_JUMP_SLOT {
+                continue;
+            }
+            let sym_at = (info >> 32) as usize * SYM_SIZE;
+            let Some(sym) = syms.get(sym_at..sym_at + SYM_SIZE) else {
+                continue;
+            };
+            let sym_name = strtab.get(le_u32(sym, 0) as usize..).and_then(|n| n.split(|&c| c == 0).next());
+            if sym_name == Some(name.as_bytes()) {
+                return Some(le_u64(rela, 0) as usize);
+            }
+        }
+    }
+    None
+}
+
+/// Points the PLT slot at `slot` to `to`; returns the address it held, or None when the
+/// slot cannot be made writable.
+pub fn redirect_slot(slot: usize, to: usize) -> Option<usize> {
+    if !protect(slot, std::mem::size_of::<usize>(), libc::PROT_READ | libc::PROT_WRITE) {
+        return None;
+    }
+    // SAFETY: slot is a pointer-aligned PLT entry of the executable, writable now.
+    Some(unsafe { (slot as *mut usize).replace(to) })
+}
+
+/// Reads the address the PLT slot at `slot` holds.
+pub fn slot_target(slot: usize) -> usize {
+    // SAFETY: slot is a PLT entry of the executable, mapped for the process's life.
+    unsafe { (slot as *const usize).read() }
 }
 
 /// Checks that addr lies in an executable mapping of this process; a preloaded library

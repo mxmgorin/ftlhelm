@@ -10,10 +10,9 @@
 //! itself loads far away. The game binary on disk is never changed.
 //!
 //! Modules: `core` resolves symbols, places hooks and runs the per-frame entry; `config`
-//! reads the layout and its settings; `game` reads the game's objects, builds the zones and
-//! performs actions on the game; `input` reads the pad, resolves bindings and moves the
-//! cursor; `ui` draws wheels, help and the mode badge; `debug` serves the FIFO test
-//! channel.
+//! reads the layout and its settings; `game` reads and drives the game's objects; `input`
+//! reads the pad, resolves bindings and moves the cursor; `ui` draws over the game;
+//! `debug` serves the FIFO test channel.
 //!
 //! State: almost everything lives in one `Layer`, borrowed by one hook at a time. What the
 //! game can reach while a hook holds it (the buttons its hit-test reports, the Shift count,

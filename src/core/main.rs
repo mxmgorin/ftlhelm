@@ -1,6 +1,7 @@
 //! Load-time setup and the hooks: CApp::OnLoop runs the layer once a frame,
 //! MouseControl::OnRender draws its overlay, CEvent::GetShiftState reports its Shift, and
-//! GenericButton::MouseMove reports the buttons the game hit-tests.
+//! GenericButton::MouseMove reports the buttons the game hit-tests. The sound recovery
+//! takes over the game's snd_pcm_recover calls.
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,7 +12,7 @@ use super::util::{log, now_s};
 use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
-use crate::game::state;
+use crate::game::{sound, state};
 use crate::game::zones::record_button;
 use crate::input::pad::active_pad;
 
@@ -77,6 +78,7 @@ extern "C" fn onloop_hook(app: Ptr) {
     };
     if frames == 1 {
         log!("first OnLoop");
+        sound::check_slot();
     }
     with_layer(|l| {
         l.poll_files(t);
@@ -203,14 +205,16 @@ pub extern "C" fn init() {
     );
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
+    let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
-        "active: overlay {}, shift {}, buttons {}, step cap {}, pad scan {}",
+        "active: overlay {}, shift {}, buttons {}, step cap {}, pad scan {}, sound recovery {}",
         on(overlay),
         on(shift),
         on(buttons),
         on(step_cap.is_some()),
-        on(pad_scan)
+        on(pad_scan),
+        on(sound_recovery)
     );
     with_layer(|l| {
         l.debug = debug;
