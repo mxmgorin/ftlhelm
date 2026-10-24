@@ -182,3 +182,31 @@ impl Layer {
         parts.join(BADGE_SEPARATOR).to_ascii_uppercase()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::layout::LABEL_CHARS;
+    use crate::game::fake::with_game;
+    use std::mem::size_of;
+
+    #[test]
+    fn the_badge_names_the_armed_weapon_and_the_layer_modes() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            assert_eq!(l.badge_text(), "");
+            (l.bind.precision, l.bind.dpad_mouse) = (true, true);
+            assert_eq!(l.badge_text(), "DOORS / MOUSE");
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            assert_eq!(l.badge_text(), "TARGET / DOORS / MOUSE");
+            let title = "Heavy Laser Mark Two Prototype";
+            let bp = g.arena.alloc(BLUEPRINT_SHORT_TITLE + TEXTSTRING_LITERAL + size_of::<u8>());
+            g.literal(bp, BLUEPRINT_SHORT_TITLE, title);
+            let weapon = g.arena.alloc(WEAPON_BLUEPRINT + size_of::<usize>());
+            weapon.set(WEAPON_BLUEPRINT, bp.addr());
+            g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL).set(WEAPONCTRL_ARMED, weapon.addr());
+            let name: String = title.chars().take(LABEL_CHARS).collect();
+            assert_eq!(l.badge_text(), format!("TARGET: {} / DOORS / MOUSE", name.to_ascii_uppercase()));
+        });
+    }
+}

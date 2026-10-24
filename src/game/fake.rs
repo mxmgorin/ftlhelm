@@ -2,14 +2,18 @@
 //! std::vectors over them, and a CApp with its GUI that the readers in `state` reach.
 //!
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
-//! time. Every API symbol resolves into one zeroed block that starts with the mouse state;
-//! a call into the game lands in non-executable memory and faults.
+//! time. Every data symbol resolves into one zeroed block that starts with the mouse state.
+//! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
+//! are malloc'd copies `live_strings` counts, the joystick reports a `FakePad`. Any other
+//! call lands in non-executable memory and faults.
 
-use std::ffi::c_void;
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use super::api::{self, Api, Point, Rect, SYMBOLS};
+use super::actions::MouseButton;
+use super::api::{self, Api, Point, Ptr, Rect, SYMBOLS};
 use super::mem::Obj;
 use super::offsets::*;
 use super::state;
@@ -79,15 +83,192 @@ impl Drop for Arena {
     }
 }
 
-/// The block every API symbol resolves to.
+/// A call the game's input handlers took, positions in window pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Call {
+    KeyDown(i32),
+    KeyUp(i32),
+    /// A mouse button pressed (true) or released.
+    Button(MouseButton, bool, i32, i32),
+    MouseMove(i32, i32),
+    /// CrewControl::ClearSelectedCrew on the control at this address.
+    ClearCrew(usize),
+}
+
+/// The pad the joystick functions report: one connected pad at `index`, or none.
+#[derive(Clone, Default)]
+pub struct FakePad {
+    pub index: Option<i32>,
+    /// The raw button behind each SIL button; none past the list's end.
+    pub mapping: Vec<i32>,
+    /// Raw buttons held down.
+    pub held: Vec<i32>,
+    /// Both sticks, then the triggers as one more stick.
+    pub sticks: [[f32; 2]; 3],
+    pub dpad: [i32; 2],
+}
+
+/// The block every data symbol resolves to.
 static STATICS: OnceLock<usize> = OnceLock::new();
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
+static PAD: Mutex<FakePad> =
+    Mutex::new(FakePad { index: None, mapping: Vec::new(), held: Vec::new(), sticks: [[0.0; 2]; 3], dpad: [0; 2] });
+static LIVE_STRINGS: AtomicIsize = AtomicIsize::new(0);
+
+fn record(call: Call) {
+    CALLS.lock().unwrap_or_else(|e| e.into_inner()).push(call);
+}
+
+fn pad() -> MutexGuard<'static, FakePad> {
+    PAD.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Takes the calls recorded since the last take.
+pub fn calls() -> Vec<Call> {
+    std::mem::take(&mut CALLS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+pub fn set_pad(state: FakePad) {
+    *pad() = state;
+}
+
+/// The game strings built and not yet destroyed.
+pub fn live_strings() -> isize {
+    LIVE_STRINGS.load(Ordering::Relaxed)
+}
+
+extern "C" fn key_down(_app: Ptr, code: c_int) {
+    record(Call::KeyDown(code));
+}
+
+extern "C" fn key_up(_app: Ptr, code: c_int) {
+    record(Call::KeyUp(code));
+}
+
+extern "C" fn lbutton_down(_app: Ptr, x: c_int, y: c_int) {
+    record(Call::Button(MouseButton::Left, true, x, y));
+}
+
+extern "C" fn lbutton_up(_app: Ptr, x: c_int, y: c_int) {
+    record(Call::Button(MouseButton::Left, false, x, y));
+}
+
+extern "C" fn rbutton_down(_app: Ptr, x: c_int, y: c_int) {
+    record(Call::Button(MouseButton::Right, true, x, y));
+}
+
+extern "C" fn rbutton_up(_app: Ptr, x: c_int, y: c_int) {
+    record(Call::Button(MouseButton::Right, false, x, y));
+}
+
+#[allow(clippy::too_many_arguments)]
+extern "C" fn mouse_move(_app: Ptr, x: c_int, y: c_int, _dx: c_int, _dy: c_int, _l: bool, _m: bool, _r: bool) {
+    record(Call::MouseMove(x, y));
+}
+
+extern "C" fn clear_crew(control: Ptr) {
+    record(Call::ClearCrew(control as usize));
+}
+
+/// Stores a malloc'd copy of `chars` at `out` and counts it live.
+/// # Safety
+/// `chars` must be NUL-terminated and `out` writable.
+unsafe fn new_string(out: *mut Ptr, chars: *const c_char) {
+    out.write(libc::strdup(chars) as Ptr);
+    LIVE_STRINGS.fetch_add(1, Ordering::Relaxed);
+}
+
+extern "C" fn string_ctor(out: *mut Ptr, chars: *const c_char, _alloc: *const c_void) {
+    // SAFETY: the caller passes NUL-terminated text and a place for the string.
+    unsafe { new_string(out, chars) }
+}
+
+extern "C" fn string_dtor(string: *mut Ptr) {
+    // SAFETY: the string came from new_string.
+    unsafe { libc::free(string.read()) };
+    LIVE_STRINGS.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// Translates a TextString's key as the key in brackets.
+extern "C" fn get_text(out: *mut Ptr, _library: Ptr, text: *const c_void, _language: *const c_void) {
+    // SAFETY: the caller passes a TextString of the stand-in game.
+    let key = unsafe { Obj::from_ptr(text) }.map(|t| t.string(TEXTSTRING_TEXT)).unwrap_or_default();
+    let translated = CString::new(format!("[{key}]")).expect("a key holds no NUL byte");
+    // SAFETY: as for string_ctor.
+    unsafe { new_string(out, translated.as_ptr()) }
+}
+
+/// Measures one pixel per byte.
+extern "C" fn measure_width(_font: c_int, string: *const Ptr) -> c_int {
+    // SAFETY: the caller passes a string string_ctor built.
+    unsafe { CStr::from_ptr(string.read() as *const c_char) }.to_bytes().len() as c_int
+}
+
+extern "C" fn joy_count() -> c_int {
+    pad().index.map_or(0, |i| i + 1)
+}
+
+extern "C" fn joy_connected(dev: c_int) -> c_int {
+    (pad().index == Some(dev)) as c_int
+}
+
+extern "C" fn joy_num_sticks(_dev: c_int) -> c_int {
+    pad().sticks.len() as c_int
+}
+
+extern "C" fn joy_button_mapping(_dev: c_int, button: c_int) -> c_int {
+    pad().mapping.get(button as usize).copied().unwrap_or(-1)
+}
+
+extern "C" fn joy_button_state(_dev: c_int, raw: c_int) -> c_int {
+    pad().held.contains(&raw) as c_int
+}
+
+extern "C" fn joy_read_stick(_dev: c_int, stick: c_int, x: *mut f32, y: *mut f32) {
+    let [sx, sy] = pad().sticks[stick as usize];
+    // SAFETY: the caller passes places for both axes.
+    unsafe {
+        x.write(sx);
+        y.write(sy);
+    }
+}
+
+extern "C" fn joy_read_dpad(_dev: c_int, x: *mut c_int, y: *mut c_int) {
+    let [dx, dy] = pad().dpad;
+    // SAFETY: the caller passes places for both axes.
+    unsafe {
+        x.write(dx);
+        y.write(dy);
+    }
+}
 
 fn install_api() -> usize {
     let words = STATICS_SIZE.div_ceil(size_of::<u64>());
     let block = Box::leak(vec![0u64; words].into_boxed_slice()).as_mut_ptr() as usize;
-    // SAFETY: the data symbols read zeroed memory; the function pointers are never called.
-    api::install(unsafe { Api::from_addresses(&vec![block; SYMBOLS.len()]) });
+    // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a
+    // test reaches, and the rest are never called.
+    let mut stand_in = unsafe { Api::from_addresses(&vec![block; SYMBOLS.len()]) };
+    stand_in.key_down = key_down;
+    stand_in.key_up = key_up;
+    stand_in.lbutton_down = lbutton_down;
+    stand_in.lbutton_up = lbutton_up;
+    stand_in.rbutton_down = rbutton_down;
+    stand_in.rbutton_up = rbutton_up;
+    stand_in.mouse_move = mouse_move;
+    stand_in.clear_crew = clear_crew;
+    stand_in.string_ctor = string_ctor;
+    stand_in.string_dtor = string_dtor;
+    stand_in.get_text = get_text;
+    stand_in.measure_width = measure_width;
+    stand_in.joy_count = joy_count;
+    stand_in.joy_connected = joy_connected;
+    stand_in.joy_num_sticks = joy_num_sticks;
+    stand_in.joy_button_mapping = joy_button_mapping;
+    stand_in.joy_button_state = joy_button_state;
+    stand_in.joy_read_stick = joy_read_stick;
+    stand_in.joy_read_dpad = joy_read_dpad;
+    api::install(stand_in);
     block
 }
 
@@ -116,6 +297,9 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     let statics = *STATICS.get_or_init(install_api);
     // SAFETY: the leaked block of STATICS_SIZE bytes.
     unsafe { std::ptr::write_bytes(statics as *mut u8, 0, STATICS_SIZE) };
+    calls();
+    set_pad(FakePad::default());
+    LIVE_STRINGS.store(0, Ordering::Relaxed);
     let _reset = AppReset;
     let mut arena = Arena::default();
     let app = arena.alloc(APP_SIZE);

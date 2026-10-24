@@ -348,6 +348,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::fake::{calls, with_game, Call};
 
     const PAGES: &str = "[controls]\nl1 = hold_state depower\nr1 = hold_state solo\na = space\nb = esc\n\
                          [controls:depower]\noverlay = parent\na = 1 add_shift\n\
@@ -399,6 +400,35 @@ mod tests {
             b.push_state(1, Input::L1);
         }
         assert_eq!(b.depth(), MAX_STATES - 1);
+    }
+
+    #[test]
+    fn cancel_backs_out_of_what_is_on_top() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let cancel = |l: &mut Layer| {
+                l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
+                calls()
+            };
+            let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
+            assert_eq!(cancel(&mut l), []);
+            g.gui.at(GUI_SHIP_SCREENS).set(FOCUS_OPEN, 1u8);
+            assert_eq!(cancel(&mut l), escape);
+            let member = g.arena.alloc(std::mem::size_of::<usize>());
+            g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(member)]);
+            assert_eq!(cancel(&mut l), [Call::ClearCrew(g.gui.at(GUI_CREW_CONTROL).addr())]);
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            let right = |down| Call::Button(MouseButton::Right, down, 0, 0);
+            assert_eq!(cancel(&mut l), [right(true), right(false)]);
+            for window in [GUI_OPTIONS_BOX, GUI_MENU_BOX] {
+                g.gui.at(window).set(FOCUS_OPEN, 1u8);
+                assert_eq!(cancel(&mut l), escape);
+                g.gui.at(window).set(FOCUS_OPEN, 0u8);
+            }
+            l.wheel.open = Some(0);
+            assert_eq!(cancel(&mut l), []);
+            assert_eq!(l.wheel.open, None);
+        });
     }
 
     #[test]

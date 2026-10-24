@@ -127,3 +127,18 @@ impl Images {
         self.cache.insert(path.to_string(), texture);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::fake::{live_strings, with_game};
+
+    #[test]
+    fn text_reaches_the_game_as_its_own_string_released_after() {
+        with_game(|_| {
+            assert_eq!(text_width(WHEEL_FONT, "Shields"), "Shields".len() as f32);
+            assert_eq!(text_width(WHEEL_FONT, "a\0b"), "ab".len() as f32);
+            assert_eq!(live_strings(), 0);
+        });
+    }
+}

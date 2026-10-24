@@ -417,6 +417,44 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::fake::{set_pad, with_game, FakePad};
+
+    /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
+    const RAW_OFFSET: i32 = 100;
+
+    fn raw(input: Input) -> i32 {
+        input as i32 + RAW_OFFSET
+    }
+
+    fn held(p: &PadFrame) -> Vec<Input> {
+        Input::ALL.into_iter().filter(|&i| p.down[i as usize]).collect()
+    }
+
+    #[test]
+    fn the_first_connected_pad_reads_through_the_engine_mapping() {
+        with_game(|_| {
+            assert_eq!(active_pad(), None);
+            let mut mapping: Vec<i32> = (0..SIL_BUTTONS as i32).map(|b| b + RAW_OFFSET).collect();
+            for trigger in [Input::L2, Input::R2] {
+                mapping[trigger as usize] = -1;
+            }
+            set_pad(FakePad {
+                index: Some(1),
+                mapping,
+                held: vec![raw(Input::Start), raw(Input::FaceDown)],
+                sticks: [[-0.6, 0.1], [0.0, 0.9], [0.5, -1.0]],
+                dpad: [1, 0],
+            });
+            assert_eq!(active_pad(), Some(1));
+            let mut l = Layer::default();
+            let p = l.read_pad(1);
+            let expected = [Input::Start, Input::FaceDown, Input::L2, Input::DpadRight, Input::LsLeft, Input::RsDown];
+            assert_eq!(held(&p), expected);
+            assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
+            l.cfg.swap_ab = true;
+            assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
+        });
+    }
 
     #[test]
     fn the_toggle_switches_the_dpad_and_both_sticks() {

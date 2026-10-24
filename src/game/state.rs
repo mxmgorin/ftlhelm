@@ -292,7 +292,19 @@ pub fn fps_control() -> Obj {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::with_game;
+    use crate::game::fake::{live_strings, with_game};
+
+    #[test]
+    fn display_text_reads_literals_and_translates_keys() {
+        with_game(|g| {
+            let text = g.arena.alloc(TEXTSTRING_LITERAL + std::mem::size_of::<u8>());
+            g.string(text, TEXTSTRING_TEXT, "weapon_laser");
+            assert_eq!(display_text(text), "[weapon_laser]");
+            text.set(TEXTSTRING_LITERAL, 1u8);
+            assert_eq!(display_text(text), "weapon_laser");
+            assert_eq!(live_strings(), 0);
+        });
+    }
 
     #[test]
     fn the_selection_reads_crew_control() {

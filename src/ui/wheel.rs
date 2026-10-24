@@ -607,7 +607,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::layout::Layout;
+    use crate::config::layout::{Layout, LABEL_CHARS};
     use crate::game::fake::{with_game, Game};
     use std::mem::size_of;
 
@@ -740,6 +740,26 @@ mod tests {
                 (doors.label.as_str(), doors.icon, doors.region),
                 ("Open doors", Some(door_icon.ptr()), Some([1.0, 2.0, 3.0, 4.0]))
             );
+        });
+    }
+
+    #[test]
+    fn long_names_keep_to_the_label_length() {
+        with_game(|g| {
+            let long = "Heavy Laser Mark Two Prototype";
+            let label: String = long.chars().take(LABEL_CHARS).collect();
+            let weapon = armament(g, long, "laser", 1, false);
+            g.arena.ptr_vector(g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL), ARMAMENT_BOXES, &[weapon]);
+            let manager = g.player_manager();
+            let member = g.crew(long, "human", ENEMY_SHIP_ID, false);
+            member.at(CREW_BLUEPRINT + CREWBP_NAME).set(TEXTSTRING_LITERAL, 0u8);
+            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &[Some(member)]);
+            let mut l = Layer::default();
+            l.images.insert(&format!("{WEAPON_ICON_PREFIX}laser{ICON_SUFFIX}"), 0);
+            l.images.insert(WEAPON_ICON_FALLBACK, 0);
+            assert_eq!(plates(&mut l, "[wheel:power]\nkind = power\nup = 1\n")[0].label, label);
+            let translated: String = format!("[{long}]").chars().take(LABEL_CHARS).collect();
+            assert_eq!(plates(&mut l, "[wheel:crew]\nkind = crew\n")[0].label, translated);
         });
     }
 
