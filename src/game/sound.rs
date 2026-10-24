@@ -1,15 +1,16 @@
 //! Restarts the game's sound stream when ALSA cannot recover it.
 //!
-//! The engine's playback thread calls snd_pcm_recover after an underrun and stays silent
-//! for good when that fails. The executable's PLT slot for snd_pcm_recover is pointed here:
-//! on failure the device is opened again under the name the game opened it with, set up by
-//! the game's own configure_pcm at the rate its mixer runs at, and swapped into pcm_handle.
-//! That name is recorded through the PLT slot for snd_pcm_open, since a plugin may report
-//! its own name for the stream rather than the device's. The old stream
-//! is closed only once the new one works, so the thread never sees a dead handle. After
-//! start-up every user of pcm_handle runs on the playback thread, which is where the
-//! recovery runs too. The first failure dumps the PCM chain to the log. ALSA is reached
-//! through dlsym, since the library links nothing box64 does not provide.
+//! The engine's playback thread calls snd_pcm_recover after an underrun and goes silent for
+//! good when that fails. Its PLT slot is pointed here: on failure the device is opened again
+//! under the name the game opened it with, set up by the game's configure_pcm at the mixer's
+//! rate, and swapped into pcm_handle. The name is recorded through the snd_pcm_open slot, as
+//! a plugin may rename the stream. The old stream is closed only once the new one works.
+//! After start-up every user of pcm_handle, the recovery included, runs on the playback
+//! thread.
+//!
+//! Logged: each open's device and plugin chain, the first frame's rate and sizes, the first
+//! failure's full chain dump. ALSA is reached through dlsym: the library links only what
+//! box64 provides.
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::ptr::null_mut;
@@ -21,8 +22,10 @@ use crate::core::util::{log, now_s};
 
 const RECOVER: &str = "snd_pcm_recover";
 const OPEN: &str = "snd_pcm_open";
-/// The game's PCM handle, its buffer size in frames, and its stream setup.
-const SYMBOLS: &[&str] = &["pcm_handle", "hw_buffer_size", "configure_pcm"];
+/// The game's PCM handle, its stream setup, and the rate and sizes that setup chose.
+const SYMBOLS: &[&str] = &["pcm_handle", "configure_pcm", "hw_sound_rate", "hw_buffer_size", "hw_period_size"];
+/// A dump line that is not a plugin's header.
+const DUMP_SETUP_HEADER: &str = "Its setup is:";
 const SND_PCM_STREAM_PLAYBACK: c_int = 0;
 /// configure_pcm's second argument: keep the rate the mixer already runs at.
 const KEEP_RATE: c_int = 1;
@@ -46,8 +49,10 @@ struct Alsa {
 struct Sound {
     alsa: Alsa,
     pcm_handle: *mut Pcm,
-    buffer_size: *const c_int,
     configure: unsafe extern "C" fn(c_int, c_int) -> c_int,
+    sound_rate: *const c_int,
+    buffer_size: *const c_int,
+    period_size: *const c_int,
     recover_slot: usize,
     open_slot: usize,
 }
@@ -92,25 +97,41 @@ impl Alsa {
         unsafe { CStr::from_ptr((self.strerror)(err)) }.to_string_lossy().into_owned()
     }
 
-    /// Logs the PCM's plugin chain and its settings, one log line per dump line.
-    fn dump(&self, pcm: Pcm) {
+    /// Returns snd_pcm_dump's text for the PCM: its plugin chain and their settings.
+    fn dump_text(&self, pcm: Pcm) -> String {
         let mut out: Output = null_mut();
+        let mut dump = String::new();
         // SAFETY: a fresh buffer output, written by snd_pcm_dump and closed here.
         unsafe {
             if (self.output_buffer_open)(&mut out) < 0 {
-                return;
+                return dump;
             }
             (self.dump)(pcm, out);
             let mut text: *mut c_char = null_mut();
             let len = (self.output_buffer_string)(out, &mut text);
             if !text.is_null() {
-                let bytes = std::slice::from_raw_parts(text as *const u8, len);
-                for line in String::from_utf8_lossy(bytes).lines() {
-                    log!("sound: {line}");
-                }
+                dump = String::from_utf8_lossy(std::slice::from_raw_parts(text as *const u8, len)).into_owned();
             }
             (self.output_close)(out);
         }
+        dump
+    }
+
+    /// Logs the PCM's whole dump, one log line per dump line.
+    fn dump(&self, pcm: Pcm) {
+        for line in self.dump_text(pcm).lines() {
+            log!("sound: {line}");
+        }
+    }
+
+    /// Returns the PCM's plugin chain: the dump's plugin headers, outermost first.
+    fn chain(&self, pcm: Pcm) -> String {
+        let dump = self.dump_text(pcm);
+        let headers: Vec<&str> = dump
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with(char::is_whitespace) && *l != DUMP_SETUP_HEADER)
+            .collect();
+        headers.join(" -> ")
     }
 }
 
@@ -183,6 +204,9 @@ extern "C" fn open_hook(pcm: *mut Pcm, name: *const c_char, stream: c_int, mode:
     if res >= 0 && stream == SND_PCM_STREAM_PLAYBACK && !name.is_null() {
         // SAFETY: the game passes a NUL-terminated device name.
         let device = unsafe { CStr::from_ptr(name) }.to_owned();
+        // SAFETY: ALSA just stored the opened PCM through `pcm`.
+        let chain = s.alsa.chain(unsafe { *pcm });
+        log!("sound: opened {}: {chain}", device.to_string_lossy());
         *DEVICE.lock().unwrap_or_else(|e| e.into_inner()) = Some(device);
     }
     res
@@ -208,9 +232,11 @@ pub fn install() -> bool {
     let sound = Sound {
         alsa,
         pcm_handle: addrs[0] as *mut Pcm,
-        buffer_size: addrs[1] as *const c_int,
         // SAFETY: configure_pcm is the game's int configure_pcm(int buffer_size, int force_rate).
-        configure: unsafe { std::mem::transmute_copy::<usize, unsafe extern "C" fn(c_int, c_int) -> c_int>(&addrs[2]) },
+        configure: unsafe { std::mem::transmute_copy::<usize, unsafe extern "C" fn(c_int, c_int) -> c_int>(&addrs[1]) },
+        sound_rate: addrs[2] as *const c_int,
+        buffer_size: addrs[3] as *const c_int,
+        period_size: addrs[4] as *const c_int,
         recover_slot,
         open_slot,
     };
@@ -228,14 +254,18 @@ pub fn install() -> bool {
     true
 }
 
-/// Logs when the loader has since rewritten a redirected PLT slot.
-pub fn check_slot() {
+/// Logs the stream's rate and sizes, and any redirected PLT slot the loader has since
+/// rewritten.
+pub fn report() {
     let Some(s) = SOUND.get() else {
         return;
     };
     if !ACTIVE.load(Ordering::Relaxed) {
         return;
     }
+    // SAFETY: the game's ints, set by configure_pcm; a torn read only skews this line.
+    let (rate, buffer, period) = unsafe { (*s.sound_rate, *s.buffer_size, *s.period_size) };
+    log!("sound: {rate} Hz, buffer {buffer} frames, period {period} frames");
     for (slot, hook, name) in [
         (s.recover_slot, recover_hook as *const () as usize, RECOVER),
         (s.open_slot, open_hook as *const () as usize, OPEN),

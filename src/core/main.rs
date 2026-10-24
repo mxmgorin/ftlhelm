@@ -8,15 +8,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
-use super::util::{log, now_s};
+use super::util::{line_buffer_stdout, log, now_s};
 use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
-use crate::game::{sound, state};
 use crate::game::zones::record_button;
+use crate::game::{sound, state};
 use crate::input::pad::active_pad;
 
 const DEBUG_ENV: &str = "FTLPAD_DEBUG";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Git revision of the build.
+const REV: &str = env!("FTLPAD_REV");
 const HEARTBEAT_S: f64 = 10.0;
 const MAX_DT: f64 = 0.05;
 
@@ -78,7 +81,7 @@ extern "C" fn onloop_hook(app: Ptr) {
     };
     if frames == 1 {
         log!("first OnLoop");
-        sound::check_slot();
+        sound::report();
     }
     with_layer(|l| {
         l.poll_files(t);
@@ -154,6 +157,7 @@ pub extern "C" fn init() {
         }
         return;
     }
+    log!("ftlpad {VERSION} ({REV})");
     let missing: Vec<_> = SYMBOLS.iter().zip(&addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
     if !missing.is_empty() {
         for name in missing {
@@ -175,6 +179,7 @@ pub extern "C" fn init() {
         log!("game not mapped in this process, inactive");
         return;
     }
+    line_buffer_stdout();
     // The engine drops joystick events while the X window lacks focus.
     // SAFETY: the engine's joystick switch.
     unsafe { (a.joy_enable_unfocused)(1) };
