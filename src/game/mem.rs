@@ -9,6 +9,8 @@ use std::ptr::NonNull;
 use super::api::{Point, Ptr, Rect};
 use super::offsets::{VECTOR_BEGIN, VECTOR_END};
 
+const PTR_SIZE: usize = std::mem::size_of::<usize>();
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Obj(NonNull<u8>);
 
@@ -95,21 +97,37 @@ impl Obj {
         }
     }
 
+    /// Element count of the std::vector of pointers at this address.
+    pub fn ptr_count(self) -> usize {
+        self.vec_len(PTR_SIZE)
+    }
+
     /// Element i of the std::vector of pointers at this address, None for null or past
     /// the end.
     pub fn vec_obj(self, i: usize) -> Option<Obj> {
-        if i >= self.vec_len(std::mem::size_of::<usize>()) {
+        if i >= self.ptr_count() {
             return None;
         }
-        self.obj(VECTOR_BEGIN)?.obj(i * std::mem::size_of::<usize>())
+        self.obj(VECTOR_BEGIN)?.obj(i * PTR_SIZE)
     }
 
-    /// Element i of the std::vector of `T` at this address; the caller keeps i in range.
+    /// The non-null elements of the std::vector of pointers at this address, with their
+    /// indices.
+    pub fn vec_objs(self) -> impl Iterator<Item = (usize, Obj)> {
+        (0..self.ptr_count()).filter_map(move |i| Some((i, self.vec_obj(i)?)))
+    }
+
+    /// Element i of the std::vector of `T` at this address, None past the end.
     pub fn vec_get<T: Copy>(self, i: usize) -> Option<T> {
         if i >= self.vec_len(std::mem::size_of::<T>()) {
             return None;
         }
         Some(self.obj(VECTOR_BEGIN)?.get(i * std::mem::size_of::<T>()))
+    }
+
+    /// The elements of the std::vector of `T` at this address.
+    pub fn vec_items<T: Copy>(self) -> impl Iterator<Item = T> {
+        (0..self.vec_len(std::mem::size_of::<T>())).filter_map(move |i| self.vec_get(i))
     }
 
     /// Whether `p` lies within `size` bytes from this object.
@@ -146,6 +164,8 @@ mod tests {
         arena.ptr_vector(owner, VECTOR_BEGIN, &[Some(a), None, Some(b)]);
         assert_eq!(owner.vec_len(PTR), 3);
         assert_eq!([0, 1, 2, 3].map(|i| owner.vec_obj(i)), [Some(a), None, Some(b), None]);
+        assert_eq!(owner.ptr_count(), 3);
+        assert_eq!(owner.vec_objs().collect::<Vec<_>>(), [(0, a), (2, b)]);
     }
 
     #[test]
@@ -166,5 +186,13 @@ mod tests {
         arena.vector(owner, VECTOR_BEGIN, &rects);
         assert_eq!(owner.vec_len(size_of::<Rect>()), 2);
         assert_eq!([0, 1, 2].map(|i| owner.vec_get::<Rect>(i)), [Some(rects[0]), Some(rects[1]), None]);
+        assert_eq!(owner.vec_items::<Rect>().collect::<Vec<_>>(), rects);
+    }
+
+    #[test]
+    fn an_unset_vector_has_no_elements() {
+        let mut arena = Arena::default();
+        let owner = arena.alloc(VECTOR_END + PTR);
+        assert_eq!((owner.vec_objs().count(), owner.vec_items::<Rect>().count()), (0, 0));
     }
 }

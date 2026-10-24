@@ -218,7 +218,7 @@ impl Layer {
         let origin = gui.point(GUI_SHIP_POSITION);
         let doors: Vec<_> = [ship.at(SHIP_DOORS), ship.at(SHIP_AIRLOCKS)]
             .into_iter()
-            .flat_map(|list| (0..list.vec_len(std::mem::size_of::<usize>())).filter_map(move |i| list.vec_obj(i)))
+            .flat_map(|list| list.vec_objs().map(|(_, door)| door))
             .filter(|d| d.i32(DOOR_ROOM1) == room || d.i32(DOOR_ROOM2) == room)
             .collect();
         let any_open = doors.iter().any(|d| d.flag(DOOR_OPEN));
@@ -281,7 +281,7 @@ pub fn tab_step(dir: i32) {
     let Some(tabbed) = state::open_tabbed() else {
         return;
     };
-    let n = tabbed.at(TABBED_BUTTONS).vec_len(std::mem::size_of::<usize>()) as i32;
+    let n = tabbed.at(TABBED_BUTTONS).ptr_count() as i32;
     if n <= 0 {
         return;
     }

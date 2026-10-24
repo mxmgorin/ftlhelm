@@ -113,11 +113,7 @@ impl Layer {
                 let Some(ship) = state::ship_of(state::player_complete()) else {
                     return;
                 };
-                let doors = ship.at(SHIP_DOORS);
-                for i in 0..doors.vec_len(std::mem::size_of::<usize>()) {
-                    let Some(d) = doors.vec_obj(i) else {
-                        continue;
-                    };
+                for (i, d) in ship.at(SHIP_DOORS).vec_objs() {
                     let (r1, r2) = (d.i32(DOOR_ROOM1), d.i32(DOOR_ROOM2));
                     if under.is_some_and(|u| u == r1 || u == r2) {
                         log!(

@@ -120,10 +120,9 @@ pub fn record_button(button: Obj) {
 
 /// Bounding box centre of a ship's rooms on screen.
 pub fn ship_center(ship: Obj, origin: Point) -> Option<(f32, f32)> {
-    let rooms = ship.at(SHIP_ROOMS);
     let (mut x0, mut y0, mut x1, mut y1) = (GAME_W, GAME_H, 0, 0);
     let mut any = false;
-    for room in (0..rooms.vec_len(std::mem::size_of::<usize>())).filter_map(|i| rooms.vec_obj(i)) {
+    for (_, room) in ship.at(SHIP_ROOMS).vec_objs() {
         let r = room.rect(ROOM_RECT);
         x0 = x0.min(r.x);
         y0 = y0.min(r.y);
@@ -142,12 +141,10 @@ impl Zones {
     }
 
     fn add_door_list(&mut self, doors: Obj, origin: Point) {
-        for i in 0..doors.vec_len(std::mem::size_of::<usize>()) {
-            if let Some(door) = doors.vec_obj(i) {
-                let (x, y) = (origin.x + door.i32(DOOR_X), origin.y + door.i32(DOOR_Y));
-                let rect = Rect { x: x - DOOR_HALF, y: y - DOOR_HALF, w: 2 * DOOR_HALF, h: 2 * DOOR_HALF };
-                self.push(rect, i as i32, ZoneKind::Door);
-            }
+        for (i, door) in doors.vec_objs() {
+            let (x, y) = (origin.x + door.i32(DOOR_X), origin.y + door.i32(DOOR_Y));
+            let rect = Rect { x: x - DOOR_HALF, y: y - DOOR_HALF, w: 2 * DOOR_HALF, h: 2 * DOOR_HALF };
+            self.push(rect, i as i32, ZoneKind::Door);
         }
     }
 
@@ -158,8 +155,7 @@ impl Zones {
     }
 
     fn add_rooms(&mut self, ship: Obj, origin: Point, enemy: bool) {
-        let rooms = ship.at(SHIP_ROOMS);
-        for room in (0..rooms.vec_len(std::mem::size_of::<usize>())).filter_map(|i| rooms.vec_obj(i)) {
+        for (_, room) in ship.at(SHIP_ROOMS).vec_objs() {
             let mut r = room.rect(ROOM_RECT);
             r.x += origin.x;
             r.y += origin.y;
@@ -175,26 +171,20 @@ impl Zones {
         };
         if map.flag(STARMAP_CHOOSING_SECTOR) {
             let offset = map.point(STARMAP_SECTOR_OFFSET);
-            let boxes = map.at(STARMAP_SECTOR_HITBOXES);
-            for i in 0..boxes.vec_len(std::mem::size_of::<Rect>()) {
-                if let Some(mut r) = boxes.vec_get::<Rect>(i) {
-                    r.x += offset.x;
-                    r.y += offset.y;
-                    self.push(r, i as i32, ZoneKind::Sector);
-                }
+            for (i, mut r) in map.at(STARMAP_SECTOR_HITBOXES).vec_items::<Rect>().enumerate() {
+                r.x += offset.x;
+                r.y += offset.y;
+                self.push(r, i as i32, ZoneKind::Sector);
             }
             return true;
         }
         let origin = map.point(STARMAP_POSITION);
         let (tx, ty) = (map.f32(STARMAP_TRANSLATION), map.f32(STARMAP_TRANSLATION + 4));
-        let locations = map.at(STARMAP_LOCATIONS);
-        for i in 0..locations.vec_len(std::mem::size_of::<usize>()) {
-            if let Some(loc) = locations.vec_obj(i) {
-                let cx = origin.x + (tx + loc.f32(LOCATION_LOC)).round() as i32;
-                let cy = origin.y + (ty + loc.f32(LOCATION_LOC + 4)).round() as i32;
-                let rect = Rect { x: cx - BEACON_HALF, y: cy - BEACON_HALF, w: 2 * BEACON_HALF, h: 2 * BEACON_HALF };
-                self.push(rect, i as i32, ZoneKind::Beacon);
-            }
+        for (i, loc) in map.at(STARMAP_LOCATIONS).vec_objs() {
+            let cx = origin.x + (tx + loc.f32(LOCATION_LOC)).round() as i32;
+            let cy = origin.y + (ty + loc.f32(LOCATION_LOC + 4)).round() as i32;
+            let rect = Rect { x: cx - BEACON_HALF, y: cy - BEACON_HALF, w: 2 * BEACON_HALF, h: 2 * BEACON_HALF };
+            self.push(rect, i as i32, ZoneKind::Beacon);
         }
         true
     }
@@ -204,11 +194,8 @@ impl Zones {
         let Some(choice) = state::open_choice() else {
             return false;
         };
-        let rects = choice.at(CHOICE_RECTS);
-        for i in 0..rects.vec_len(std::mem::size_of::<Rect>()) {
-            if let Some(r) = rects.vec_get::<Rect>(i) {
-                self.push(r, i as i32, ZoneKind::Choice);
-            }
+        for (i, r) in choice.at(CHOICE_RECTS).vec_items::<Rect>().enumerate() {
+            self.push(r, i as i32, ZoneKind::Choice);
         }
         true
     }
@@ -243,13 +230,10 @@ impl Zones {
                 .filter(|&&(_, shown)| !window.flag(shown))
                 .filter_map(|&(b, _)| window.obj(b))
                 .collect();
-            let list = window.at(boxes);
-            for i in 0..list.vec_len(std::mem::size_of::<usize>()) {
-                if let Some(slot) = list.vec_obj(i).filter(|s| !hidden.contains(s)) {
-                    let r = slot.rect(EQUIPBOX_HITBOX);
-                    if r.w > 0 && r.h > 0 {
-                        self.push(r, i as i32, ZoneKind::Slot);
-                    }
+            for (i, slot) in window.at(boxes).vec_objs().filter(|(_, s)| !hidden.contains(s)) {
+                let r = slot.rect(EQUIPBOX_HITBOX);
+                if r.w > 0 && r.h > 0 {
+                    self.push(r, i as i32, ZoneKind::Slot);
                 }
             }
         }

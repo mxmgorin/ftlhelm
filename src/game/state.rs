@@ -71,7 +71,7 @@ fn selected_crew() -> Option<Obj> {
 }
 
 pub fn selected_count() -> usize {
-    selected_crew().map_or(0, |v| v.vec_len(std::mem::size_of::<usize>()))
+    selected_crew().map_or(0, Obj::ptr_count)
 }
 
 pub fn any_crew_selected() -> bool {
@@ -84,10 +84,7 @@ pub fn first_selected_crew() -> Option<Obj> {
 }
 
 pub fn crew_is_selected(member: Obj) -> bool {
-    let Some(selected) = selected_crew() else {
-        return false;
-    };
-    (0..selected_count()).any(|i| selected.vec_obj(i) == Some(member))
+    selected_crew().is_some_and(|v| v.vec_objs().any(|(_, m)| m == member))
 }
 
 pub fn game_paused() -> bool {

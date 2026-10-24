@@ -411,9 +411,7 @@ impl Layer {
         let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
         let boxes = state::gui().map(|g| g.at(GUI_SYS_CONTROL + SYSCTRL_BOXES));
         let systems: Vec<Obj> = boxes
-            .map(|b| {
-                (0..b.vec_len(std::mem::size_of::<usize>())).filter_map(|i| b.vec_obj(i)?.obj(SYSBOX_SYSTEM)).collect()
-            })
+            .map(|b| b.vec_objs().filter_map(|(_, sys_box)| sys_box.obj(SYSBOX_SYSTEM)).collect())
             .unwrap_or_default();
         for (pl, &(kind, alt)) in plates.iter_mut().zip(SYSTEM_SLOTS.iter()) {
             pl.bound = true;
