@@ -26,6 +26,13 @@ impl Obj {
         Obj::from_ptr(addr as *const c_void)
     }
 
+    /// Entry `index` of a game table of `size`-byte entries; None for a negative index.
+    /// # Safety
+    /// A non-negative `index` must lie within the table at `base`.
+    pub unsafe fn table_entry(base: usize, index: i32, size: usize) -> Option<Obj> {
+        Obj::from_addr(base + usize::try_from(index).ok()? * size)
+    }
+
     pub fn ptr(self) -> Ptr {
         self.0.as_ptr() as Ptr
     }
@@ -139,6 +146,16 @@ mod tests {
         arena.ptr_vector(owner, VECTOR_BEGIN, &[Some(a), None, Some(b)]);
         assert_eq!(owner.vec_len(PTR), 3);
         assert_eq!([0, 1, 2, 3].map(|i| owner.vec_obj(i)), [Some(a), None, Some(b), None]);
+    }
+
+    #[test]
+    fn a_table_entry_needs_a_non_negative_index() {
+        let mut arena = Arena::default();
+        let table = arena.alloc(3 * PTR);
+        // SAFETY: an index within the table.
+        assert_eq!(unsafe { Obj::table_entry(table.addr(), 2, PTR) }, Some(table.at(2 * PTR)));
+        // SAFETY: a negative index reads nothing.
+        assert_eq!(unsafe { Obj::table_entry(table.addr(), -1, PTR) }, None);
     }
 
     #[test]

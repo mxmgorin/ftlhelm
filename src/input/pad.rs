@@ -132,15 +132,17 @@ impl PadState {
         };
         let a = api();
         // SAFETY: SIL's pad table, indexed by a connected pad.
-        let joy = unsafe { Obj::from_addr(a.sil_joysticks + dev as usize * SILJOY_SIZE) }
-            .expect("SIL's pad table is a static of the game");
+        let Some(joy) = (unsafe { Obj::table_entry(a.sil_joysticks, dev, SILJOY_SIZE) }) else {
+            return;
+        };
         let event_dev = joy.i32(SILJOY_EVENT_DEV);
         if self.resolved.as_ref().is_some_and(|(k, _)| *k == (dev, event_dev)) {
             return;
         }
         // SAFETY: SIL's device table, indexed by the pad's device.
-        let info = unsafe { Obj::from_addr(a.sil_event_info + event_dev as usize * EVDEV_INFO_SIZE) }
-            .expect("SIL's device table is a static of the game");
+        let Some(info) = (unsafe { Obj::table_entry(a.sil_event_info, event_dev, EVDEV_INFO_SIZE) }) else {
+            return;
+        };
         let bits: [u8; EVDEV_KEY_CODES / 8] = info.get(EVDEV_KEY_BITS);
         let codes: Vec<u16> =
             (0..EVDEV_KEY_CODES as u16).filter(|&c| bits[c as usize / 8] >> (c % 8) & 1 != 0).collect();
