@@ -32,6 +32,7 @@ impl Source {
     }
 }
 
+#[derive(Default)]
 pub struct Bindings {
     /// Pushed states above the base, with the input holding each.
     stack: Vec<(usize, Input)>,
@@ -47,20 +48,6 @@ pub struct Bindings {
     pub last_ability_key: Option<i32>,
     /// dpad_mode toggled: the D-pad and the sticks move the cursor.
     pub dpad_mouse: bool,
-}
-
-impl Default for Bindings {
-    fn default() -> Self {
-        Bindings {
-            stack: Vec::new(),
-            pending: [None; INPUT_COUNT],
-            active: [None; INPUT_COUNT],
-            context_done: [None; INPUT_COUNT + 1],
-            precision: false,
-            last_ability_key: None,
-            dpad_mouse: false,
-        }
-    }
 }
 
 impl Bindings {

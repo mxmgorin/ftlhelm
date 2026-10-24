@@ -93,7 +93,7 @@ impl Layer {
     fn run_command(&mut self, line: &str) {
         let mut words = line.split_whitespace();
         let cmd = words.next().unwrap_or("");
-        let nums: Vec<i32> = line.split_whitespace().skip(1).filter_map(|w| w.parse().ok()).collect();
+        let nums: Vec<i32> = words.filter_map(|w| w.parse().ok()).collect();
         match (cmd, nums.as_slice()) {
             ("move", &[x, y]) => {
                 (self.cursor.x, self.cursor.y) = (x as f32, y as f32);

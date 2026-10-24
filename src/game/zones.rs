@@ -179,10 +179,10 @@ impl Zones {
             return true;
         }
         let origin = map.point(STARMAP_POSITION);
-        let (tx, ty) = (map.f32(STARMAP_TRANSLATION), map.f32(STARMAP_TRANSLATION + 4));
+        let [tx, ty] = map.get::<[f32; 2]>(STARMAP_TRANSLATION);
         for (i, loc) in map.at(STARMAP_LOCATIONS).vec_objs() {
-            let cx = origin.x + (tx + loc.f32(LOCATION_LOC)).round() as i32;
-            let cy = origin.y + (ty + loc.f32(LOCATION_LOC + 4)).round() as i32;
+            let [lx, ly] = loc.get::<[f32; 2]>(LOCATION_LOC);
+            let (cx, cy) = (origin.x + (tx + lx).round() as i32, origin.y + (ty + ly).round() as i32);
             let rect = Rect { x: cx - BEACON_HALF, y: cy - BEACON_HALF, w: 2 * BEACON_HALF, h: 2 * BEACON_HALF };
             self.push(rect, i as i32, ZoneKind::Beacon);
         }

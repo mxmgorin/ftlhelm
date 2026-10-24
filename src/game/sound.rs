@@ -225,18 +225,22 @@ pub fn install() -> bool {
         log!("sound: symbol missing: {}", SYMBOLS[i]);
         return false;
     }
+    let [pcm_handle, configure, sound_rate, buffer_size, period_size]: [usize; SYMBOLS.len()] =
+        addrs.try_into().expect("resolve_symbols gives one address per symbol");
     let (Some(recover_slot), Some(open_slot)) = (plt_slot(RECOVER), plt_slot(OPEN)) else {
         log!("sound: no PLT slot for {RECOVER} or {OPEN}");
         return false;
     };
     let sound = Sound {
         alsa,
-        pcm_handle: addrs[0] as *mut Pcm,
+        pcm_handle: pcm_handle as *mut Pcm,
         // SAFETY: configure_pcm is the game's int configure_pcm(int buffer_size, int force_rate).
-        configure: unsafe { std::mem::transmute_copy::<usize, unsafe extern "C" fn(c_int, c_int) -> c_int>(&addrs[1]) },
-        sound_rate: addrs[2] as *const c_int,
-        buffer_size: addrs[3] as *const c_int,
-        period_size: addrs[4] as *const c_int,
+        configure: unsafe {
+            std::mem::transmute_copy::<usize, unsafe extern "C" fn(c_int, c_int) -> c_int>(&configure)
+        },
+        sound_rate: sound_rate as *const c_int,
+        buffer_size: buffer_size as *const c_int,
+        period_size: period_size as *const c_int,
         recover_slot,
         open_slot,
     };

@@ -28,7 +28,8 @@ pub enum Input {
     RsLeft, RsUp, RsRight, RsDown,
 }
 
-pub const INPUT_COUNT: usize = 25;
+/// Counts through the last variant; a variant added after it takes its place here.
+pub const INPUT_COUNT: usize = Input::RsDown as usize + 1;
 /// The inputs that are SIL buttons, the rest being read from the D-pad and sticks.
 pub const SIL_BUTTONS: usize = Input::R3 as usize + 1;
 
@@ -64,7 +65,8 @@ pub enum Slot {
     RStick,
 }
 
-pub const SLOT_COUNT: usize = 3;
+/// Counts through the last variant; a variant added after it takes its place here.
+pub const SLOT_COUNT: usize = Slot::RStick as usize + 1;
 
 impl Slot {
     pub const ALL: [Slot; SLOT_COUNT] = [Slot::Dpad, Slot::LStick, Slot::RStick];
@@ -97,15 +99,17 @@ pub enum Builtin {
 }
 
 impl Builtin {
+    /// Counts through the last variant; a variant added after it takes its place here.
+    const COUNT: usize = Builtin::DpadMode as usize + 1;
     #[rustfmt::skip]
-    pub const ALL: [Builtin; 14] = [
+    pub const ALL: [Builtin; Builtin::COUNT] = [
         Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
         Builtin::DpadMode,
     ];
     #[rustfmt::skip]
-    const NAMES: [&'static str; 14] = [
+    const NAMES: [&'static str; Builtin::COUNT] = [
         "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
         "fast_forward", "dpad_mode",
@@ -489,6 +493,13 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn variant_lists_follow_declaration_order() {
+        assert!(Input::ALL.iter().enumerate().all(|(i, &input)| input as usize == i));
+        assert!(Slot::ALL.iter().enumerate().all(|(i, &slot)| slot as usize == i));
+        assert!(Builtin::ALL.iter().enumerate().all(|(i, &b)| b as usize == i));
+    }
 
     #[test]
     fn hold_and_tap() {

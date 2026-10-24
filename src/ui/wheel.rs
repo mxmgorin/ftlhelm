@@ -56,6 +56,8 @@ const PLATE_IDLE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.75);
 const PLATE_POWERED_COLOR: GlColor = GlColor::new(0.12, 0.36, 0.2, 0.8);
 const PLATE_DISABLED_EDGE_COLOR: GlColor = GlColor::new(0.3, 0.34, 0.33, 0.8);
 const PIP_ON_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
+/// The label of a slot with nothing in it.
+const EMPTY_LABEL: &str = "Empty";
 
 /// Where a power wheel finds the item a slot key powers.
 struct Armament {
@@ -322,7 +324,7 @@ fn crew_plates() -> [Plate; WHEEL_SLOTS] {
     for pl in &mut plates[slot..] {
         pl.bound = true;
         pl.empty = true;
-        pl.label = "Empty".to_string();
+        pl.label = EMPTY_LABEL.to_string();
     }
     plates
 }
@@ -383,7 +385,7 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
                     pl.label = state::display_text(bp.at(BLUEPRINT_SHORT_TITLE));
                     armament_plate(images, pl, arm, item, bp);
                 }
-                _ => pl.label = "Empty".to_string(),
+                _ => pl.label = EMPTY_LABEL.to_string(),
             }
         } else if def.kind == WheelKind::Power && code == KEY_AUTOFIRE {
             pl.powered = state::weapon_control().is_some_and(|c| c.flag(WEAPONCTRL_AUTOFIRE));
@@ -707,7 +709,7 @@ mod tests {
             assert_eq!((ion.icon, ion.icon_shift), (Some(fallback.ptr()), 0.0));
             for empty in [&plates[2], &plates[6]] {
                 assert!(empty.bound && empty.empty && !empty.available);
-                assert_eq!(empty.label, "Empty");
+                assert_eq!(empty.label, EMPTY_LABEL);
             }
             let autofire = &plates[4];
             assert!(autofire.available && autofire.powered && !autofire.empty);
@@ -762,7 +764,7 @@ mod tests {
             let cy = &plates[1];
             assert!(cy.available && cy.powered);
             assert_eq!((cy.label.as_str(), cy.action, cy.portrait), ("Cy", key(2), Some(anim.ptr())));
-            assert!(plates[2..].iter().all(|p| p.bound && p.empty && !p.available && p.label == "Empty"));
+            assert!(plates[2..].iter().all(|p| p.bound && p.empty && !p.available && p.label == EMPTY_LABEL));
         });
     }
 }

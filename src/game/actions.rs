@@ -65,7 +65,8 @@ pub fn key_up(code: i32) {
 /// Holds Shift down while any caller wants it, in the engine's key state and in the flag
 /// CApp::OnLoop samples once a frame for the hotkeys.
 pub fn set_shift(on: bool) {
-    let count = SHIFT_COUNT.fetch_add(if on { 1 } else { -1 }, Ordering::Relaxed) + if on { 1 } else { -1 };
+    let delta = if on { 1 } else { -1 };
+    let count = SHIFT_COUNT.fetch_add(delta, Ordering::Relaxed) + delta;
     if let Some(app) = state::app() {
         app.set::<u8>(CAPP_SHIFT_HELD, (count > 0) as u8);
     }

@@ -182,14 +182,3 @@ impl Layer {
         parts.join(BADGE_SEPARATOR).to_ascii_uppercase()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::layout::Input;
-
-    #[test]
-    fn titles_cover_the_sil_buttons() {
-        assert_eq!(INPUT_TITLES.len(), Input::R3 as usize + 1);
-    }
-}
