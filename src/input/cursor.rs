@@ -177,7 +177,7 @@ impl Layer {
         let f = &mut self.focus;
         let mut opened = screen != f.prev;
         if screen == FirstScreen::Choice {
-            if let Some(choice) = state::gui().map(|g| g.at(GUI_CHOICE_BOX)) {
+            if let Some(choice) = state::open_choice() {
                 let text = choice.get::<usize>(CHOICE_TEXT);
                 let open_time = choice.f32(CHOICE_OPEN_TIME);
                 opened |= text != f.prev_text || open_time < f.prev_open_time;

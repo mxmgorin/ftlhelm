@@ -5,7 +5,7 @@ pub const GAME_W: i32 = 1280;
 pub const GAME_H: i32 = 720;
 
 pub const CAPP_GUI: usize = 16;
-pub const CAPP_MAIN_MENU_OPEN: usize = 32;
+pub const CAPP_MAIN_MENU: usize = 32;
 /// The Shift flag CApp::OnLoop samples once a frame and hands to the hotkeys.
 pub const CAPP_SHIFT_HELD: usize = 9;
 pub const CAPP_MODIFIER_X: usize = 14648;
@@ -38,6 +38,9 @@ pub const GUI_CREW_SCREEN: usize = 14552;
 pub const GUI_EQUIP_SCREEN: usize = 15624;
 
 pub const FOCUS_OPEN: usize = 8;
+
+pub const MAIN_MENU_OPEN: usize = 0;
+pub const MAIN_MENU_CHOICE_BOX: usize = 13864;
 
 pub const STARMAP_SIZE: usize = 3280;
 pub const STARMAP_LOCATIONS: usize = 40;

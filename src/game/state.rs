@@ -30,8 +30,12 @@ pub fn gui() -> Option<Obj> {
     app()?.obj(CAPP_GUI)
 }
 
+fn main_menu() -> Option<Obj> {
+    Some(app()?.at(CAPP_MAIN_MENU))
+}
+
 pub fn main_menu_open() -> bool {
-    app().is_some_and(|a| a.flag(CAPP_MAIN_MENU_OPEN))
+    main_menu().is_some_and(|m| m.flag(MAIN_MENU_OPEN))
 }
 
 /// MouseControl::Mouse, the game's own cursor state.
@@ -107,8 +111,14 @@ pub fn star_map_open() -> bool {
     window_open(star_map())
 }
 
+/// The open dialog with choices: the main menu's while the menu is up, else the event box.
+pub fn open_choice() -> Option<Obj> {
+    let choice = if main_menu_open() { main_menu()?.at(MAIN_MENU_CHOICE_BOX) } else { gui()?.at(GUI_CHOICE_BOX) };
+    choice.flag(FOCUS_OPEN).then_some(choice)
+}
+
 pub fn choice_open() -> bool {
-    gui_window_open(GUI_CHOICE_BOX)
+    open_choice().is_some()
 }
 
 /// The open tabbed screen (ship or store).

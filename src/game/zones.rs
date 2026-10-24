@@ -199,12 +199,11 @@ impl Zones {
         true
     }
 
-    /// The open event box's choices; false when it is closed.
-    fn add_choice_zones(&mut self, gui: Obj) -> bool {
-        let choice = gui.at(GUI_CHOICE_BOX);
-        if !choice.flag(FOCUS_OPEN) {
+    /// The open dialog's choices; false when none is open.
+    fn add_choice_zones(&mut self) -> bool {
+        let Some(choice) = state::open_choice() else {
             return false;
-        }
+        };
         let rects = choice.at(CHOICE_RECTS);
         for i in 0..rects.vec_len(std::mem::size_of::<Rect>()) {
             if let Some(r) = rects.vec_get::<Rect>(i) {
@@ -258,7 +257,7 @@ impl Zones {
 }
 
 impl Layer {
-    /// Rebuilds the zones for the current screen: an event's choices alone while it is open
+    /// Rebuilds the zones for the current screen: a dialog's choices alone while it is open
     /// (it sits over any screen but the game menu), beacons or sector boxes with the map
     /// open, otherwise rooms; the buttons the game hit-tests come on top.
     pub fn build_zones(&mut self) {
@@ -276,7 +275,7 @@ impl Layer {
         };
         let player = state::ship_of(state::player_complete());
         let modal_open = state::modal_window(gui).is_some();
-        if !modal_open && zones.add_choice_zones(gui) {
+        if !modal_open && zones.add_choice_zones() {
             return;
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
