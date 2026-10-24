@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::hook::{accept_buttons_only_pads, hook, mapped_executable, redirect_step_cap, resolve_symbols};
+use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
 use super::util::{log, now_s};
 use crate::game::actions::shift_held;
@@ -22,6 +22,12 @@ const MAX_DT: f64 = 0.05;
 /// Used when no layout file is named.
 const DEFAULT_LAYOUT: &str =
     "[controls]\na = space\nback = esc\nstart = j\nl2 = mouse_right\nr2 = mouse_left\nright_analog = mouse_movement\n";
+
+/// GNU build ID of the FTL.amd64 whose layout `offsets` describes.
+const BUILD_ID: [u8; 20] = [
+    0x93, 0x1e, 0x2d, 0xdf, 0x71, 0x29, 0x32, 0x97, 0x75, 0x91, 0x05, 0x48, 0x6b, 0x73, 0x58, 0x1b, 0x97, 0xbe, 0xb8,
+    0xcf,
+];
 
 /// push %rbp; push %rbx; mov %rdi,%rbx
 const ONLOOP_PROLOGUE: [u8; 5] = [0x55, 0x53, 0x48, 0x89, 0xfb];
@@ -152,6 +158,12 @@ pub extern "C" fn init() {
             log!("symbol missing: {name}");
         }
         log!("unknown build, inactive");
+        return;
+    }
+    let id = build_id().unwrap_or_default();
+    if id != BUILD_ID {
+        let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
+        log!("build id {hex}: unknown build, inactive");
         return;
     }
     // SAFETY: every symbol resolved in this FTL build, in SYMBOLS order.

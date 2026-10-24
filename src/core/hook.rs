@@ -14,6 +14,11 @@ const EXE_FALLBACK: &str = "/proc/self/exe";
 const MAPS: &str = "/proc/self/maps";
 
 const SHT_SYMTAB: u32 = 2;
+const SHT_NOTE: u32 = 7;
+const NT_GNU_BUILD_ID: u32 = 3;
+const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
+const NOTE_HDR_SIZE: usize = 12;
+const NOTE_ALIGN: usize = 4;
 const EHDR_SHOFF: u64 = 0x28;
 const EHDR_SHENTSIZE: u64 = 0x3a;
 const EHDR_SHNUM: u64 = 0x3c;
@@ -82,25 +87,66 @@ fn le_u64(b: &[u8], at: usize) -> u64 {
 /// Looks up the wanted symbols in the executable's .symtab; returns their addresses in
 /// order, 0 for each one missing.
 pub fn resolve_symbols(wanted: &[&str]) -> Vec<usize> {
-    let path = std::env::var(EXE_ENV).unwrap_or_else(|_| EXE_FALLBACK.to_string());
     let mut found = vec![0usize; wanted.len()];
-    match File::open(&path) {
-        Ok(f) => {
+    match open_exe() {
+        Some(f) => {
             scan_symtab(&f, wanted, &mut found);
         }
-        Err(_) => log!("cannot open the executable"),
+        None => log!("cannot open the executable"),
     }
     found
 }
 
-fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
-    let index: HashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, n)| (n.as_bytes(), i)).collect();
+/// Reads the executable's GNU build ID; None when it has none or cannot be read.
+pub fn build_id() -> Option<Vec<u8>> {
+    let f = open_exe()?;
+    let sh = section_headers(&f)?;
+    sh.as_chunks::<SHDR_SIZE>().0.iter().filter(|s| le_u32(*s, 4) == SHT_NOTE).find_map(|s| {
+        let notes = read_vec(&f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        find_build_id(&notes)
+    })
+}
+
+fn open_exe() -> Option<File> {
+    let path = std::env::var(EXE_ENV).unwrap_or_else(|_| EXE_FALLBACK.to_string());
+    File::open(path).ok()
+}
+
+fn section_headers(f: &File) -> Option<Vec<u8>> {
     let shoff = read_u64(f, EHDR_SHOFF)?;
     if read_u16(f, EHDR_SHENTSIZE)? as usize != SHDR_SIZE {
         return None;
     }
     let shnum = read_u16(f, EHDR_SHNUM)? as usize;
-    let sh = read_vec(f, shoff, shnum * SHDR_SIZE)?;
+    read_vec(f, shoff, shnum * SHDR_SIZE)
+}
+
+/// Walks a note section; returns the descriptor of its GNU build ID note.
+fn find_build_id(notes: &[u8]) -> Option<Vec<u8>> {
+    let align = |n: usize| n.next_multiple_of(NOTE_ALIGN);
+    let mut at = 0;
+    while at + NOTE_HDR_SIZE <= notes.len() {
+        let namesz = le_u32(notes, at) as usize;
+        let descsz = le_u32(notes, at + 4) as usize;
+        let kind = le_u32(notes, at + 8);
+        let name_at = at + NOTE_HDR_SIZE;
+        let desc_at = name_at + align(namesz);
+        let end = desc_at + align(descsz);
+        if desc_at + descsz > notes.len() {
+            return None;
+        }
+        if kind == NT_GNU_BUILD_ID && &notes[name_at..name_at + namesz] == NOTE_OWNER_GNU {
+            return Some(notes[desc_at..desc_at + descsz].to_vec());
+        }
+        at = end;
+    }
+    None
+}
+
+fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
+    let index: HashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, n)| (n.as_bytes(), i)).collect();
+    let sh = section_headers(f)?;
+    let shnum = sh.len() / SHDR_SIZE;
     let section = |i: usize| &sh[i * SHDR_SIZE..(i + 1) * SHDR_SIZE];
     for i in 0..shnum {
         let s = section(i);
