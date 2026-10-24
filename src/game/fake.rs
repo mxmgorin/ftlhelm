@@ -25,6 +25,8 @@ const GUI_SIZE: usize = GUI_EQUIP_SCREEN + EQUIP_OVER_AUG_CAPACITY + size_of::<u
 const MANAGER_SIZE: usize = SHIPMANAGER_SHIP + SHIP_AIRLOCKS + VECTOR_FIELDS;
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
+/// Reaches the literal flag of the member's name, its field farthest in.
+const CREW_SIZE: usize = CREW_BLUEPRINT + CREWBP_NAME + TEXTSTRING_LITERAL + size_of::<u8>();
 
 /// Zeroed memory blocks that stay put until the arena drops.
 #[derive(Default)]
@@ -50,6 +52,15 @@ impl Arena {
         }
         owner.set(off + VECTOR_BEGIN, data.addr());
         owner.set(off + VECTOR_END, data.addr() + size_of_val(items));
+    }
+
+    /// A NUL-terminated copy of `text`, as a std::string's data pointer leads to.
+    pub fn c_string(&mut self, text: &str) -> Obj {
+        let data = self.alloc(text.len() + 1);
+        for (i, b) in text.bytes().enumerate() {
+            data.set(i, b);
+        }
+        data
     }
 
     /// Lays out a std::vector of pointers at `off` in `owner`; None is a null element.
@@ -135,6 +146,29 @@ impl Game {
     /// The enemy's ShipManager, reached through the combat control's target.
     pub fn enemy_manager(&mut self) -> Obj {
         self.complete_ship(self.gui.at(GUI_COMBAT_CONTROL), COMBAT_CURRENT_TARGET)
+    }
+
+    /// Points the std::string at `off` in `owner` at a copy of `text`.
+    pub fn string(&mut self, owner: Obj, off: usize, text: &str) {
+        let data = self.arena.c_string(text);
+        owner.set(off, data.addr());
+    }
+
+    /// Makes the TextString at `off` in `owner` the literal `text`.
+    pub fn literal(&mut self, owner: Obj, off: usize, text: &str) {
+        let text_string = owner.at(off);
+        self.string(text_string, TEXTSTRING_TEXT, text);
+        text_string.set(TEXTSTRING_LITERAL, 1u8);
+    }
+
+    /// A CrewMember with a literal name, of a race, aboard a ship.
+    pub fn crew(&mut self, name: &str, race: &str, ship: i32, dead: bool) -> Obj {
+        let member = self.arena.alloc(CREW_SIZE);
+        self.literal(member, CREW_BLUEPRINT + CREWBP_NAME, name);
+        self.string(member, CREW_BLUEPRINT + CREWBP_RACE, race);
+        member.set(CREW_SHIP, ship);
+        member.set(CREW_DEAD, dead as u8);
+        member
     }
 
     /// A Room with its id and its rectangle relative to the ship.

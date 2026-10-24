@@ -120,4 +120,10 @@ impl Images {
         });
         (texture != 0).then_some(texture as Ptr)
     }
+
+    /// Caches `texture` for `path` as a lookup would; 0 caches a miss.
+    #[cfg(test)]
+    pub fn insert(&mut self, path: &str, texture: usize) {
+        self.cache.insert(path.to_string(), texture);
+    }
 }

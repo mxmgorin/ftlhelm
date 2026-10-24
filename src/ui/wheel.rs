@@ -607,8 +607,33 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::with_game;
+    use crate::config::layout::Layout;
+    use crate::game::fake::{with_game, Game};
     use std::mem::size_of;
+
+    const ENEMY_SHIP_ID: i32 = PLAYER_SHIP_ID + 1;
+
+    /// The plates of the layout's first wheel, opened and refilled from the game.
+    fn plates(l: &mut Layer, layout: &str) -> [Plate; WHEEL_SLOTS] {
+        l.layout = Layout::parse(layout);
+        l.wheel.open = Some(0);
+        l.refresh_wheel();
+        l.wheel.plates.clone()
+    }
+
+    /// An armament box holding an item of a blueprint with a literal title and an icon name.
+    fn armament(g: &mut Game, title: &str, icon: &str, power: i32, powered: bool) -> Option<Obj> {
+        let bp = g.arena.alloc(WEAPONBP_ICON + size_of::<usize>());
+        g.literal(bp, BLUEPRINT_SHORT_TITLE, title);
+        g.string(bp, WEAPONBP_ICON, icon);
+        let item = g.arena.alloc(WEAPON_POWER + size_of::<i32>());
+        item.set(WEAPON_BLUEPRINT, bp.addr());
+        item.set(WEAPON_POWER, power);
+        item.set(WEAPON_POWERED, powered as u8);
+        let armament_box = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+        armament_box.set(ARMAMENTBOX_ITEM, item.addr());
+        Some(armament_box)
+    }
 
     #[test]
     fn plates_go_clockwise_from_the_top() {
@@ -643,7 +668,7 @@ mod tests {
             let no_system = g.arena.alloc(SYSBOX_SYSTEM + size_of::<usize>());
             let boxes = [boxes[0], None, Some(no_system), boxes[1], boxes[2]];
             g.arena.ptr_vector(g.gui.at(GUI_SYS_CONTROL + SYSCTRL_BOXES), 0, &boxes);
-            let plates = Layer::default().system_plates();
+            let plates = plates(&mut Layer::default(), "[wheel:systems]\nkind = systems\n");
             let shields = &plates[0];
             assert!(shields.bound && shields.available && shields.powered && !shields.empty && shields.icon.is_some());
             assert_eq!((shields.label.as_str(), shields.badge.as_str()), ("Shields", "2/4"));
@@ -656,6 +681,90 @@ mod tests {
             assert!(medbay.available && !medbay.powered);
             assert_eq!((medbay.label.as_str(), medbay.badge.as_str()), ("Clone bay", "0/1"));
             assert!(plates[3..].iter().all(|p| p.empty && !p.available));
+        });
+    }
+
+    #[test]
+    fn power_plates_show_weapons_their_icons_and_empty_slots() {
+        with_game(|g| {
+            let laser = armament(g, "Burst Laser", "laser_burst", 2, true);
+            let ion = armament(g, "Heavy Ion", "ion_heavy", 1, false);
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[laser, ion]);
+            weapons.set(WEAPONCTRL_AUTOFIRE, 1u8);
+            let mut l = Layer::default();
+            let (laser_icon, fallback) = (g.arena.alloc(size_of::<usize>()), g.arena.alloc(size_of::<usize>()));
+            l.images.insert(&format!("{WEAPON_ICON_PREFIX}laser_burst{ICON_SUFFIX}"), laser_icon.addr());
+            l.images.insert(&format!("{WEAPON_ICON_PREFIX}ion_heavy{ICON_SUFFIX}"), 0);
+            l.images.insert(WEAPON_ICON_FALLBACK, fallback.addr());
+            let plates =
+                plates(&mut l, "[wheel:power]\nkind = power\nup = 1\nup_right = 2\nright = 3\ndown = v\nleft = 5\n");
+            let laser = &plates[0];
+            assert!(laser.available && laser.powered && !laser.empty && laser.icon_well);
+            assert_eq!((laser.label.as_str(), laser.pips, laser.pips_on), ("Burst Laser", 2, 2));
+            assert_eq!((laser.icon, laser.icon_shift), (Some(laser_icon.ptr()), WEAPON_ICON_SHIFT));
+            let ion = &plates[1];
+            assert!(ion.available && !ion.powered && !ion.icon_well);
+            assert_eq!((ion.label.as_str(), ion.pips, ion.pips_on), ("Heavy Ion", 1, 0));
+            assert_eq!((ion.icon, ion.icon_shift), (Some(fallback.ptr()), 0.0));
+            for empty in [&plates[2], &plates[6]] {
+                assert!(empty.bound && empty.empty && !empty.available);
+                assert_eq!(empty.label, "Empty");
+            }
+            let autofire = &plates[4];
+            assert!(autofire.available && autofire.powered && !autofire.empty);
+        });
+    }
+
+    #[test]
+    fn lockdown_needs_a_living_crystal_and_plates_keep_their_icons() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let door_icon = g.arena.alloc(size_of::<usize>());
+            l.images.insert("door.png", door_icon.addr());
+            let layout = "[wheel:actions]\nup = p \"Lockdown\"\nright = z \"Open doors\" door.png@1,2,3,4\n";
+            let manager = g.player_manager();
+            let lockdown_available = |l: &mut Layer| plates(l, layout)[0].available;
+            assert!(!lockdown_available(&mut l));
+            let crew = [
+                Some(g.crew("Ann", "human", PLAYER_SHIP_ID, false)),
+                Some(g.crew("Cy", "crystal", PLAYER_SHIP_ID, true)),
+            ];
+            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &crew);
+            assert!(!lockdown_available(&mut l));
+            crew[1].expect("a crew member").set(CREW_DEAD, 0u8);
+            assert!(lockdown_available(&mut l));
+            let doors = &plates(&mut l, layout)[2];
+            assert!(doors.available);
+            assert_eq!(
+                (doors.label.as_str(), doors.icon, doors.region),
+                ("Open doors", Some(door_icon.ptr()), Some([1.0, 2.0, 3.0, 4.0]))
+            );
+        });
+    }
+
+    #[test]
+    fn crew_plates_skip_the_dead_and_keep_their_f_keys() {
+        with_game(|g| {
+            let manager = g.player_manager();
+            let anim = g.arena.alloc(size_of::<usize>());
+            let members = [
+                g.crew("Ann", "human", ENEMY_SHIP_ID, false),
+                g.crew("Bo", "human", ENEMY_SHIP_ID, true),
+                g.crew("Cy", "rock", ENEMY_SHIP_ID, false),
+            ];
+            members[2].set(CREW_ANIM, anim.addr());
+            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &members.map(Some));
+            g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(members[2])]);
+            let plates = plates(&mut Layer::default(), "[wheel:crew]\nkind = crew\n");
+            let key = |n: i32| Some(Action::Key { code: KEY_F1 + n, shift: false });
+            let ann = &plates[0];
+            assert!(ann.available && !ann.powered && ann.portrait.is_none());
+            assert_eq!((ann.label.as_str(), ann.badge.as_str(), ann.action), ("Ann", "Enemy ship", key(0)));
+            let cy = &plates[1];
+            assert!(cy.available && cy.powered);
+            assert_eq!((cy.label.as_str(), cy.action, cy.portrait), ("Cy", key(2), Some(anim.ptr())));
+            assert!(plates[2..].iter().all(|p| p.bound && p.empty && !p.available && p.label == "Empty"));
         });
     }
 }

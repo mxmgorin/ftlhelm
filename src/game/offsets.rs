@@ -89,6 +89,7 @@ pub const DRONE_POWERED: usize = 16;
 pub const DRONE_POWER: usize = 20;
 pub const DRONEBP_ICON: usize = 168;
 pub const BLUEPRINT_SHORT_TITLE: usize = 32;
+pub const TEXTSTRING_TEXT: usize = 0;
 pub const TEXTSTRING_LITERAL: usize = 8;
 pub const TEXTLIB_LANGUAGE: usize = 0x60;
 pub const TEXTURE_W: usize = 4;

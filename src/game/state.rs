@@ -187,7 +187,7 @@ pub fn crew_dead(member: Obj) -> bool {
 /// library in its current language.
 pub fn display_text(text: Obj) -> String {
     if text.flag(TEXTSTRING_LITERAL) {
-        return truncate_label(&text.string(0));
+        return truncate_label(&text.string(TEXTSTRING_TEXT));
     }
     let a = api();
     let mut result: Ptr = std::ptr::null_mut();
