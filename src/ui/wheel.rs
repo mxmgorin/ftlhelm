@@ -615,7 +615,7 @@ mod tests {
 
     /// The plates of the layout's first wheel, opened and refilled from the game.
     fn plates(l: &mut Layer, layout: &str) -> [Plate; WHEEL_SLOTS] {
-        l.layout = Layout::parse(layout);
+        l.layout = Layout::parse(layout).0;
         l.wheel.open = Some(0);
         l.refresh_wheel();
         l.wheel.plates.clone()

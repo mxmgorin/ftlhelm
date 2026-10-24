@@ -207,8 +207,6 @@ impl WheelDef {
 pub struct Layout {
     pub states: Vec<State>,
     pub wheels: Vec<WheelDef>,
-    /// The [config] section over the defaults.
-    pub settings: Settings,
 }
 
 #[rustfmt::skip]
@@ -376,10 +374,12 @@ impl Layout {
         self.wheels[wi].plates[slot] = Some(PlateDef { action: binding.hold, label: truncate_label(label), icon });
     }
 
-    /// Parses layout text in the gptokeyb2 ini format, plus [wheel:NAME] sections; the base
-    /// state is index 0. A '#' starts a comment only outside quotes.
-    pub fn parse(text: &str) -> Layout {
+    /// Parses layout text in the gptokeyb2 ini format, plus [wheel:NAME] sections, the base
+    /// state at index 0; returns it with its [config] section over the default settings.
+    /// A '#' starts a comment only outside quotes.
+    pub fn parse(text: &str) -> (Layout, Settings) {
         let mut set = Layout::default();
+        let mut settings = Settings::default();
         let base = set.find_state(BASE_SECTION).expect("an empty layout has room for the base state");
         let mut state_defined = [false; MAX_STATES];
         let mut wheel_defined = [false; MAX_WHEELS];
@@ -439,7 +439,7 @@ impl Layout {
             match section {
                 Section::State(i) => set.parse_binding(i, key, value),
                 Section::Wheel(i) => set.parse_wheel_line(i, key, value),
-                Section::Config => set.settings.apply(key, value),
+                Section::Config => settings.apply(key, value),
                 Section::None => {}
             }
         }
@@ -453,7 +453,7 @@ impl Layout {
                 log!("layout: wheel {} has no section", w.name);
             }
         }
-        set
+        (set, settings)
     }
 }
 
@@ -480,10 +480,10 @@ impl Layer {
     /// Replaces the layout and the settings with those parsed from `text`, closing any wheel
     /// and dropping pushed states and pending presses.
     pub fn load_layout(&mut self, text: &str, origin: &str) {
-        let layout = Layout::parse(text);
+        let (layout, cfg) = Layout::parse(text);
         self.close_wheel();
         log!("layout: {} states, {} wheels from {origin}", layout.states.len(), layout.wheels.len());
-        self.cfg = layout.settings.clone();
+        self.cfg = cfg;
         log!("config:{}", self.cfg.describe());
         self.layout = layout;
         self.bind.reset();
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn hold_and_tap() {
-        let l = Layout::parse("[controls]\nx = wheel weapons | arm_next\n[wheel:weapons]\nkind = power\n");
+        let (l, _) = Layout::parse("[controls]\nx = wheel weapons | arm_next\n[wheel:weapons]\nkind = power\n");
         let b = l.states[0].bind[Input::FaceLeft as usize].expect("x is bound");
         assert_eq!(b.hold, Action::Wheel(0));
         assert_eq!(b.tap, Some(Action::Builtin(Builtin::ArmNext)));
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn plate_with_label_and_icon_region() {
-        let l =
+        let (l, _) =
             Layout::parse("[wheel:ship]\nup = z \"Open doors\" systemUI/button_door_bottom_off.png@10,33,20,20 # c\n");
         let p = l.wheels[0].plates[0].as_ref().expect("up is bound");
         assert_eq!(p.action, Action::Key { code: 'z' as i32, shift: false });
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn keys_shift_and_slots() {
-        let l =
+        let (l, _) =
             Layout::parse("[controls]\na = f3 add_shift\nleft_analog = mouse_movement\nright_analog = flick\nb = /\n");
         let s = &l.states[0];
         assert_eq!(
@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn hold_state_pages() {
-        let l = Layout::parse(
+        let (l, _) = Layout::parse(
             "[controls]\nl1 = hold_state depower\n[controls:depower]\noverlay = parent\na = 1 add_shift\n",
         );
         assert_eq!(l.states.len(), 2);
@@ -550,23 +550,23 @@ mod tests {
 
     #[test]
     fn hash_inside_quotes_is_kept() {
-        let l = Layout::parse("[wheel:w]\nup = a \"No # comment\"\n");
+        let (l, _) = Layout::parse("[wheel:w]\nup = a \"No # comment\"\n");
         assert_eq!(l.wheels[0].plates[0].as_ref().map(|p| p.label.as_str()), Some("No # comment"));
     }
 
     #[test]
     fn config_section_sets_the_settings() {
-        let l = Layout::parse("[config]\ntap_hold = 0.3 # s\nswap_ab = 0\n[controls]\na = space\n");
-        assert_eq!(l.settings.tap_hold, 0.3);
-        assert!(!l.settings.swap_ab);
-        assert_eq!(l.settings.cursor_speed, Settings::default().cursor_speed);
+        let (l, cfg) = Layout::parse("[config]\ntap_hold = 0.3 # s\nswap_ab = 0\n[controls]\na = space\n");
+        assert_eq!(cfg.tap_hold, 0.3);
+        assert!(!cfg.swap_ab);
+        assert_eq!(cfg.cursor_speed, Settings::default().cursor_speed);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
     }
 
     #[test]
     fn shipped_scheme_reads_its_settings() {
-        let l = Layout::parse(include_str!("../../config/ftlpad.ini"));
-        assert_eq!(l.settings.cursor_deadzone, 0.25);
+        let (l, cfg) = Layout::parse(include_str!("../../config/ftlpad.ini"));
+        assert_eq!(cfg.cursor_deadzone, 0.25);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
         assert!(!l.wheels.is_empty());
     }

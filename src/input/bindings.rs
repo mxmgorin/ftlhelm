@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn overlay_page_falls_through_to_the_base() {
-        let layout = Layout::parse(PAGES);
+        let (layout, _) = Layout::parse(PAGES);
         let mut b = Bindings::default();
         b.push_state(1, Input::L1);
         assert_eq!(
@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn page_without_overlay_hides_the_base() {
-        let layout = Layout::parse(PAGES);
+        let (layout, _) = Layout::parse(PAGES);
         let mut b = Bindings::default();
         assert_eq!(b.lookup(&layout, Input::FaceDown).map(|b| b.hold), key(' '));
         b.push_state(2, Input::R1);
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn a_press_turns_into_a_hold_after_the_threshold() {
-        let layout = Layout::parse("[controls]\nx = wheel w | arm_next\n[wheel:w]\n");
+        let (layout, _) = Layout::parse("[controls]\nx = wheel w | arm_next\n[wheel:w]\n");
         let mut b = Bindings::default();
         let binding = b.lookup(&layout, Input::FaceLeft).expect("x is bound");
         b.pending[Input::FaceLeft as usize] = Some((binding, 1.0));
