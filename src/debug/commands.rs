@@ -60,10 +60,10 @@ impl Layer {
             let r = t.rect;
             if matches!(t.kind, ZoneKind::Room | ZoneKind::EnemyRoom) {
                 let enemy = t.kind == ZoneKind::EnemyRoom;
-                let complete = if enemy { state::enemy_complete() } else { state::player_complete() };
-                let check = match (state::ship_of(complete), gui) {
+                let ship = if enemy { state::enemy_ship() } else { state::player_ship() };
+                let check = match (ship, gui) {
                     (Some(ship), Some(gui)) => {
-                        let origin = if enemy { state::enemy_origin(gui) } else { gui.point(GUI_SHIP_POSITION) };
+                        let origin = if enemy { state::enemy_origin(gui) } else { state::player_origin(gui) };
                         let (cx, cy) = (r.x + r.w / 2, r.y + r.h / 2);
                         // SAFETY: Ship::GetSelectedRoomId on the ship the zone came from.
                         unsafe { (api().selected_room)(ship.ptr(), cx - origin.x, cy - origin.y, false) }
@@ -110,7 +110,7 @@ impl Layer {
             ("font", &[font]) => self.plate_font = font,
             ("doors", _) => {
                 let under = self.zone_under_cursor().map(|i| self.zones.list[i].id);
-                let Some(ship) = state::ship_of(state::player_complete()) else {
+                let Some(ship) = state::player_ship() else {
                     return;
                 };
                 for (i, d) in ship.at(SHIP_DOORS).vec_objs() {

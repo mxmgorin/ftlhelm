@@ -130,8 +130,8 @@ impl Layer {
         let Some(gui) = state::gui() else {
             return;
         };
-        let p = state::ship_of(state::player_complete()).and_then(|s| ship_center(s, gui.point(GUI_SHIP_POSITION)));
-        let e = state::ship_of(state::enemy_complete()).and_then(|s| ship_center(s, state::enemy_origin(gui)));
+        let p = state::player_ship().and_then(|s| ship_center(s, state::player_origin(gui)));
+        let e = state::enemy_ship().and_then(|s| ship_center(s, state::enemy_origin(gui)));
         let (cx, cy) = (self.cursor.x, self.cursor.y);
         let dist = |(x, y): (f32, f32)| (x - cx).hypot(y - cy);
         let to = match (p, e) {
@@ -212,10 +212,10 @@ impl Layer {
             return;
         }
         let room = under.id;
-        let (Some(gui), Some(ship)) = (state::gui(), state::ship_of(state::player_complete())) else {
+        let (Some(gui), Some(ship)) = (state::gui(), state::player_ship()) else {
             return;
         };
-        let origin = gui.point(GUI_SHIP_POSITION);
+        let origin = state::player_origin(gui);
         let doors: Vec<_> = [ship.at(SHIP_DOORS), ship.at(SHIP_AIRLOCKS)]
             .into_iter()
             .flat_map(|list| list.vec_objs().map(|(_, door)| door))

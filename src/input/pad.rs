@@ -382,7 +382,7 @@ impl Layer {
         let now_aiming = state::aiming();
         let now_crew = state::first_selected_crew();
         if now_aiming && !self.pad.prev_aiming {
-            if let (Some(gui), Some(enemy)) = (state::gui(), state::ship_of(state::enemy_complete())) {
+            if let (Some(gui), Some(enemy)) = (state::gui(), state::enemy_ship()) {
                 if let Some((ex, ey)) = ship_center(enemy, state::enemy_origin(gui)) {
                     (self.cursor.x, self.cursor.y) = (ex, ey);
                     self.send_cursor();

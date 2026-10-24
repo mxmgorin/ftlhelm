@@ -257,7 +257,7 @@ impl Layer {
         let Some(gui) = state::gui() else {
             return;
         };
-        let player = state::ship_of(state::player_complete());
+        let player = state::player_ship();
         let modal_open = state::modal_window(gui).is_some();
         if !modal_open && zones.add_choice_zones() {
             return;
@@ -267,8 +267,8 @@ impl Layer {
         let precision = self.bind.precision;
         if let Some(player) = player {
             if !screen_open && !zones.add_map_zones() {
-                let enemy = state::ship_of(state::enemy_complete());
-                let origin = gui.point(GUI_SHIP_POSITION);
+                let enemy = state::enemy_ship();
+                let origin = state::player_origin(gui);
                 if state::aiming() {
                     if let Some(enemy) = enemy {
                         zones.add_rooms(enemy, state::enemy_origin(gui), true);

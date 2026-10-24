@@ -52,13 +52,27 @@ pub fn player_complete() -> Option<Obj> {
     gui()?.obj(GUI_SHIP_COMPLETE)
 }
 
-pub fn enemy_complete() -> Option<Obj> {
+fn enemy_complete() -> Option<Obj> {
     gui()?.at(GUI_COMBAT_CONTROL).obj(COMBAT_CURRENT_TARGET)
 }
 
 /// The Ship object of a CompleteShip.
-pub fn ship_of(complete: Option<Obj>) -> Option<Obj> {
+fn ship_of(complete: Option<Obj>) -> Option<Obj> {
     Some(complete?.obj(COMPLETE_SHIP_MANAGER)?.at(SHIPMANAGER_SHIP))
+}
+
+pub fn player_ship() -> Option<Obj> {
+    ship_of(player_complete())
+}
+
+/// The Ship of the enemy the combat control targets.
+pub fn enemy_ship() -> Option<Obj> {
+    ship_of(enemy_complete())
+}
+
+/// Where the player ship's room rectangles start on screen.
+pub fn player_origin(gui: Obj) -> Point {
+    gui.point(GUI_SHIP_POSITION)
 }
 
 pub fn player_manager() -> Option<Obj> {
@@ -300,11 +314,11 @@ mod tests {
             combat.set(COMBAT_POSITION, Point { x: 600, y: 0 });
             combat.set(COMBAT_TARGET_POSITION, Point { x: 100, y: 60 });
             let player = g.player_manager().at(SHIPMANAGER_SHIP);
-            assert_eq!(ship_of(enemy_complete()), None);
+            assert_eq!(enemy_ship(), None);
             let enemy = g.enemy_manager().at(SHIPMANAGER_SHIP);
-            assert_eq!(ship_of(player_complete()), Some(player));
-            assert_eq!(ship_of(enemy_complete()), Some(enemy));
-            assert_eq!(g.gui.point(GUI_SHIP_POSITION), player_at);
+            assert_eq!(player_ship(), Some(player));
+            assert_eq!(enemy_ship(), Some(enemy));
+            assert_eq!(player_origin(g.gui), player_at);
             assert_eq!(enemy_origin(g.gui), Point { x: 700, y: 60 });
         });
     }
