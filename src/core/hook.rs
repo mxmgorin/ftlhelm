@@ -103,10 +103,14 @@ pub fn resolve_symbols(wanted: &[&str]) -> Vec<usize> {
 
 /// Reads the executable's GNU build ID; None when it has none or cannot be read.
 pub fn build_id() -> Option<Vec<u8>> {
-    let f = open_exe()?;
-    let sh = section_headers(&f)?;
+    read_build_id(&open_exe()?)
+}
+
+/// Reads an ELF file's GNU build ID; None when it has none.
+fn read_build_id(f: &File) -> Option<Vec<u8>> {
+    let sh = section_headers(f)?;
     sh.as_chunks::<SHDR_SIZE>().0.iter().filter(|s| le_u32(*s, 4) == SHT_NOTE).find_map(|s| {
-        let notes = read_vec(&f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        let notes = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
         find_build_id(&notes)
     })
 }
@@ -182,8 +186,13 @@ fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
 /// Finds the PLT slot through which the executable calls the library function `name`;
 /// returns the slot's address.
 pub fn plt_slot(name: &str) -> Option<usize> {
-    let f = open_exe()?;
-    let sh = section_headers(&f)?;
+    find_plt_slot(&open_exe()?, name)
+}
+
+/// Finds the PLT slot through which an ELF file calls the library function `name`;
+/// returns the slot's address.
+fn find_plt_slot(f: &File, name: &str) -> Option<usize> {
+    let sh = section_headers(f)?;
     let shnum = sh.len() / SHDR_SIZE;
     let section = |i: usize| &sh[i * SHDR_SIZE..(i + 1) * SHDR_SIZE];
     for i in 0..shnum {
@@ -198,9 +207,9 @@ pub fn plt_slot(name: &str) -> Option<usize> {
             continue;
         }
         let st = section(strtab_at);
-        let strtab = read_vec(&f, le_u64(st, 24), le_u64(st, 32) as usize)?;
-        let syms = read_vec(&f, le_u64(dynsym, 24), le_u64(dynsym, 32) as usize)?;
-        let relas = read_vec(&f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        let strtab = read_vec(f, le_u64(st, 24), le_u64(st, 32) as usize)?;
+        let syms = read_vec(f, le_u64(dynsym, 24), le_u64(dynsym, 32) as usize)?;
+        let relas = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
         for rela in relas.as_chunks::<RELA_SIZE>().0 {
             let info = le_u64(rela, 8);
             if info as u32 != R_X86_64_JUMP_SLOT {
@@ -492,4 +501,245 @@ pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     unsafe { (disp_at as *mut i32).write_unaligned((redirected as i64 - next as i64) as i32) };
     protect(disp_at, std::mem::size_of::<i32>(), libc::PROT_READ | libc::PROT_EXEC);
     Some(redirected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::fd::FromRawFd;
+
+    // ELF64 layout as the specification gives it, independent of the reader's constants.
+    const EHDR_SIZE: usize = 64;
+    const SH_TYPE: usize = 4;
+    const SH_OFFSET: usize = 24;
+    const SH_SIZE: usize = 32;
+    const SH_LINK: usize = 40;
+    const ST_NAME: usize = 0;
+    const ST_VALUE: usize = 8;
+    const R_OFFSET: usize = 0;
+    const R_INFO: usize = 8;
+    const SHT_STRTAB: u32 = 3;
+    const R_X86_64_GLOB_DAT: u32 = 6;
+    const NT_GNU_ABI_TAG: u32 = 1;
+    const BUILD_ID_LEN: usize = 20;
+
+    fn put(buf: &mut [u8], at: usize, bytes: &[u8]) {
+        buf[at..at + bytes.len()].copy_from_slice(bytes);
+    }
+
+    /// An in-memory file holding `bytes`.
+    fn memfile(bytes: &[u8]) -> File {
+        // SAFETY: memfd_create with a NUL-terminated name.
+        let fd = unsafe { libc::memfd_create(c"ftlpad-test".as_ptr(), 0) };
+        assert!(fd >= 0, "memfd_create failed");
+        // SAFETY: a fresh descriptor the File now owns.
+        let mut f = unsafe { File::from_raw_fd(fd) };
+        f.write_all(bytes).expect("a memfd takes writes");
+        f
+    }
+
+    /// An ELF image built section by section: the data after the header, the section
+    /// headers last, a null section first.
+    struct Elf {
+        data: Vec<u8>,
+        headers: Vec<[u8; SHDR_SIZE]>,
+    }
+
+    impl Elf {
+        fn new() -> Elf {
+            Elf { data: vec![0; EHDR_SIZE], headers: vec![[0; SHDR_SIZE]] }
+        }
+
+        /// Adds a section; returns its index.
+        fn section(&mut self, kind: u32, link: usize, bytes: &[u8]) -> usize {
+            let mut h = [0u8; SHDR_SIZE];
+            put(&mut h, SH_TYPE, &kind.to_le_bytes());
+            put(&mut h, SH_OFFSET, &(self.data.len() as u64).to_le_bytes());
+            put(&mut h, SH_SIZE, &(bytes.len() as u64).to_le_bytes());
+            put(&mut h, SH_LINK, &(link as u32).to_le_bytes());
+            self.data.extend_from_slice(bytes);
+            self.headers.push(h);
+            self.headers.len() - 1
+        }
+
+        fn file(mut self) -> File {
+            let shoff = self.data.len() as u64;
+            put(&mut self.data, EHDR_SHOFF as usize, &shoff.to_le_bytes());
+            put(&mut self.data, EHDR_SHENTSIZE as usize, &(SHDR_SIZE as u16).to_le_bytes());
+            put(&mut self.data, EHDR_SHNUM as usize, &(self.headers.len() as u16).to_le_bytes());
+            for h in &self.headers {
+                self.data.extend_from_slice(h);
+            }
+            memfile(&self.data)
+        }
+    }
+
+    /// A string table of `names`; returns it with each name's offset.
+    fn strtab(names: &[&str]) -> (Vec<u8>, Vec<u32>) {
+        let mut table = vec![0u8];
+        let offsets = names
+            .iter()
+            .map(|n| {
+                let at = table.len() as u32;
+                table.extend_from_slice(n.as_bytes());
+                table.push(0);
+                at
+            })
+            .collect();
+        (table, offsets)
+    }
+
+    fn symbols(entries: &[(u32, u64)]) -> Vec<u8> {
+        let mut table = vec![0u8; SYM_SIZE];
+        for &(name, value) in entries {
+            let mut sym = [0u8; SYM_SIZE];
+            put(&mut sym, ST_NAME, &name.to_le_bytes());
+            put(&mut sym, ST_VALUE, &value.to_le_bytes());
+            table.extend_from_slice(&sym);
+        }
+        table
+    }
+
+    fn relas(entries: &[(u64, u32, u32)]) -> Vec<u8> {
+        let mut table = Vec::new();
+        for &(offset, sym, kind) in entries {
+            let mut rela = [0u8; RELA_SIZE];
+            put(&mut rela, R_OFFSET, &offset.to_le_bytes());
+            put(&mut rela, R_INFO, &(((sym as u64) << 32) | kind as u64).to_le_bytes());
+            table.extend_from_slice(&rela);
+        }
+        table
+    }
+
+    fn note(owner: &[u8], kind: u32, desc: &[u8]) -> Vec<u8> {
+        let mut n = Vec::new();
+        n.extend_from_slice(&(owner.len() as u32).to_le_bytes());
+        n.extend_from_slice(&(desc.len() as u32).to_le_bytes());
+        n.extend_from_slice(&kind.to_le_bytes());
+        for part in [owner, desc] {
+            n.extend_from_slice(part);
+            n.resize(n.len().next_multiple_of(NOTE_ALIGN), 0);
+        }
+        n
+    }
+
+    #[test]
+    fn the_symbol_table_gives_each_wanted_symbol_its_first_address() {
+        let (names, at) = strtab(&["wanted_a", "other", "wanted_b"]);
+        let mut elf = Elf::new();
+        let strings = elf.section(SHT_STRTAB, 0, &names);
+        let past_strings = names.len() as u32;
+        let syms = symbols(&[(at[0], 0x1000), (at[1], 0x2000), (at[2], 0), (at[0], 0x3000), (past_strings, 0x4000)]);
+        elf.section(SHT_SYMTAB, strings + 99, &syms);
+        elf.section(SHT_SYMTAB, strings, &syms);
+        let mut found = [0; 3];
+        scan_symtab(&elf.file(), &["wanted_a", "wanted_b", "missing"], &mut found);
+        assert_eq!(found, [0x1000, 0, 0]);
+    }
+
+    #[test]
+    fn a_plt_slot_is_the_jump_slot_of_the_named_symbol() {
+        let (names, at) = strtab(&["snd_pcm_open", "snd_pcm_recover"]);
+        let mut elf = Elf::new();
+        let strings = elf.section(SHT_STRTAB, 0, &names);
+        let symtab = elf.section(SHT_SYMTAB, strings, &symbols(&[(at[0], 0)]));
+        elf.section(SHT_RELA, symtab, &relas(&[(0x6000, 1, R_X86_64_JUMP_SLOT)]));
+        let dynsym = elf.section(SHT_DYNSYM, strings, &symbols(&[(at[0], 0), (at[1], 0)]));
+        let relocs = relas(&[
+            (0x5000, 2, R_X86_64_JUMP_SLOT),
+            (0x5008, 1, R_X86_64_GLOB_DAT),
+            (0x5010, 1, R_X86_64_JUMP_SLOT),
+            (0x5018, 9, R_X86_64_JUMP_SLOT),
+        ]);
+        elf.section(SHT_RELA, dynsym, &relocs);
+        let f = elf.file();
+        assert_eq!(find_plt_slot(&f, "snd_pcm_recover"), Some(0x5000));
+        assert_eq!(find_plt_slot(&f, "snd_pcm_open"), Some(0x5010));
+        assert_eq!(find_plt_slot(&f, "snd_pcm_close"), None);
+    }
+
+    #[test]
+    fn the_build_id_is_the_gnu_build_id_note() {
+        let id = [0xab; BUILD_ID_LEN];
+        let mut notes = note(b"XYZ\0", NT_GNU_BUILD_ID, &[1, 2, 3]);
+        notes.extend(note(NOTE_OWNER_GNU, NT_GNU_ABI_TAG, &[0; 16]));
+        notes.extend(note(NOTE_OWNER_GNU, NT_GNU_BUILD_ID, &id));
+        let mut elf = Elf::new();
+        elf.section(SHT_NOTE, 0, &notes);
+        assert_eq!(read_build_id(&elf.file()), Some(id.to_vec()));
+        let mut cut = note(NOTE_OWNER_GNU, NT_GNU_BUILD_ID, &id);
+        cut.truncate(cut.len() - 1);
+        let mut elf = Elf::new();
+        elf.section(SHT_NOTE, 0, &cut);
+        assert_eq!(read_build_id(&elf.file()), None);
+        assert_eq!(read_build_id(&Elf::new().file()), None);
+    }
+
+    #[no_mangle]
+    extern "C" fn ftlpad_test_marker_a() -> i32 {
+        1
+    }
+
+    #[no_mangle]
+    extern "C" fn ftlpad_test_marker_b() -> i32 {
+        2
+    }
+
+    #[test]
+    fn this_binary_resolves_its_own_symbols_at_one_load_bias() {
+        let f = File::open(EXE_FALLBACK).expect("the test binary is readable");
+        let mut found = [0; 2];
+        scan_symtab(&f, &["ftlpad_test_marker_a", "ftlpad_test_marker_b"], &mut found);
+        assert!(found.iter().all(|&a| a != 0), "markers missing from .symtab: {found:x?}");
+        let runtime = [ftlpad_test_marker_a as *const () as usize, ftlpad_test_marker_b as *const () as usize];
+        assert_eq!(runtime[0].wrapping_sub(found[0]), runtime[1].wrapping_sub(found[1]));
+    }
+
+    const MOV_EAX_IMM32: u8 = 0xb8;
+    const RET: u8 = 0xc3;
+    const ORIGINAL_RESULT: i32 = 42;
+    const REPLACEMENT_RESULT: i32 = 7;
+    /// The mov: one whole instruction with no relative operand.
+    const PROLOGUE_LEN: usize = 1 + std::mem::size_of::<i32>();
+
+    extern "C" fn replacement() -> i32 {
+        REPLACEMENT_RESULT
+    }
+
+    fn call(addr: usize) -> i32 {
+        // SAFETY: addr holds code of an extern "C" fn() -> i32.
+        unsafe { std::mem::transmute::<usize, extern "C" fn() -> i32>(addr)() }
+    }
+
+    #[test]
+    fn a_hook_runs_the_replacement_and_its_entry_runs_the_original() {
+        let mut code = vec![MOV_EAX_IMM32];
+        code.extend_from_slice(&ORIGINAL_RESULT.to_le_bytes());
+        code.push(RET);
+        // SAFETY: sysconf has no preconditions.
+        let len = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        // SAFETY: an anonymous private mapping touches nothing else.
+        let page = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                len,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                -1,
+                0,
+            )
+        };
+        assert_ne!(page, libc::MAP_FAILED);
+        let func = page as usize;
+        // SAFETY: the page is writable and longer than the code.
+        unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), page as *mut u8, code.len()) };
+        assert!(protect(func, code.len(), libc::PROT_READ | libc::PROT_EXEC));
+        assert_eq!(call(func), ORIGINAL_RESULT);
+        let orig =
+            hook("test", func, replacement as *const () as usize, &code[..PROLOGUE_LEN]).expect("the prologue matches");
+        assert_eq!(call(func), REPLACEMENT_RESULT);
+        assert_eq!(call(orig), ORIGINAL_RESULT);
+        assert_eq!(hook("test", func, replacement as *const () as usize, &code[..PROLOGUE_LEN]), None);
+    }
 }
