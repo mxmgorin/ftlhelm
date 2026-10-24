@@ -17,24 +17,41 @@ const SHT_SYMTAB: u32 = 2;
 const SHT_RELA: u32 = 4;
 const SHT_NOTE: u32 = 7;
 const SHT_DYNSYM: u32 = 11;
-const RELA_SIZE: usize = 24;
-const R_X86_64_JUMP_SLOT: u32 = 7;
-const NT_GNU_BUILD_ID: u32 = 3;
-const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
-const NOTE_HDR_SIZE: usize = 12;
-const NOTE_ALIGN: usize = 4;
 const EHDR_SHOFF: u64 = 0x28;
 const EHDR_SHENTSIZE: u64 = 0x3a;
 const EHDR_SHNUM: u64 = 0x3c;
 const SHDR_SIZE: usize = 64;
+const SH_TYPE: usize = 4;
+const SH_OFFSET: usize = 24;
+const SH_SIZE: usize = 32;
+const SH_LINK: usize = 40;
 const SYM_SIZE: usize = 24;
+const ST_NAME: usize = 0;
+const ST_VALUE: usize = 8;
+const RELA_SIZE: usize = 24;
+const R_OFFSET: usize = 0;
+const R_INFO: usize = 8;
+/// r_info holds the relocation type below this bit and the symbol index from it up.
+const R_SYM_SHIFT: u32 = 32;
+const R_X86_64_JUMP_SLOT: u32 = 7;
+const NOTE_NAMESZ: usize = 0;
+const NOTE_DESCSZ: usize = 4;
+const NOTE_TYPE: usize = 8;
+const NOTE_HDR_SIZE: usize = NOTE_TYPE + std::mem::size_of::<u32>();
+const NOTE_ALIGN: usize = 4;
+const NT_GNU_BUILD_ID: u32 = 3;
+const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
 
 const TRAMPOLINE_HINT: usize = 0x7000_0000;
 const TRAMPOLINE_PAGE: usize = 4096;
 /// Distance between candidate addresses when the trampoline page must be placed by search.
 const TRAMPOLINE_STEP: usize = 0x100_0000;
-const JMP_LEN: usize = 5;
-const FAR_JMP_LEN: usize = 12;
+const JMP_REL32: u8 = 0xe9;
+const JMP_LEN: usize = 1 + std::mem::size_of::<i32>();
+/// "mov $imm64,%rax" and "jmp *%rax".
+const MOVABS_RAX: [u8; 2] = [0x48, 0xb8];
+const JMP_RAX: [u8; 2] = [0xff, 0xe0];
+const FAR_JMP_LEN: usize = MOVABS_RAX.len() + std::mem::size_of::<u64>() + JMP_RAX.len();
 const NOP: u8 = 0x90;
 
 /// CFPS::OnLoop caps the step with "movss cap(%rip),%xmm1; unpcklpd %xmm0,%xmm0" within
@@ -108,11 +125,7 @@ pub fn build_id() -> Option<Vec<u8>> {
 
 /// Reads an ELF file's GNU build ID; None when it has none.
 fn read_build_id(f: &File) -> Option<Vec<u8>> {
-    let sh = section_headers(f)?;
-    sh.as_chunks::<SHDR_SIZE>().0.iter().filter(|s| le_u32(*s, 4) == SHT_NOTE).find_map(|s| {
-        let notes = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
-        find_build_id(&notes)
-    })
+    Sections::read(f)?.of_kind(SHT_NOTE).find_map(|s| find_build_id(&s.data(f)?))
 }
 
 fn open_exe() -> Option<File> {
@@ -120,13 +133,52 @@ fn open_exe() -> Option<File> {
     File::open(path).ok()
 }
 
-fn section_headers(f: &File) -> Option<Vec<u8>> {
-    let shoff = read_u64(f, EHDR_SHOFF)?;
-    if read_u16(f, EHDR_SHENTSIZE)? as usize != SHDR_SIZE {
-        return None;
+/// An ELF file's section header table.
+struct Sections(Vec<u8>);
+
+/// One entry of the section header table.
+#[derive(Clone, Copy)]
+struct Section<'a>(&'a [u8]);
+
+impl Sections {
+    fn read(f: &File) -> Option<Sections> {
+        let shoff = read_u64(f, EHDR_SHOFF)?;
+        if read_u16(f, EHDR_SHENTSIZE)? as usize != SHDR_SIZE {
+            return None;
+        }
+        let shnum = read_u16(f, EHDR_SHNUM)? as usize;
+        read_vec(f, shoff, shnum * SHDR_SIZE).map(Sections)
     }
-    let shnum = read_u16(f, EHDR_SHNUM)? as usize;
-    read_vec(f, shoff, shnum * SHDR_SIZE)
+
+    /// Section `i`; None past the table.
+    fn get(&self, i: usize) -> Option<Section<'_>> {
+        self.0.get(i * SHDR_SIZE..(i + 1) * SHDR_SIZE).map(Section)
+    }
+
+    fn of_kind(&self, kind: u32) -> impl Iterator<Item = Section<'_>> {
+        self.0.as_chunks::<SHDR_SIZE>().0.iter().map(|s| Section(&s[..])).filter(move |s| s.kind() == kind)
+    }
+}
+
+impl Section<'_> {
+    fn kind(self) -> u32 {
+        le_u32(self.0, SH_TYPE)
+    }
+
+    /// The index of the section this one links to.
+    fn link(self) -> usize {
+        le_u32(self.0, SH_LINK) as usize
+    }
+
+    /// Reads the section's contents; None when they run past the end of the file.
+    fn data(self, f: &File) -> Option<Vec<u8>> {
+        read_vec(f, le_u64(self.0, SH_OFFSET), le_u64(self.0, SH_SIZE) as usize)
+    }
+}
+
+/// The string at `at` of a string table, up to its terminator; None past the table.
+fn table_str(table: &[u8], at: usize) -> Option<&[u8]> {
+    table.get(at..)?.split(|&c| c == 0).next()
 }
 
 /// Walks a note section; returns the descriptor of its GNU build ID note.
@@ -134,9 +186,9 @@ fn find_build_id(notes: &[u8]) -> Option<Vec<u8>> {
     let align = |n: usize| n.next_multiple_of(NOTE_ALIGN);
     let mut at = 0;
     while at + NOTE_HDR_SIZE <= notes.len() {
-        let namesz = le_u32(notes, at) as usize;
-        let descsz = le_u32(notes, at + 4) as usize;
-        let kind = le_u32(notes, at + 8);
+        let namesz = le_u32(notes, at + NOTE_NAMESZ) as usize;
+        let descsz = le_u32(notes, at + NOTE_DESCSZ) as usize;
+        let kind = le_u32(notes, at + NOTE_TYPE);
         let name_at = at + NOTE_HDR_SIZE;
         let desc_at = name_at + align(namesz);
         let end = desc_at + align(descsz);
@@ -153,26 +205,21 @@ fn find_build_id(notes: &[u8]) -> Option<Vec<u8>> {
 
 fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
     let index: HashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, n)| (n.as_bytes(), i)).collect();
-    let sh = section_headers(f)?;
-    let shnum = sh.len() / SHDR_SIZE;
-    let section = |i: usize| &sh[i * SHDR_SIZE..(i + 1) * SHDR_SIZE];
-    for i in 0..shnum {
-        let s = section(i);
-        let link = le_u32(s, 40) as usize;
-        if le_u32(s, 4) != SHT_SYMTAB || link >= shnum {
+    let sections = Sections::read(f)?;
+    for symtab in sections.of_kind(SHT_SYMTAB) {
+        let Some(strtab) = sections.get(symtab.link()) else {
             continue;
-        }
-        let st = section(link);
-        let strtab = read_vec(f, le_u64(st, 24), le_u64(st, 32) as usize)?;
-        let syms = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        };
+        let names = strtab.data(f)?;
+        let syms = symtab.data(f)?;
         for sym in syms.as_chunks::<SYM_SIZE>().0 {
-            let value = le_u64(sym, 8) as usize;
-            let name_at = le_u32(sym, 0) as usize;
-            if value == 0 || name_at >= strtab.len() {
+            let value = le_u64(sym, ST_VALUE) as usize;
+            if value == 0 {
                 continue;
             }
-            let name = &strtab[name_at..];
-            let name = &name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())];
+            let Some(name) = table_str(&names, le_u32(sym, ST_NAME) as usize) else {
+                continue;
+            };
             if let Some(&w) = index.get(name) {
                 if found[w] == 0 {
                     found[w] = value;
@@ -192,36 +239,28 @@ pub fn plt_slot(name: &str) -> Option<usize> {
 /// Finds the PLT slot through which an ELF file calls the library function `name`;
 /// returns the slot's address.
 fn find_plt_slot(f: &File, name: &str) -> Option<usize> {
-    let sh = section_headers(f)?;
-    let shnum = sh.len() / SHDR_SIZE;
-    let section = |i: usize| &sh[i * SHDR_SIZE..(i + 1) * SHDR_SIZE];
-    for i in 0..shnum {
-        let s = section(i);
-        let dynsym_at = le_u32(s, 40) as usize;
-        if le_u32(s, 4) != SHT_RELA || dynsym_at >= shnum {
+    let sections = Sections::read(f)?;
+    for rela_table in sections.of_kind(SHT_RELA) {
+        let Some(dynsym) = sections.get(rela_table.link()).filter(|s| s.kind() == SHT_DYNSYM) else {
             continue;
-        }
-        let dynsym = section(dynsym_at);
-        let strtab_at = le_u32(dynsym, 40) as usize;
-        if le_u32(dynsym, 4) != SHT_DYNSYM || strtab_at >= shnum {
+        };
+        let Some(strtab) = sections.get(dynsym.link()) else {
             continue;
-        }
-        let st = section(strtab_at);
-        let strtab = read_vec(f, le_u64(st, 24), le_u64(st, 32) as usize)?;
-        let syms = read_vec(f, le_u64(dynsym, 24), le_u64(dynsym, 32) as usize)?;
-        let relas = read_vec(f, le_u64(s, 24), le_u64(s, 32) as usize)?;
+        };
+        let names = strtab.data(f)?;
+        let syms = dynsym.data(f)?;
+        let relas = rela_table.data(f)?;
         for rela in relas.as_chunks::<RELA_SIZE>().0 {
-            let info = le_u64(rela, 8);
+            let info = le_u64(rela, R_INFO);
             if info as u32 != R_X86_64_JUMP_SLOT {
                 continue;
             }
-            let sym_at = (info >> 32) as usize * SYM_SIZE;
+            let sym_at = (info >> R_SYM_SHIFT) as usize * SYM_SIZE;
             let Some(sym) = syms.get(sym_at..sym_at + SYM_SIZE) else {
                 continue;
             };
-            let sym_name = strtab.get(le_u32(sym, 0) as usize..).and_then(|n| n.split(|&c| c == 0).next());
-            if sym_name == Some(name.as_bytes()) {
-                return Some(le_u64(rela, 0) as usize);
+            if table_str(&names, le_u32(sym, ST_NAME) as usize) == Some(name.as_bytes()) {
+                return Some(le_u64(rela, R_OFFSET) as usize);
             }
         }
     }
@@ -279,26 +318,30 @@ fn fits_rel32(from: usize, to: usize) -> bool {
     d >= i32::MIN as i64 && d <= i32::MAX as i64
 }
 
+/// Writes `parts` back to back at `at`.
+/// # Safety
+/// `at` must be writable for the parts' total length.
+unsafe fn put_code(at: usize, parts: &[&[u8]]) {
+    let mut p = at as *mut u8;
+    for part in parts {
+        std::ptr::copy_nonoverlapping(part.as_ptr(), p, part.len());
+        p = p.add(part.len());
+    }
+}
+
 /// Writes "jmp rel32" at `at`.
 /// # Safety
 /// `at` must be writable for JMP_LEN bytes, with `to` within rel32 reach.
 unsafe fn put_jmp(at: usize, to: usize) {
     let rel = (to as i64 - (at + JMP_LEN) as i64) as i32;
-    let p = at as *mut u8;
-    p.write(0xe9);
-    (p.add(1) as *mut i32).write_unaligned(rel);
+    put_code(at, &[&[JMP_REL32], &rel.to_le_bytes()]);
 }
 
 /// Writes "mov $to,%rax; jmp *%rax" at `at`.
 /// # Safety
 /// `at` must be writable for FAR_JMP_LEN bytes.
 unsafe fn put_far_jmp(at: usize, to: usize) {
-    let p = at as *mut u8;
-    p.write(0x48);
-    p.add(1).write(0xb8);
-    (p.add(2) as *mut u64).write_unaligned(to as u64);
-    p.add(10).write(0xff);
-    p.add(11).write(0xe0);
+    put_code(at, &[&MOVABS_RAX, &(to as u64).to_le_bytes(), &JMP_RAX]);
 }
 
 fn map_trampolines(at: usize, flags: libc::c_int) -> Option<usize> {
@@ -509,16 +552,8 @@ mod tests {
     use std::io::Write;
     use std::os::fd::FromRawFd;
 
-    // ELF64 layout as the specification gives it, independent of the reader's constants.
+    // ELF64 values the reader itself never needs.
     const EHDR_SIZE: usize = 64;
-    const SH_TYPE: usize = 4;
-    const SH_OFFSET: usize = 24;
-    const SH_SIZE: usize = 32;
-    const SH_LINK: usize = 40;
-    const ST_NAME: usize = 0;
-    const ST_VALUE: usize = 8;
-    const R_OFFSET: usize = 0;
-    const R_INFO: usize = 8;
     const SHT_STRTAB: u32 = 3;
     const R_X86_64_GLOB_DAT: u32 = 6;
     const NT_GNU_ABI_TAG: u32 = 1;
@@ -606,7 +641,7 @@ mod tests {
         for &(offset, sym, kind) in entries {
             let mut rela = [0u8; RELA_SIZE];
             put(&mut rela, R_OFFSET, &offset.to_le_bytes());
-            put(&mut rela, R_INFO, &(((sym as u64) << 32) | kind as u64).to_le_bytes());
+            put(&mut rela, R_INFO, &(((sym as u64) << R_SYM_SHIFT) | kind as u64).to_le_bytes());
             table.extend_from_slice(&rela);
         }
         table
@@ -686,14 +721,39 @@ mod tests {
         2
     }
 
+    /// The markers' link-time addresses in this binary's .symtab, and their runtime ones.
+    fn markers(f: &File) -> ([usize; 2], [usize; 2]) {
+        let mut found = [0; 2];
+        scan_symtab(f, &["ftlpad_test_marker_a", "ftlpad_test_marker_b"], &mut found);
+        assert!(found.iter().all(|&a| a != 0), "markers missing from .symtab: {found:x?}");
+        (found, [ftlpad_test_marker_a as *const () as usize, ftlpad_test_marker_b as *const () as usize])
+    }
+
     #[test]
     fn this_binary_resolves_its_own_symbols_at_one_load_bias() {
+        let (linked, runtime) = markers(&File::open(EXE_FALLBACK).expect("the test binary is readable"));
+        assert_eq!(runtime[0].wrapping_sub(linked[0]), runtime[1].wrapping_sub(linked[1]));
+    }
+
+    /// Library functions a Rust test binary calls through its PLT.
+    const PLT_CALLEES: [&std::ffi::CStr; 3] = [c"_Unwind_Resume", c"memcpy", c"memset"];
+
+    #[test]
+    fn this_binarys_plt_slots_hold_what_the_loader_bound() {
         let f = File::open(EXE_FALLBACK).expect("the test binary is readable");
-        let mut found = [0; 2];
-        scan_symtab(&f, &["ftlpad_test_marker_a", "ftlpad_test_marker_b"], &mut found);
-        assert!(found.iter().all(|&a| a != 0), "markers missing from .symtab: {found:x?}");
-        let runtime = [ftlpad_test_marker_a as *const () as usize, ftlpad_test_marker_b as *const () as usize];
-        assert_eq!(runtime[0].wrapping_sub(found[0]), runtime[1].wrapping_sub(found[1]));
+        let (linked, runtime) = markers(&f);
+        let bias = runtime[0].wrapping_sub(linked[0]);
+        let mut checked = 0;
+        for name in PLT_CALLEES {
+            let Some(slot) = find_plt_slot(&f, name.to_str().expect("an ASCII name")) else {
+                continue;
+            };
+            // SAFETY: dlsym with a NUL-terminated name.
+            let bound = unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr()) } as usize;
+            assert_eq!(slot_target(bias.wrapping_add(slot)), bound, "{name:?}");
+            checked += 1;
+        }
+        assert!(checked > 0, "none of {PLT_CALLEES:?} has a PLT slot");
     }
 
     const MOV_EAX_IMM32: u8 = 0xb8;
