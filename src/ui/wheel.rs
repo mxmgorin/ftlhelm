@@ -4,7 +4,7 @@
 use std::f32::consts::PI;
 
 use super::draw::*;
-use crate::config::layout::{Action, WheelKind, WHEEL_SLOTS};
+use crate::config::layout::{Action, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::{tap_key, MouseButton};
@@ -279,6 +279,125 @@ fn crew_location(pl: &mut Plate, member: Obj) {
     }
 }
 
+/// A weapon or drone plate's icon from its blueprint's icon name, and its pips.
+fn armament_plate(images: &mut Images, pl: &mut Plate, arm: &Armament, item: Obj, bp: Obj) {
+    let path = format!("{}{}{}", arm.icon_prefix, bp.string(arm.icon), ICON_SUFFIX);
+    pl.icon = images.get(&path);
+    pl.icon_well = true;
+    pl.icon_shift = arm.icon_shift;
+    if pl.icon.is_none() {
+        pl.icon = images.get(arm.icon_fallback);
+        pl.icon_well = false;
+        pl.icon_shift = 0.0;
+    }
+    pl.region = None;
+    pl.pips = item.i32(arm.power);
+    pl.pips_on = if pl.powered { pl.pips } else { 0 };
+}
+
+fn crew_plates() -> [Plate; WHEEL_SLOTS] {
+    let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
+    let mut slot = 0;
+    for i in 0..CREW_HOTKEYS {
+        if slot == WHEEL_SLOTS {
+            break;
+        }
+        let Some(member) = state::crew_at(i) else {
+            break;
+        };
+        if state::crew_dead(member) {
+            continue;
+        }
+        let pl = &mut plates[slot];
+        slot += 1;
+        pl.bound = true;
+        pl.available = true;
+        pl.powered = state::crew_is_selected(member);
+        pl.portrait = member.obj(CREW_ANIM).map(Obj::ptr);
+        crew_location(pl, member);
+        pl.action = Some(Action::Key { code: KEY_F1 + i as i32, shift: false });
+        pl.label = state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME));
+    }
+    // Empty slots keep their places, so positions never shift.
+    for pl in &mut plates[slot..] {
+        pl.bound = true;
+        pl.empty = true;
+        pl.label = "Empty".to_string();
+    }
+    plates
+}
+
+fn system_plates() -> [Plate; WHEEL_SLOTS] {
+    let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
+    let boxes = state::gui().map(|g| g.at(GUI_SYS_CONTROL + SYSCTRL_BOXES));
+    let systems: Vec<Obj> =
+        boxes.map(|b| b.vec_objs().filter_map(|(_, sys_box)| sys_box.obj(SYSBOX_SYSTEM)).collect()).unwrap_or_default();
+    for (pl, &(kind, alt)) in plates.iter_mut().zip(SYSTEM_SLOTS.iter()) {
+        pl.bound = true;
+        pl.empty = true;
+        pl.label = state::system_name(kind).to_string();
+        pl.action = state::system_key(kind).map(|code| Action::Key { code, shift: false });
+        let Some(sys) = systems.iter().find(|s| s.i32(SYSTEM_TYPE) == kind || Some(s.i32(SYSTEM_TYPE)) == alt) else {
+            continue;
+        };
+        pl.available = true;
+        pl.empty = false;
+        pl.powered = sys.i32(SYSTEM_POWER) > 0;
+        pl.icon = sys.obj(SYSTEM_ICON).map(Obj::ptr);
+        pl.pips = sys.i32(SYSTEM_POWER_MAX);
+        pl.pips_on = sys.i32(SYSTEM_POWER);
+        pl.label = state::system_name(sys.i32(SYSTEM_TYPE)).to_string();
+        pl.badge = format!("{}/{}", pl.pips_on, pl.pips);
+    }
+    plates
+}
+
+fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
+    let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
+    for (pl, pdef) in plates.iter_mut().zip(def.plates.iter()) {
+        let Some(pdef) = pdef else {
+            continue;
+        };
+        pl.bound = true;
+        pl.available = true;
+        pl.action = Some(pdef.action);
+        pl.label = pdef.label.clone();
+        if let Some(icon) = &pdef.icon {
+            pl.icon = images.get(&icon.path);
+            pl.region = icon.region;
+        }
+        let Action::Key { code, .. } = pdef.action else {
+            continue;
+        };
+        let arm = ARMAMENTS
+            .iter()
+            .find(|a| def.kind == WheelKind::Power && code >= a.first_key && code < a.first_key + a.slots);
+        if let Some(arm) = arm {
+            let item = (arm.control)().and_then(|c| state::armament_item(c, (code - arm.first_key) as usize));
+            let bp = item.and_then(|i| i.obj(arm.blueprint));
+            pl.available = bp.is_some();
+            pl.empty = bp.is_none();
+            match (item, bp) {
+                (Some(item), Some(bp)) => {
+                    pl.powered = item.flag(arm.powered);
+                    pl.label = state::display_text(bp.at(BLUEPRINT_SHORT_TITLE));
+                    armament_plate(images, pl, arm, item, bp);
+                }
+                _ => pl.label = "Empty".to_string(),
+            }
+        } else if def.kind == WheelKind::Power && code == KEY_AUTOFIRE {
+            pl.powered = state::weapon_control().is_some_and(|c| c.flag(WEAPONCTRL_AUTOFIRE));
+        } else if def.kind == WheelKind::Action {
+            if let Some(sys) = state::ability_system(code) {
+                pl.available = state::has_system(sys);
+            } else if code == KEY_LOCKDOWN {
+                pl.available = state::has_crystal_crew();
+            }
+        }
+    }
+    plates
+}
+
 impl Layer {
     pub fn draw_wheel(&self) {
         let Some(def) = self.wheel.open.and_then(|w| self.layout.wheels.get(w)) else {
@@ -359,128 +478,6 @@ impl Layer {
         }
     }
 
-    /// A weapon or drone plate's icon from its blueprint's icon name, and its pips.
-    fn armament_plate(&mut self, pl: &mut Plate, arm: &Armament, item: Obj, bp: Obj) {
-        let path = format!("{}{}{}", arm.icon_prefix, bp.string(arm.icon), ICON_SUFFIX);
-        pl.icon = self.images.get(&path);
-        pl.icon_well = true;
-        pl.icon_shift = arm.icon_shift;
-        if pl.icon.is_none() {
-            pl.icon = self.images.get(arm.icon_fallback);
-            pl.icon_well = false;
-            pl.icon_shift = 0.0;
-        }
-        pl.region = None;
-        pl.pips = item.i32(arm.power);
-        pl.pips_on = if pl.powered { pl.pips } else { 0 };
-    }
-
-    fn crew_plates(&mut self) -> [Plate; WHEEL_SLOTS] {
-        let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
-        let mut slot = 0;
-        for i in 0..CREW_HOTKEYS {
-            if slot == WHEEL_SLOTS {
-                break;
-            }
-            let Some(member) = state::crew_at(i) else {
-                break;
-            };
-            if state::crew_dead(member) {
-                continue;
-            }
-            let pl = &mut plates[slot];
-            slot += 1;
-            pl.bound = true;
-            pl.available = true;
-            pl.powered = state::crew_is_selected(member);
-            pl.portrait = member.obj(CREW_ANIM).map(Obj::ptr);
-            crew_location(pl, member);
-            pl.action = Some(Action::Key { code: KEY_F1 + i as i32, shift: false });
-            pl.label = state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME));
-        }
-        // Empty slots keep their places, so positions never shift.
-        for pl in &mut plates[slot..] {
-            pl.bound = true;
-            pl.empty = true;
-            pl.label = "Empty".to_string();
-        }
-        plates
-    }
-
-    fn system_plates(&mut self) -> [Plate; WHEEL_SLOTS] {
-        let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
-        let boxes = state::gui().map(|g| g.at(GUI_SYS_CONTROL + SYSCTRL_BOXES));
-        let systems: Vec<Obj> = boxes
-            .map(|b| b.vec_objs().filter_map(|(_, sys_box)| sys_box.obj(SYSBOX_SYSTEM)).collect())
-            .unwrap_or_default();
-        for (pl, &(kind, alt)) in plates.iter_mut().zip(SYSTEM_SLOTS.iter()) {
-            pl.bound = true;
-            pl.empty = true;
-            pl.label = state::system_name(kind).to_string();
-            pl.action = state::system_key(kind).map(|code| Action::Key { code, shift: false });
-            let Some(sys) = systems.iter().find(|s| s.i32(SYSTEM_TYPE) == kind || Some(s.i32(SYSTEM_TYPE)) == alt)
-            else {
-                continue;
-            };
-            pl.available = true;
-            pl.empty = false;
-            pl.powered = sys.i32(SYSTEM_POWER) > 0;
-            pl.icon = sys.obj(SYSTEM_ICON).map(Obj::ptr);
-            pl.pips = sys.i32(SYSTEM_POWER_MAX);
-            pl.pips_on = sys.i32(SYSTEM_POWER);
-            pl.label = state::system_name(sys.i32(SYSTEM_TYPE)).to_string();
-            pl.badge = format!("{}/{}", pl.pips_on, pl.pips);
-        }
-        plates
-    }
-
-    fn layout_plates(&mut self, w: usize) -> [Plate; WHEEL_SLOTS] {
-        let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
-        let def = self.layout.wheels[w].clone();
-        for (pl, pdef) in plates.iter_mut().zip(def.plates.iter()) {
-            let Some(pdef) = pdef else {
-                continue;
-            };
-            pl.bound = true;
-            pl.available = true;
-            pl.action = Some(pdef.action);
-            pl.label = pdef.label.clone();
-            if let Some(icon) = &pdef.icon {
-                pl.icon = self.images.get(&icon.path);
-                pl.region = icon.region;
-            }
-            let Action::Key { code, .. } = pdef.action else {
-                continue;
-            };
-            let arm = ARMAMENTS
-                .iter()
-                .find(|a| def.kind == WheelKind::Power && code >= a.first_key && code < a.first_key + a.slots);
-            if let Some(arm) = arm {
-                let item = (arm.control)().and_then(|c| state::armament_item(c, (code - arm.first_key) as usize));
-                let bp = item.and_then(|i| i.obj(arm.blueprint));
-                pl.available = bp.is_some();
-                pl.empty = bp.is_none();
-                match (item, bp) {
-                    (Some(item), Some(bp)) => {
-                        pl.powered = item.flag(arm.powered);
-                        pl.label = state::display_text(bp.at(BLUEPRINT_SHORT_TITLE));
-                        self.armament_plate(pl, arm, item, bp);
-                    }
-                    _ => pl.label = "Empty".to_string(),
-                }
-            } else if def.kind == WheelKind::Power && code == KEY_AUTOFIRE {
-                pl.powered = state::weapon_control().is_some_and(|c| c.flag(WEAPONCTRL_AUTOFIRE));
-            } else if def.kind == WheelKind::Action {
-                if let Some(sys) = state::ability_system(code) {
-                    pl.available = state::has_system(sys);
-                } else if code == KEY_LOCKDOWN {
-                    pl.available = state::has_crystal_crew();
-                }
-            }
-        }
-        plates
-    }
-
     /// Fills the open wheel's plates from the layout and the game: crew and systems
     /// wholesale, power and action wheels their availability, badges and icons.
     pub fn refresh_wheel(&mut self) {
@@ -488,10 +485,11 @@ impl Layer {
         let Some(w) = self.wheel.open.filter(|&w| w < self.layout.wheels.len()) else {
             return;
         };
-        self.wheel.plates = match self.layout.wheels[w].kind {
-            WheelKind::Crew => self.crew_plates(),
-            WheelKind::Systems => self.system_plates(),
-            _ => self.layout_plates(w),
+        let def = &self.layout.wheels[w];
+        self.wheel.plates = match def.kind {
+            WheelKind::Crew => crew_plates(),
+            WheelKind::Systems => system_plates(),
+            _ => layout_plates(def, &mut self.images),
         };
     }
 
