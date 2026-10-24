@@ -609,6 +609,8 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::fake::with_game;
+    use std::mem::size_of;
 
     #[test]
     fn plates_go_clockwise_from_the_top() {
@@ -623,5 +625,39 @@ mod tests {
     fn origin_stays_on_screen() {
         let reach = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_MARGIN;
         assert_eq!(wheel_origin(0.0, 0.0), (reach, reach));
+    }
+
+    #[test]
+    fn system_plates_keep_their_slots_and_read_the_power_bar() {
+        with_game(|g| {
+            let mut system = |kind: i32, power: i32, max: i32| {
+                let sys = g.arena.alloc(SYSTEM_ICON + size_of::<usize>());
+                sys.set(SYSTEM_TYPE, kind);
+                sys.set(SYSTEM_POWER, power);
+                sys.set(SYSTEM_POWER_MAX, max);
+                let icon = g.arena.alloc(size_of::<usize>());
+                sys.set(SYSTEM_ICON, icon.addr());
+                let sys_box = g.arena.alloc(SYSBOX_SYSTEM + size_of::<usize>());
+                sys_box.set(SYSBOX_SYSTEM, sys.addr());
+                Some(sys_box)
+            };
+            let boxes = [system(SYS_PILOT, 1, 1), system(SYS_CLONEBAY, 0, 1), system(SYS_SHIELDS, 2, 4)];
+            let no_system = g.arena.alloc(SYSBOX_SYSTEM + size_of::<usize>());
+            let boxes = [boxes[0], None, Some(no_system), boxes[1], boxes[2]];
+            g.arena.ptr_vector(g.gui.at(GUI_SYS_CONTROL + SYSCTRL_BOXES), 0, &boxes);
+            let plates = Layer::default().system_plates();
+            let shields = &plates[0];
+            assert!(shields.bound && shields.available && shields.powered && !shields.empty && shields.icon.is_some());
+            assert_eq!((shields.label.as_str(), shields.badge.as_str()), ("Shields", "2/4"));
+            assert_eq!((shields.pips, shields.pips_on), (4, 2));
+            assert_eq!(shields.action, Some(Action::Key { code: 'a' as i32, shift: false }));
+            let engines = &plates[1];
+            assert!(engines.bound && engines.empty && !engines.available && engines.icon.is_none());
+            assert_eq!(engines.label, "Engines");
+            let medbay = &plates[2];
+            assert!(medbay.available && !medbay.powered);
+            assert_eq!((medbay.label.as_str(), medbay.badge.as_str()), ("Clone bay", "0/1"));
+            assert!(plates[3..].iter().all(|p| p.empty && !p.available));
+        });
     }
 }

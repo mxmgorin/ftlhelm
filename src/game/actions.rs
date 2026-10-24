@@ -289,3 +289,60 @@ pub fn tab_step(dir: i32) {
     // SAFETY: SetTab on the open TabbedWindow with an index below its tab count.
     unsafe { (api().set_tab)(tabbed.ptr(), ((current + dir + n) % n) as u32) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::api::{Point, Rect};
+    use crate::game::fake::with_game;
+    use crate::game::zones::Zone;
+
+    const ORIGIN: Point = Point { x: 100, y: 50 };
+    const ROOM: i32 = 4;
+
+    fn at(p: Point) -> (f32, f32) {
+        ((ORIGIN.x + p.x) as f32, (ORIGIN.y + p.y) as f32)
+    }
+
+    #[test]
+    fn room_doors_close_the_open_doors_of_the_room_then_open_them_all() {
+        with_game(|g| {
+            g.gui.set(GUI_SHIP_POSITION, ORIGIN);
+            let ship = g.player_manager().at(SHIPMANAGER_SHIP);
+            let (p_open, p_shut, p_other, p_lock) =
+                (Point { x: 10, y: 20 }, Point { x: 30, y: 40 }, Point { x: 50, y: 60 }, Point { x: 70, y: 80 });
+            let open = g.door((ROOM, 5), p_open, true);
+            let shut = g.door((6, ROOM), p_shut, false);
+            let other = g.door((1, 2), p_other, true);
+            let airlock = g.door((ROOM, -1), p_lock, true);
+            g.arena.ptr_vector(ship, SHIP_DOORS, &[Some(open), None, Some(shut), Some(other)]);
+            g.arena.ptr_vector(ship, SHIP_AIRLOCKS, &[Some(airlock)]);
+            let mut l = Layer::default();
+            l.zones.list = vec![Zone { rect: Rect { x: 0, y: 0, w: 100, h: 100 }, id: ROOM, kind: ZoneKind::Room }];
+            (l.cursor.last_x, l.cursor.last_y) = (50, 50);
+            l.room_doors();
+            assert_eq!(l.actions.queued, [at(p_open), at(p_lock)]);
+            for door in [open, airlock] {
+                door.set(DOOR_OPEN, 0u8);
+            }
+            l.actions.queued.clear();
+            l.room_doors();
+            assert_eq!(l.actions.queued, [at(p_open), at(p_shut), at(p_lock)]);
+        });
+    }
+
+    #[test]
+    fn room_doors_skip_a_room_of_the_enemy() {
+        with_game(|g| {
+            let ship = g.player_manager().at(SHIPMANAGER_SHIP);
+            let door = g.door((ROOM, 5), Point { x: 10, y: 20 }, true);
+            g.arena.ptr_vector(ship, SHIP_DOORS, &[Some(door)]);
+            let mut l = Layer::default();
+            l.zones.list =
+                vec![Zone { rect: Rect { x: 0, y: 0, w: 100, h: 100 }, id: ROOM, kind: ZoneKind::EnemyRoom }];
+            (l.cursor.last_x, l.cursor.last_y) = (50, 50);
+            l.room_doors();
+            assert!(l.actions.queued.is_empty());
+        });
+    }
+}

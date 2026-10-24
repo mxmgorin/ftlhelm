@@ -120,3 +120,34 @@ impl Obj {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::fake::Arena;
+    use std::mem::size_of;
+
+    const PTR: usize = size_of::<usize>();
+
+    #[test]
+    fn a_vector_of_pointers_keeps_null_elements_in_place() {
+        let mut arena = Arena::default();
+        let owner = arena.alloc(VECTOR_END + PTR);
+        assert_eq!(owner.vec_len(PTR), 0);
+        assert_eq!(owner.vec_obj(0), None);
+        let (a, b) = (arena.alloc(PTR), arena.alloc(PTR));
+        arena.ptr_vector(owner, VECTOR_BEGIN, &[Some(a), None, Some(b)]);
+        assert_eq!(owner.vec_len(PTR), 3);
+        assert_eq!([0, 1, 2, 3].map(|i| owner.vec_obj(i)), [Some(a), None, Some(b), None]);
+    }
+
+    #[test]
+    fn a_vector_of_values_reads_each_element() {
+        let mut arena = Arena::default();
+        let owner = arena.alloc(VECTOR_END + PTR);
+        let rects = [Rect { x: 1, y: 2, w: 3, h: 4 }, Rect { x: 5, y: 6, w: 7, h: 8 }];
+        arena.vector(owner, VECTOR_BEGIN, &rects);
+        assert_eq!(owner.vec_len(size_of::<Rect>()), 2);
+        assert_eq!([0, 1, 2].map(|i| owner.vec_get::<Rect>(i)), [Some(rects[0]), Some(rects[1]), None]);
+    }
+}

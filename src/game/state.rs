@@ -277,3 +277,38 @@ pub fn fps_control() -> Obj {
     // SAFETY: a resolved global of the game.
     unsafe { Obj::from_addr(api().fps_control) }.expect("a resolved symbol is non-null")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::fake::with_game;
+
+    #[test]
+    fn the_selection_reads_crew_control() {
+        with_game(|g| {
+            let [a, b, c] = [(); 3].map(|_| g.arena.alloc(std::mem::size_of::<usize>()));
+            assert_eq!((selected_count(), first_selected_crew()), (0, None));
+            g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(a), Some(b)]);
+            assert_eq!((selected_count(), first_selected_crew()), (2, Some(a)));
+            assert!(any_crew_selected() && crew_is_selected(b) && !crew_is_selected(c));
+        });
+    }
+
+    #[test]
+    fn ships_and_their_screen_origins() {
+        with_game(|g| {
+            let player_at = Point { x: 100, y: 50 };
+            g.gui.set(GUI_SHIP_POSITION, player_at);
+            let combat = g.gui.at(GUI_COMBAT_CONTROL);
+            combat.set(COMBAT_POSITION, Point { x: 600, y: 0 });
+            combat.set(COMBAT_TARGET_POSITION, Point { x: 100, y: 60 });
+            let player = g.player_manager().at(SHIPMANAGER_SHIP);
+            assert_eq!(ship_of(enemy_complete()), None);
+            let enemy = g.enemy_manager().at(SHIPMANAGER_SHIP);
+            assert_eq!(ship_of(player_complete()), Some(player));
+            assert_eq!(ship_of(enemy_complete()), Some(enemy));
+            assert_eq!(g.gui.point(GUI_SHIP_POSITION), player_at);
+            assert_eq!(enemy_origin(g.gui), Point { x: 700, y: 60 });
+        });
+    }
+}

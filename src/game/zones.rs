@@ -313,3 +313,218 @@ impl Layer {
         self.zones.list.iter().position(|t| t.rect.contains(self.cursor.last_x, self.cursor.last_y))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::fake::{with_game, Game};
+    use std::mem::size_of;
+
+    const PLAYER_AT: Point = Point { x: 100, y: 50 };
+    const COMBAT_AT: Point = Point { x: 600, y: 0 };
+    const TARGET_AT: Point = Point { x: 100, y: 60 };
+    const ENEMY_AT: Point = Point { x: COMBAT_AT.x + TARGET_AT.x, y: COMBAT_AT.y + TARGET_AT.y };
+    const SIDE: i32 = 35;
+
+    fn rect(x: i32, y: i32) -> Rect {
+        Rect { x, y, w: SIDE, h: SIDE }
+    }
+
+    fn moved(r: Rect, by: Point) -> Rect {
+        Rect { x: r.x + by.x, y: r.y + by.y, ..r }
+    }
+
+    fn square(center: Point, half: i32) -> Rect {
+        Rect { x: center.x - half, y: center.y - half, w: 2 * half, h: 2 * half }
+    }
+
+    fn zones(l: &Layer) -> Vec<(ZoneKind, i32, Rect)> {
+        l.zones.list.iter().map(|z| (z.kind, z.id, z.rect)).collect()
+    }
+
+    /// The player ship with two rooms around a null entry, the enemy with one.
+    fn two_ships(g: &mut Game) -> Obj {
+        g.gui.set(GUI_SHIP_POSITION, PLAYER_AT);
+        let player = g.player_manager().at(SHIPMANAGER_SHIP);
+        let rooms = [Some(g.room(3, rect(0, 0))), None, Some(g.room(5, rect(SIDE, 0)))];
+        g.arena.ptr_vector(player, SHIP_ROOMS, &rooms);
+        let combat = g.gui.at(GUI_COMBAT_CONTROL);
+        combat.set(COMBAT_POSITION, COMBAT_AT);
+        combat.set(COMBAT_TARGET_POSITION, TARGET_AT);
+        let enemy = g.enemy_manager().at(SHIPMANAGER_SHIP);
+        let rooms = [Some(g.room(1, rect(0, 0)))];
+        g.arena.ptr_vector(enemy, SHIP_ROOMS, &rooms);
+        player
+    }
+
+    fn open_map(g: &mut Game) -> Obj {
+        let map = g.arena.alloc(STARMAP_SIZE);
+        g.gui.set(GUI_STAR_MAP, map.addr());
+        map.set(FOCUS_OPEN, 1u8);
+        map
+    }
+
+    fn built(l: &mut Layer) -> Vec<(ZoneKind, i32, Rect)> {
+        l.build_zones();
+        zones(l)
+    }
+
+    #[test]
+    fn the_ship_view_lists_player_rooms_then_enemy_rooms() {
+        with_game(|g| {
+            two_ships(g);
+            assert_eq!(
+                built(&mut Layer::default()),
+                [
+                    (ZoneKind::Room, 3, moved(rect(0, 0), PLAYER_AT)),
+                    (ZoneKind::Room, 5, moved(rect(SIDE, 0), PLAYER_AT)),
+                    (ZoneKind::EnemyRoom, 1, moved(rect(0, 0), ENEMY_AT)),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn aiming_lists_enemy_rooms_first() {
+        with_game(|g| {
+            two_ships(g);
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            let kinds: Vec<_> = built(&mut Layer::default()).into_iter().map(|(k, id, _)| (k, id)).collect();
+            assert_eq!(kinds, [(ZoneKind::EnemyRoom, 1), (ZoneKind::Room, 3), (ZoneKind::Room, 5)]);
+        });
+    }
+
+    #[test]
+    fn precision_lists_doors_then_airlocks_by_list_index() {
+        with_game(|g| {
+            let player = two_ships(g);
+            let (d0, d2) = (Point { x: 10, y: 20 }, Point { x: 30, y: 40 });
+            let a0 = Point { x: 50, y: 0 };
+            let doors = [Some(g.door((3, 5), d0, false)), None, Some(g.door((5, 1), d2, true))];
+            g.arena.ptr_vector(player, SHIP_DOORS, &doors);
+            let airlocks = [Some(g.door((3, -1), a0, false))];
+            g.arena.ptr_vector(player, SHIP_AIRLOCKS, &airlocks);
+            let mut l = Layer::default();
+            l.bind.precision = true;
+            let at = |p: Point| square(Point { x: PLAYER_AT.x + p.x, y: PLAYER_AT.y + p.y }, DOOR_HALF);
+            assert_eq!(
+                built(&mut l),
+                [(ZoneKind::Door, 0, at(d0)), (ZoneKind::Door, 2, at(d2)), (ZoneKind::Door, 0, at(a0))]
+            );
+        });
+    }
+
+    #[test]
+    fn the_star_map_lists_its_beacons_and_its_own_buttons() {
+        with_game(|g| {
+            two_ships(g);
+            let map = open_map(g);
+            let origin = Point { x: 200, y: 100 };
+            map.set(STARMAP_POSITION, origin);
+            map.set(STARMAP_TRANSLATION, [10.0f32, 20.0]);
+            let locations: Vec<Option<Obj>> = [[30.0f32, 40.0], [100.4, 7.6]]
+                .into_iter()
+                .map(|xy| {
+                    let loc = g.arena.alloc(LOCATION_LOC + size_of::<[f32; 2]>());
+                    loc.set(LOCATION_LOC, xy);
+                    Some(loc)
+                })
+                .collect();
+            g.arena.ptr_vector(map, STARMAP_LOCATIONS, &locations);
+            let mut l = Layer::default();
+            let on_map = Button { rect: rect(400, 400), object: map.addr() + size_of::<usize>() };
+            let off_map = Button { rect: rect(500, 500), object: g.gui.addr() };
+            l.zones.buttons = vec![off_map, on_map];
+            let beacon = |x: i32, y: i32| square(Point { x: origin.x + x, y: origin.y + y }, BEACON_HALF);
+            assert_eq!(
+                built(&mut l),
+                [
+                    (ZoneKind::Beacon, 0, beacon(40, 60)),
+                    (ZoneKind::Beacon, 1, beacon(110, 28)),
+                    (ZoneKind::Button, 1, on_map.rect),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn a_sector_choice_lists_the_sector_boxes() {
+        with_game(|g| {
+            two_ships(g);
+            let map = open_map(g);
+            map.set(STARMAP_CHOOSING_SECTOR, 1u8);
+            let offset = Point { x: 300, y: 200 };
+            map.set(STARMAP_SECTOR_OFFSET, offset);
+            g.arena.vector(map, STARMAP_SECTOR_HITBOXES, &[rect(0, 0), rect(50, 70)]);
+            assert_eq!(
+                built(&mut Layer::default()),
+                [(ZoneKind::Sector, 0, moved(rect(0, 0), offset)), (ZoneKind::Sector, 1, moved(rect(50, 70), offset))]
+            );
+        });
+    }
+
+    #[test]
+    fn an_event_lists_its_choices_alone() {
+        with_game(|g| {
+            two_ships(g);
+            let choice = g.gui.at(GUI_CHOICE_BOX);
+            choice.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(choice, CHOICE_RECTS, &[rect(400, 300), rect(400, 340)]);
+            let mut l = Layer::default();
+            l.zones.buttons = vec![Button { rect: rect(10, 200), object: g.gui.addr() }];
+            assert_eq!(built(&mut l), [(ZoneKind::Choice, 0, rect(400, 300)), (ZoneKind::Choice, 1, rect(400, 340))]);
+        });
+    }
+
+    #[test]
+    fn the_main_menu_lists_its_own_choices() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let choice = menu.at(MAIN_MENU_CHOICE_BOX);
+            choice.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(choice, CHOICE_RECTS, &[rect(500, 300)]);
+            assert_eq!(built(&mut Layer::default()), [(ZoneKind::Choice, 0, rect(500, 300))]);
+        });
+    }
+
+    #[test]
+    fn the_equipment_screen_lists_shown_slots_and_buttons_off_the_hud() {
+        with_game(|g| {
+            two_ships(g);
+            g.gui.at(GUI_SHIP_SCREENS).set(FOCUS_OPEN, 1u8);
+            let equip = g.gui.at(GUI_EQUIP_SCREEN);
+            equip.set(FOCUS_OPEN, 1u8);
+            let mut slot = |r: Rect| {
+                let b = g.arena.alloc(EQUIPBOX_HITBOX + size_of::<Rect>());
+                b.set(EQUIPBOX_HITBOX, r);
+                b
+            };
+            let (first, overflow, last) = (slot(rect(100, 200)), slot(rect(150, 200)), slot(rect(200, 200)));
+            equip.set(EQUIP_OVERCAPACITY_BOX, overflow.addr());
+            g.arena.ptr_vector(equip, EQUIP_BOXES, &[Some(first), Some(overflow), None, Some(last)]);
+            let mut l = Layer::default();
+            let button = |y: i32| Button { rect: rect(600, y), object: g.gui.addr() };
+            l.zones.buttons = vec![button(HUD_TOP_HEIGHT - 1), button(300), button(HUD_BOTTOM_TOP)];
+            assert_eq!(
+                built(&mut l),
+                [
+                    (ZoneKind::Slot, 0, rect(100, 200)),
+                    (ZoneKind::Slot, 3, rect(200, 200)),
+                    (ZoneKind::Button, 1, rect(600, 300)),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn a_ship_centre_spans_its_rooms() {
+        with_game(|g| {
+            let player = two_ships(g);
+            let centre = (PLAYER_AT.x as f32 + SIDE as f32, PLAYER_AT.y as f32 + SIDE as f32 / 2.0);
+            assert_eq!(ship_center(player, PLAYER_AT), Some(centre));
+            let bare = g.player_manager().at(SHIPMANAGER_SHIP);
+            assert_eq!(ship_center(bare, PLAYER_AT), None);
+        });
+    }
+}
