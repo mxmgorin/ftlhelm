@@ -270,7 +270,7 @@ pub fn arm_next() {
     for n in 1..=slots {
         let i = (start.unwrap_or(slots - 1) + n) % slots;
         if state::armament_item(control, i).is_some_and(|w| w.flag(WEAPON_POWERED)) {
-            tap_key('1' as i32 + i as i32, false);
+            tap_key(KEY_FIRST_WEAPON + i as i32, false);
             return;
         }
     }

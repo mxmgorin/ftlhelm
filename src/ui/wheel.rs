@@ -73,7 +73,7 @@ struct Armament {
 
 const ARMAMENTS: [Armament; 2] = [
     Armament {
-        first_key: '1' as i32,
+        first_key: KEY_FIRST_WEAPON,
         slots: WEAPON_SLOTS,
         control: state::weapon_control,
         blueprint: WEAPON_BLUEPRINT,
@@ -85,7 +85,7 @@ const ARMAMENTS: [Armament; 2] = [
         icon_shift: WEAPON_ICON_SHIFT,
     },
     Armament {
-        first_key: '1' as i32 + WEAPON_SLOTS,
+        first_key: KEY_FIRST_WEAPON + WEAPON_SLOTS,
         slots: DRONE_SLOTS,
         control: state::drone_control,
         blueprint: DRONE_BLUEPRINT,
@@ -468,12 +468,12 @@ impl Layer {
                     }
                     _ => pl.label = "Empty".to_string(),
                 }
-            } else if def.kind == WheelKind::Power && code == 'v' as i32 {
+            } else if def.kind == WheelKind::Power && code == KEY_AUTOFIRE {
                 pl.powered = state::weapon_control().is_some_and(|c| c.flag(WEAPONCTRL_AUTOFIRE));
             } else if def.kind == WheelKind::Action {
                 if let Some(sys) = state::ability_system(code) {
                     pl.available = state::has_system(sys);
-                } else if code == 'p' as i32 {
+                } else if code == KEY_LOCKDOWN {
                     pl.available = state::has_crystal_crew();
                 }
             }

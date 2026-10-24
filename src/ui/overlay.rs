@@ -34,7 +34,7 @@ const INPUT_TITLES: [&str; SIL_BUTTONS] =
 #[rustfmt::skip]
 const KEY_TITLES: &[(i32, &str)] = &[
     (KEY_ESCAPE, "Menu"), (KEY_SPACE, "Pause"), ('j' as i32, "Jump"), ('u' as i32, "Upgrades"),
-    ('v' as i32, "Autofire"), ('z' as i32, "Open doors"), ('x' as i32, "Close doors"), ('q' as i32, "All crew"),
+    (KEY_AUTOFIRE, "Autofire"), ('z' as i32, "Open doors"), ('x' as i32, "Close doors"), ('q' as i32, "All crew"),
     (KEY_ENTER, "To stations"), ('/' as i32, "Save stations"),
 ];
 

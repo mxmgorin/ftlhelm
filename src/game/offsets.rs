@@ -191,3 +191,8 @@ pub const KEY_F_COUNT: i32 = 15;
 pub const KEY_SPACE: i32 = 0x20;
 pub const KEY_ESCAPE: i32 = 0x1b;
 pub const KEY_ENTER: i32 = 0x0d;
+/// The weapon slots' hotkeys run from here, the drone slots' right after them.
+pub const KEY_FIRST_WEAPON: i32 = '1' as i32;
+pub const KEY_AUTOFIRE: i32 = 'v' as i32;
+/// The crystal crew's lockdown.
+pub const KEY_LOCKDOWN: i32 = 'p' as i32;
