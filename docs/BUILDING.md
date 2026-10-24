@@ -7,7 +7,7 @@ crate dependency is `libc`.
 | --- | --- |
 | `make` | `ftlpad.so` (through `cargo build --release`) and `ftlpad_probe` |
 | `make OUT=path.so` | the library at another path |
-| `make dist` | `dist/ftlpad-linux-x86_64.tar.gz`: `ftlpad.so`, `ftlpad.ini`, `ftlpad.sh` |
+| `make dist` | `dist/ftlpad-linux-x86_64.tar.gz`: `ftlpad.so`, `ftlpad.ini`, `ftlpad.sh`, `LICENSE`, `NOTICE` |
 | `make test` | unit tests |
 | `make lint` | rustfmt check, clippy with warnings as errors |
 | `make clean` | removes the build output |
@@ -19,7 +19,7 @@ crate dependency is `libc`.
 | Workflow | Runs on | Does |
 | --- | --- | --- |
 | Check | a push to `main`, a pull request | `make lint`, `make test`, `make` |
-| Release | a published release | `make dist`; attaches the archive and its SHA-256 to the release |
+| Release | a published release | `make dist`; attaches the archive, its SHA-256 and a build provenance attestation to the release |
 
 A release tag is the `Cargo.toml` version, with or without a leading `v`.
 

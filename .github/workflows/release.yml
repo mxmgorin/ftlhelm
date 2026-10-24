@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -41,6 +43,12 @@ jobs:
           name: ftlpad-linux-x86_64
           path: dist/ftlpad-linux-x86_64/
           retention-days: 14
+
+      - name: Attest build provenance
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/ftlpad-linux-x86_64.tar.gz
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'

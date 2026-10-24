@@ -54,3 +54,12 @@ See **[Building](docs/BUILDING.md)**.
 ## Credits
 
 - [FTL: Faster Than Light](https://subsetgames.com/ftl.html) by Subset Games
+
+## License
+
+Copyright (C) 2026 Maxim Gorin. ftlpad is free software under the
+[GNU General Public License v3.0 or later](LICENSE), with the additional terms in
+[NOTICE](NOTICE).
+
+ftlpad is an unofficial mod, not affiliated with or endorsed by Subset Games.
+FTL: Faster Than Light is a trademark of Subset Games.

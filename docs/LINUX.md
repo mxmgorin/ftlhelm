@@ -12,6 +12,8 @@ glibc 2.35 or later.
 | `ftlpad.so` | the library |
 | `ftlpad.ini` | the layout and its settings |
 | `ftlpad.sh` | runs a command with `ftlpad.so` preloaded and `ftlpad.ini` as the layout |
+| `LICENSE` | the GNU General Public License v3.0 |
+| `NOTICE` | copyright, additional license terms, third-party notices |
 
 The three files stay together; `ftlpad.sh` finds the other two next to itself.
 

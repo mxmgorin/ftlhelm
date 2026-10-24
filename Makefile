@@ -22,7 +22,7 @@ $(PROBE): tools/probe.c
 dist: $(OUT)
 	rm -rf dist/$(DIST)
 	mkdir -p dist/$(DIST)
-	cp $(OUT) config/ftlpad.ini tools/ftlpad.sh dist/$(DIST)/
+	cp $(OUT) config/ftlpad.ini tools/ftlpad.sh LICENSE NOTICE dist/$(DIST)/
 	tar -C dist -czf dist/$(DIST).tar.gz $(DIST)
 
 test:
