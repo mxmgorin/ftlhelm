@@ -15,8 +15,8 @@ GOG 1.6.12. The library needs glibc 2.35 or later.
 | `LICENSE` | the GNU General Public License v3.0 |
 | `NOTICE` | copyright, additional license terms, third-party notices |
 
-`ftlhelm.sh` expects the other two files next to it. The settings wheel writes
-`ftlhelm-saved.ini` in the same directory.
+`ftlhelm.sh` expects the other two files next to it. The settings wheel writes its values
+into `ftlhelm.ini`.
 
 ## Steam
 
@@ -57,7 +57,7 @@ start Steam from a terminal to see it.
 | --- | --- |
 | no `ftlhelm:` lines | the library did not load, or the process is not the native FTL: check the path in the launch options and that no Steam Play compatibility tool is forced |
 | `unknown build, inactive` | an FTL build other than Steam 1.6.13 or GOG 1.6.12 |
-| `cannot save` | the directory of `ftlhelm.ini` is not writable; zoom and text size reset on the next run |
+| `cannot save` | `ftlhelm.ini` or its directory is not writable; zoom and text size reset on the next run |
 | `zoom off` in the `active` line | the game's frame blit was not found; zoom is unavailable |
 
 `FTLHELM_DEBUG=1` also logs every press, wheel pick and D-pad step.

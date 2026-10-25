@@ -17,9 +17,10 @@ A Select tap opens the settings wheel, on any screen.
 Zoom magnifies the ship view; the view follows the cursor and fills the screen. While
 zoomed, the map, the ship and store screens, the game menu and the options show whole, as
 large as the screen allows; event dialogs, the main menu and the controls overview show
-the whole frame. Zoom levels: the
-whole frame, the level that fills the screen, and the levels where a game pixel takes a
-whole or half number of screen pixels, up to 3 times the whole frame.
+the whole frame. Zoom levels: the whole frame, the level that fills the screen, and the
+levels where a game pixel takes a whole or half number of screen pixels, up to 3 times the
+whole frame. Auto, the default, is one level in on screens smaller than 1280x720 and the
+whole frame on others.
 
 | Input, zoomed | Effect |
 | --- | --- |
@@ -31,9 +32,8 @@ The view rests on the frame's edges while the cursor stays clear of the view's e
 Text sizes apply to event boxes and tooltips: 1 to 2 times the game's own, or auto. Auto
 enlarges them on screens smaller than 1280x720, less at higher zoom levels.
 
-Zoom and text size are saved in `ftlhelm-saved.ini` beside `ftlhelm.ini` when the wheel
-closes. The saved values override `zoom` and `text_scale` in `ftlhelm.ini` until one of
-those two is changed in `ftlhelm.ini`.
+When the wheel closes, zoom and text size are written to `zoom` and `text_scale` in
+`ftlhelm.ini`.
 
 ## Wheels
 

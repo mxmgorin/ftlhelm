@@ -6,7 +6,7 @@ use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::offsets::{KEY_ENTER, KEY_ESCAPE, KEY_F1, KEY_F_COUNT, KEY_LSHIFT, KEY_SPACE};
 
-const CONFIG_SECTION: &str = "config";
+pub const CONFIG_SECTION: &str = "config";
 const BASE_SECTION: &str = "controls";
 const STATE_SECTION: &str = "controls:";
 const WHEEL_SECTION: &str = "wheel:";

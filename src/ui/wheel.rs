@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 
 use super::draw::*;
 use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
-use super::zoom::{self, ZOOM_MIN};
+use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
@@ -67,7 +67,7 @@ const AUTO_BADGE: &str = "Auto";
 const MOUSE_ON_BADGE: &str = "On";
 /// A switch plate's one pip, lit while the switch is on.
 const SWITCH_PIPS: i32 = 1;
-const MOUSE_OFF_BADGE: &str = "Off, zones";
+const MOUSE_OFF_BADGE: &str = "Off";
 
 /// Where a power wheel finds the item a slot key powers.
 struct Armament {
@@ -554,9 +554,16 @@ impl Layer {
                     pl.badge = if cursor { MOUSE_ON_BADGE } else { MOUSE_OFF_BADGE }.to_string();
                 }
                 Builtin::Zoom => {
-                    pl.powered = zoom > ZOOM_MIN;
-                    (pl.pips, pl.pips_on) = zoom::level_pips(zoom);
-                    pl.badge = if pl.powered { times(zoom) } else { ZOOM_OFF_BADGE.to_string() };
+                    let level = zoom::resolved_level(zoom);
+                    pl.powered = level > ZOOM_MIN;
+                    (pl.pips, pl.pips_on) = zoom::level_pips(level);
+                    pl.badge = if zoom == ZOOM_AUTO {
+                        format!("{AUTO_BADGE} {}", times(level))
+                    } else if pl.powered {
+                        times(level)
+                    } else {
+                        ZOOM_OFF_BADGE.to_string()
+                    };
                 }
                 Builtin::TextSize => {
                     pl.powered = text_scale != TEXT_SCALE_AUTO;

@@ -5,8 +5,8 @@ starting a comment. Each key is documented in place; switches take `0` (off) or 
 A missing key takes its default; a value outside its range is clamped. The file is re-read
 within a second of saving it, while the game runs.
 
-The settings wheel saves `zoom` and `text_scale` to `ftlhelm-saved.ini` beside
-`ftlhelm.ini`; see [Controls](CONTROLS.md#settings-wheel).
+The settings wheel writes `zoom` and `text_scale` into this file; see
+[Controls](CONTROLS.md#settings-wheel).
 
 Bindings and wheels are in [Controls](CONTROLS.md#custom-layouts).
 

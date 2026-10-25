@@ -1,22 +1,20 @@
 //! Settings with their defaults and ranges, read from the layout's [config] section, the
-//! mtime poll that reloads the layout while the game runs, and the file beside the layout
-//! that keeps what the settings wheel changes.
-//!
-//! The saved values override the layout's at start. A reload while the game runs takes a
-//! saved key from the layout only when the layout's own value for it changed.
+//! mtime poll that reloads the layout while the game runs, and the write of the settings
+//! wheel's values back into that section.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 
+use crate::config::layout::CONFIG_SECTION;
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
-use crate::ui::zoom::{ZOOM_MAX, ZOOM_MIN};
+use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
-/// The file beside the layout that keeps the settings wheel's values.
-const SAVED_NAME: &str = "ftlhelm-saved.ini";
-const SAVED_HEADER: &str = "# Zoom and text size from the game's settings wheel; they override ftlhelm.ini.";
+/// The keys the settings wheel writes back.
+const ZOOM_KEY: &str = "zoom";
+const TEXT_SCALE_KEY: &str = "text_scale";
 const FILE_POLL_S: f64 = 1.0;
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -82,7 +80,7 @@ pub struct Settings {
     pub rumble_time: f32,
     /// How much larger event and tooltip text is drawn; TEXT_SCALE_AUTO picks by screen size.
     pub text_scale: f32,
-    /// The zoom level the ship view starts at.
+    /// The ship view's zoom level; ZOOM_AUTO picks by screen size.
     pub zoom: f32,
 }
 
@@ -112,7 +110,7 @@ impl Default for Settings {
             rumble_strength: RUMBLE_STRENGTH,
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
-            zoom: ZOOM_MIN,
+            zoom: ZOOM_AUTO,
         }
     }
 }
@@ -148,8 +146,8 @@ const OPTIONS: &[(&str, Field)] = &[
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
     ("rumble_strength", Field::Float(|c| &mut c.rumble_strength, 0.0, 1.0)),
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
-    ("text_scale", Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
-    ("zoom", Field::Float(|c| &mut c.zoom, ZOOM_MIN, ZOOM_MAX)),
+    (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
+    (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
 ];
 
 impl Settings {
@@ -194,51 +192,70 @@ impl Settings {
 pub struct FileWatch {
     last_poll: Option<f64>,
     layout_mtime: Option<SystemTime>,
-    /// The saved settings as the layout file last gave them; None before the first read.
-    layout_tuned: Option<Tuned>,
-    /// The saved settings as last read from or written to the saved file.
-    saved: Option<Tuned>,
+    /// The settings wheel's values as the layout file holds them.
+    written: Option<Tuned>,
 }
 
-/// The settings the settings wheel changes and the saved file keeps.
+/// The settings the settings wheel changes and writes into the layout file.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tuned {
     pub zoom: f32,
     pub text_scale: f32,
 }
 
-impl Tuned {
-    /// Each value from `layout` where it differs from `before`, the layout's previous
-    /// value, else from `running`.
-    fn edited(layout: Tuned, before: Tuned, running: Tuned) -> Tuned {
-        let pick = |l: f32, b: f32, r: f32| if l != b { l } else { r };
-        Tuned {
-            zoom: pick(layout.zoom, before.zoom, running.zoom),
-            text_scale: pick(layout.text_scale, before.text_scale, running.text_scale),
-        }
-    }
-
-    /// `base` with the "key = value" lines of saved file text applied over it.
-    fn read(text: &str, base: Tuned) -> Tuned {
-        let mut cfg = Settings { zoom: base.zoom, text_scale: base.text_scale, ..Settings::default() };
-        for line in text.lines() {
-            let line = line.split('#').next().unwrap_or_default();
-            if let Some((key, value)) = line.split_once('=') {
-                cfg.apply(key.trim(), value.trim());
-            }
-        }
-        Tuned { zoom: cfg.zoom, text_scale: cfg.text_scale }
-    }
-
-    /// The saved file's text; the values print in full, so they read back the same.
-    fn text(self) -> String {
-        format!("{SAVED_HEADER}\nzoom = {}\ntext_scale = {}\n", self.zoom, self.text_scale)
-    }
+/// The section a "[NAME]" line opens, as the layout parser reads it.
+fn section_name(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix('[')?;
+    rest.split(']').next()
 }
 
-/// The saved file's path: beside the layout file, when there is one.
-fn saved_path() -> Option<PathBuf> {
-    std::env::var_os(LAYOUT_ENV).map(|layout| Path::new(&layout).with_file_name(SAVED_NAME))
+/// `line`, a "key = value  # comment" line with its '=' at `eq`, holding `value` instead.
+fn with_value(line: &str, eq: usize, value: &str) -> String {
+    let after = &line[eq + 1..];
+    let lead = after.len() - after.trim_start_matches([' ', '\t']).len();
+    let rest = &after[lead..];
+    let end = rest.find('#').map_or(rest.trim_end().len(), |c| rest[..c].trim_end().len());
+    format!("{}{}{value}{}", &line[..=eq], &after[..lead], &rest[end..])
+}
+
+/// `text` with each of `values` set in its [config] section: a key's lines take the value
+/// and keep their comments, a missing key gets a line at the section's end, and a missing
+/// section is added at the top.
+fn set_config(text: &str, values: &[(&str, String)]) -> String {
+    let mut lines: Vec<String> = text.split_inclusive('\n').map(str::to_string).collect();
+    if !lines.iter().any(|l| section_name(l) == Some(CONFIG_SECTION)) {
+        lines.insert(0, format!("[{CONFIG_SECTION}]\n"));
+    }
+    let mut found = vec![false; values.len()];
+    let (mut in_config, mut section_end) = (false, 0);
+    for (i, line) in lines.iter_mut().enumerate() {
+        if let Some(name) = section_name(line) {
+            in_config = name == CONFIG_SECTION;
+            if in_config {
+                section_end = i + 1;
+            }
+            continue;
+        }
+        if !in_config || line.trim().is_empty() {
+            continue;
+        }
+        section_end = i + 1;
+        let Some(eq) = line.find('=') else {
+            continue;
+        };
+        if let Some(j) = values.iter().position(|(key, _)| *key == line[..eq].trim()) {
+            *line = with_value(line, eq, &values[j].1);
+            found[j] = true;
+        }
+    }
+    if section_end > 0 && !lines[section_end - 1].ends_with('\n') {
+        lines[section_end - 1].push('\n');
+    }
+    let missing = values.iter().zip(&found).filter(|(_, &f)| !f).map(|((key, value), _)| format!("{key} = {value}\n"));
+    let tail = lines.split_off(section_end);
+    lines.extend(missing);
+    lines.extend(tail);
+    lines.concat()
 }
 
 /// Writes `text` to `path` through a file beside it, so a cut write leaves the old file.
@@ -248,9 +265,13 @@ fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(&part, path)
 }
 
+fn mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 /// Whether the file at `path` changed since `last`; records the new mtime.
 fn changed(path: &Path, last: &mut Option<SystemTime>) -> bool {
-    let Ok(mtime) = std::fs::metadata(path).and_then(|m| m.modified()) else {
+    let Some(mtime) = mtime(path) else {
         return false;
     };
     if *last == Some(mtime) {
@@ -265,44 +286,25 @@ impl Layer {
         Tuned { zoom: self.zoom.level, text_scale: self.cfg.text_scale }
     }
 
-    fn set_tuned(&mut self, t: Tuned) {
-        self.zoom.level = t.zoom;
-        self.cfg.text_scale = t.text_scale;
-    }
-
-    /// Writes the saved settings when they changed since the saved file was last read or
-    /// written.
+    /// Writes the settings wheel's values into the layout file's [config] section when they
+    /// differ from what it holds.
     pub fn save_tuned(&mut self) {
-        let (Some(path), t) = (saved_path(), self.tuned()) else {
+        let (Ok(path), t) = (std::env::var(LAYOUT_ENV), self.tuned()) else {
             return;
         };
-        if self.files.saved == Some(t) {
+        if self.files.written == Some(t) {
             return;
         }
-        match write_whole(&path, &t.text()) {
+        let path = Path::new(&path);
+        let values = [(ZOOM_KEY, t.zoom.to_string()), (TEXT_SCALE_KEY, t.text_scale.to_string())];
+        match std::fs::read_to_string(path).and_then(|text| write_whole(path, &set_config(&text, &values))) {
             Ok(()) => {
-                self.files.saved = Some(t);
+                self.files.written = Some(t);
+                // The layer's own write is no edit to reload.
+                self.files.layout_mtime = mtime(path);
                 log!("saved: zoom {:.2}, text_scale {:.2}", t.zoom, t.text_scale);
             }
             Err(e) => log!("cannot save {}: {e}", path.display()),
-        }
-    }
-
-    /// Settles the saved settings after the layout file is read: at the first read the
-    /// saved file overrides it, later the keys the layout changed win and are saved.
-    fn settle_tuned(&mut self, running: Tuned) {
-        let layout = self.tuned();
-        match self.files.layout_tuned.replace(layout) {
-            None => {
-                let saved = saved_path().and_then(|p| std::fs::read_to_string(p).ok());
-                let t = saved.map_or(layout, |text| Tuned::read(&text, layout));
-                self.set_tuned(t);
-                self.files.saved = Some(t);
-            }
-            Some(before) => {
-                self.set_tuned(Tuned::edited(layout, before, running));
-                self.save_tuned();
-            }
         }
     }
 
@@ -318,9 +320,8 @@ impl Layer {
                     // An empty file is a save caught midway; the current layout stays.
                     Ok(text) if text.is_empty() => {}
                     Ok(text) => {
-                        let running = self.tuned();
                         self.load_layout(&text, &path);
-                        self.settle_tuned(running);
+                        self.files.written = Some(self.tuned());
                     }
                     Err(_) => log!("layout: cannot open {path}"),
                 }
@@ -338,6 +339,7 @@ fn float_prefix(s: &str) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::layout::Layout;
 
     #[test]
     fn values_keep_their_numeric_prefix() {
@@ -351,14 +353,19 @@ mod tests {
     }
 
     #[test]
-    fn saved_values_round_trip_and_an_edited_layout_key_wins() {
-        let base = Tuned { zoom: 1.0, text_scale: 0.0 };
-        let tuned = Tuned { zoom: 4.0 / 3.0, text_scale: 1.25 };
-        assert_eq!(Tuned::read(&tuned.text(), base), tuned);
-        assert_eq!(Tuned::read("zoom = 2 # note\n", base), Tuned { zoom: 2.0, ..base });
-        let before = Tuned { zoom: 1.0, text_scale: 0.0 };
-        let layout = Tuned { zoom: 1.0, text_scale: 1.5 };
-        assert_eq!(Tuned::edited(layout, before, tuned), Tuned { zoom: tuned.zoom, text_scale: 1.5 });
+    fn config_values_take_their_lines_and_keep_the_comments() {
+        let text = "# head\n[config]\nzoom = 1   # start level\ntap_hold = 0.2\n\n[controls]\na = space\n";
+        let out = set_config(text, &[(ZOOM_KEY, "2".to_string()), (TEXT_SCALE_KEY, "1.5".to_string())]);
+        assert_eq!(
+            out,
+            "# head\n[config]\nzoom = 2   # start level\ntap_hold = 0.2\ntext_scale = 1.5\n\n[controls]\na = space\n"
+        );
+        let (_, cfg) = Layout::parse(&out);
+        assert_eq!((cfg.zoom, cfg.text_scale), (2.0, 1.5));
+        assert_eq!(
+            set_config("[controls]\na = space", &[(ZOOM_KEY, "2".to_string())]),
+            "[config]\nzoom = 2\n[controls]\na = space"
+        );
     }
 
     #[test]

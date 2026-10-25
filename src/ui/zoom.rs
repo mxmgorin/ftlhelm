@@ -22,6 +22,8 @@ use crate::game::offsets::{GAME_H, GAME_W};
 use crate::game::state;
 use crate::ui::wheel::wheel_area;
 
+/// The `zoom` setting that zooms one level in where the screen shrinks the frame.
+pub const ZOOM_AUTO: f32 = 0.0;
 pub const ZOOM_MIN: f32 = 1.0;
 pub const ZOOM_MAX: f32 = 3.0;
 /// Pixel-exact levels show a frame pixel on a multiple of this many screen pixels.
@@ -149,6 +151,30 @@ fn hull(rect: Rect, [left, top, right, bottom]: [f32; 4]) -> Rect {
     Rect { x, y, w: right - x, h: bottom - y }
 }
 
+/// The level ZOOM_AUTO takes on a screen of `screen` pixels: the first past the whole
+/// frame where the screen shrinks the frame, else the whole frame.
+fn auto_level(screen: (f32, f32)) -> f32 {
+    if fit_scale(screen) >= 1.0 {
+        return ZOOM_MIN;
+    }
+    step(&levels(screen), ZOOM_MIN, true)
+}
+
+/// The level the `zoom` setting `level` takes on a screen of `screen` pixels.
+fn resolve(level: f32, screen: (f32, f32)) -> f32 {
+    if level == ZOOM_AUTO {
+        auto_level(screen)
+    } else {
+        clampf(level, ZOOM_MIN, ZOOM_MAX)
+    }
+}
+
+/// The level the `zoom` setting `level` takes on the current screen; ZOOM_MIN before the
+/// game has one.
+pub fn resolved_level(level: f32) -> f32 {
+    screen_size().map_or(ZOOM_MIN, |screen| resolve(level, screen))
+}
+
 /// The level after `level` among `levels`, back to ZOOM_MIN past the top.
 fn cycle(levels: &[f32], level: f32) -> f32 {
     let next = step(levels, level, true);
@@ -246,7 +272,7 @@ enum Scene {
 
 /// The zoom as the layer keeps it between frames.
 pub struct Zoom {
-    /// The level the ship view takes.
+    /// The ship view's level as the `zoom` setting gives it, ZOOM_AUTO included.
     pub level: f32,
     /// The level the current screen takes: `level` on the ship view, else ZOOM_MIN.
     pub target: f32,
@@ -290,7 +316,7 @@ impl Zoom {
         let middle = (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0);
         let toward = match scene {
             Scene::Ship => {
-                self.target = self.level;
+                self.target = resolve(self.level, screen);
                 self.follow(screen, focus);
                 self.goal
             }
@@ -343,7 +369,7 @@ impl Layer {
         let Some(screen) = screen_size() else {
             return;
         };
-        self.zoom.level = step(&levels(screen), self.zoom.level, up);
+        self.zoom.level = step(&levels(screen), resolve(self.zoom.level, screen), up);
         log!("zoom {:.2}", self.zoom.level);
     }
 
@@ -353,7 +379,7 @@ impl Layer {
         let Some(screen) = screen_size() else {
             return;
         };
-        self.zoom.level = cycle(&levels(screen), self.zoom.level);
+        self.zoom.level = cycle(&levels(screen), resolve(self.zoom.level, screen));
         log!("zoom {:.2}", self.zoom.level);
     }
 
@@ -403,7 +429,7 @@ impl Layer {
         };
         let peeking = self.zoom.peek_from.is_some_and(|t| now_s() - t >= self.cfg.tap_hold as f64);
         let focus = self.zoom_focus();
-        let window = state::window_rect().filter(|_| self.zoom.level > ZOOM_MIN);
+        let window = state::window_rect().filter(|_| resolve(self.zoom.level, screen) > ZOOM_MIN);
         let scene = if self.help_shown || peeking {
             Scene::Whole
         } else if state::ship_view() {
@@ -449,6 +475,14 @@ mod tests {
         assert_eq!(step(&l, ZOOM_MIN, false), ZOOM_MIN);
         assert_eq!(step(&l, ZOOM_MAX, true), ZOOM_MAX);
         assert_eq!(step(&l, 1.7, true), 2.0);
+    }
+
+    #[test]
+    fn auto_zooms_one_level_in_where_the_screen_shrinks_the_frame() {
+        assert!(close(&[auto_level(SMALL), auto_level(SQUARE), auto_level((854.0, 480.0))], &[1.333, 1.778, 1.5]));
+        assert_eq!(auto_level(WIDE), ZOOM_MIN);
+        assert_eq!(resolve(ZOOM_AUTO, WIDE), ZOOM_MIN);
+        assert_eq!(resolve(2.0, SMALL), 2.0);
     }
 
     #[test]
