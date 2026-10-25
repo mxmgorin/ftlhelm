@@ -2,6 +2,7 @@
 
 use std::sync::{Mutex, TryLockError};
 
+use super::util::FrameClock;
 use crate::config::layout::Layout;
 use crate::config::settings::{FileWatch, Settings};
 use crate::debug::commands::Commands;
@@ -16,6 +17,7 @@ use crate::ui::wheel::WheelUi;
 /// Everything the hooks share; each module adds its methods.
 pub struct Layer {
     pub debug: bool,
+    pub clock: FrameClock,
     pub cfg: Settings,
     pub files: FileWatch,
     pub layout: Layout,
@@ -37,6 +39,7 @@ impl Default for Layer {
     fn default() -> Self {
         Layer {
             debug: false,
+            clock: FrameClock::default(),
             cfg: Settings::default(),
             files: FileWatch::default(),
             layout: Layout::default(),

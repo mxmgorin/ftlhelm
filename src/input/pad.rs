@@ -92,7 +92,7 @@ fn stick_directions(x: f32, y: f32, was: &[bool]) -> [bool; 4] {
 }
 
 /// The first connected pad.
-pub fn active_pad() -> Option<i32> {
+fn active_pad() -> Option<i32> {
     let a = api();
     // SAFETY: the engine's joystick queries take any index below the count.
     unsafe { (0..(a.joy_count)()).find(|&i| (a.joy_connected)(i) != 0) }
@@ -126,7 +126,7 @@ impl PadState {
     }
 
     /// Resolves the SDL mapping against the pad's key codes, once per pad and device.
-    pub fn resolve_sdl_map(&mut self, dev: i32) {
+    fn resolve_sdl_map(&mut self, dev: i32) {
         let Some(map) = &self.sdl else {
             return;
         };
@@ -174,7 +174,18 @@ impl PadState {
 }
 
 impl Layer {
-    pub fn read_pad(&self, dev: i32) -> PadFrame {
+    /// Reads the first connected pad, its SDL mapping resolved on first sight; an idle frame
+    /// while none is connected.
+    pub fn poll_pad(&mut self) -> PadFrame {
+        self.pad.index = active_pad();
+        let Some(dev) = self.pad.index else {
+            return PadFrame::default();
+        };
+        self.pad.resolve_sdl_map(dev);
+        self.read_pad(dev)
+    }
+
+    fn read_pad(&self, dev: i32) -> PadFrame {
         let a = api();
         let mut p = PadFrame::default();
         let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).map(|(_, r)| r);
@@ -428,6 +439,23 @@ mod tests {
 
     fn held(p: &PadFrame) -> Vec<Input> {
         Input::ALL.into_iter().filter(|&i| p.down[i as usize]).collect()
+    }
+
+    #[test]
+    fn polling_reads_the_connected_pad_or_idles() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let idle = l.poll_pad();
+            assert_eq!((l.pad.index, held(&idle)), (None, vec![]));
+            set_pad(FakePad {
+                index: Some(0),
+                mapping: vec![raw(Input::Home)],
+                held: vec![raw(Input::Home)],
+                ..FakePad::default()
+            });
+            let frame = l.poll_pad();
+            assert_eq!((l.pad.index, held(&frame)), (Some(0), vec![Input::Home]));
+        });
     }
 
     #[test]

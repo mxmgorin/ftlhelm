@@ -14,14 +14,11 @@ use crate::game::api::{self, api, Api, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
 use crate::game::zones::record_button;
 use crate::game::{sound, state};
-use crate::input::pad::active_pad;
 
 const DEBUG_ENV: &str = "FTLPAD_DEBUG";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Git revision of the build.
 const REV: &str = env!("FTLPAD_REV");
-const HEARTBEAT_S: f64 = 10.0;
-const MAX_DT: f64 = 0.05;
 
 /// Used when no layout file is named.
 const DEFAULT_LAYOUT: &str =
@@ -56,34 +53,15 @@ unsafe fn orig<F: Copy>(slot: &AtomicUsize) -> F {
     std::mem::transmute_copy::<usize, F>(&addr)
 }
 
-/// Frame timing kept between OnLoop calls.
-struct Clock {
-    last_t: f64,
-    last_beat: f64,
-    frames: u64,
-}
-
-static CLOCK: std::sync::Mutex<Clock> = std::sync::Mutex::new(Clock { last_t: 0.0, last_beat: 0.0, frames: 0 });
-
 extern "C" fn onloop_hook(app: Ptr) {
     state::set_app(app);
     let t = now_s();
-    let (dt, frames, beat) = {
-        let mut c = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
-        c.frames += 1;
-        let dt = if c.last_t > 0.0 { (t - c.last_t).min(MAX_DT) as f32 } else { 0.0 };
-        c.last_t = t;
-        let beat = t - c.last_beat >= HEARTBEAT_S;
-        if beat {
-            c.last_beat = t;
-        }
-        (dt, c.frames, beat)
-    };
-    if frames == 1 {
-        log!("first OnLoop");
-        sound::report();
-    }
     with_layer(|l| {
+        let frame = l.clock.tick(t);
+        if frame.count == 1 {
+            log!("first OnLoop");
+            sound::report();
+        }
         l.poll_files(t);
         l.run_queued_clicks();
         l.sync_cursor();
@@ -92,17 +70,13 @@ extern "C" fn onloop_hook(app: Ptr) {
             l.focus_first_on_open();
         }
         l.poll_commands();
-        let dev = active_pad();
-        l.pad.index = dev;
-        if let Some(d) = dev {
-            l.pad.resolve_sdl_map(d);
-        }
-        let pad = dev.map(|d| l.read_pad(d)).unwrap_or_default();
-        l.apply_pad(pad, t, dt);
-        if l.debug && beat {
+        let pad = l.poll_pad();
+        l.apply_pad(pad, t, frame.dt);
+        if l.debug && frame.beat {
             log!(
-                "{frames} frames, pad {}, cursor {},{}, depth {}",
-                dev.unwrap_or(-1),
+                "{} frames, pad {}, cursor {},{}, depth {}",
+                frame.count,
+                l.pad.index.unwrap_or(-1),
                 l.cursor.last_x,
                 l.cursor.last_y,
                 l.bind.depth()
