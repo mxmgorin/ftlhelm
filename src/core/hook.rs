@@ -44,7 +44,7 @@ const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
 
 const TRAMPOLINE_HINT: usize = 0x7000_0000;
 const TRAMPOLINE_PAGE: usize = 4096;
-/// Distance between candidate addresses when the trampoline page must be placed by search.
+/// Spacing of the addresses tried for the trampoline page.
 const TRAMPOLINE_STEP: usize = 0x100_0000;
 const JMP_REL32: u8 = 0xe9;
 const JMP_LEN: usize = 1 + std::mem::size_of::<i32>();
@@ -283,8 +283,8 @@ pub fn slot_target(slot: usize) -> usize {
     unsafe { (slot as *const usize).read() }
 }
 
-/// Checks that addr lies in an executable mapping of this process; a preloaded library
-/// also lands in the shell or wrapper that launches the game.
+/// Whether addr lies in an executable mapping of this process; a preload also lands in
+/// the launcher's processes.
 pub fn mapped_executable(addr: usize) -> bool {
     let Ok(maps) = std::fs::read_to_string(MAPS) else {
         return false;

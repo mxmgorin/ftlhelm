@@ -15,18 +15,12 @@ glibc 2.35 or later.
 | `LICENSE` | the GNU General Public License v3.0 |
 | `NOTICE` | copyright, additional license terms, third-party notices |
 
-The three files stay together; `ftlpad.sh` finds the other two next to itself.
+`ftlpad.sh` expects the other two files next to it.
 
 ## Steam
 
-1. Unpack the archive anywhere, e.g. `~/ftlpad/`.
-2. FTL > **Properties > General > Launch Options**:
-
-       ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh %command%
-
-3. FTL > **Properties > Controller**: Steam Input **Disabled**.
-
-`ftlpad.sh` keeps the preloads Steam sets, the Steam overlay among them.
+Setup steps are in the [README](../README.md#install). `ftlpad.sh` keeps the preloads Steam
+sets, such as the Steam overlay.
 
 ## Without Steam
 
@@ -42,11 +36,6 @@ The environment `ftlpad.sh` sets, for another launcher:
 
 Other variables are in [Configuration](CONFIGURATION.md#environment-variables).
 
-## Editing the layout
-
-`ftlpad.ini` is re-read within a second of saving it, while the game runs. See
-[Configuration](CONFIGURATION.md) and [Controls](CONTROLS.md#custom-layouts).
-
 ## Pads
 
 Face buttons go by their labels. With `SDL_GAMECONTROLLERCONFIG` set, its mapping names
@@ -55,12 +44,12 @@ both are off by default.
 
 ## Troubleshooting
 
-ftlpad writes to the game's standard error, each line starting with `ftlpad:`. With Steam,
-start Steam from a terminal to see it; without Steam, the terminal that runs `ftlpad.sh`
-shows it.
+ftlpad logs to the game's standard error, each line starting with `ftlpad:`. With Steam,
+start Steam from a terminal to see it.
 
-No `ftlpad:` lines means the library did not load, or the game has none of the symbols
-ftlpad looks for; check the path in the launch options. `unknown build, inactive` means
-another build of FTL than the Steam 1.6.13 one.
+| Log | Meaning |
+| --- | --- |
+| no `ftlpad:` lines | the library did not load, or the process is not FTL: check the path in the launch options |
+| `unknown build, inactive` | an FTL build other than Steam 1.6.13 |
 
-`FTLPAD_DEBUG=1` in the environment also logs every press, wheel pick and D-pad step.
+`FTLPAD_DEBUG=1` also logs every press, wheel pick and D-pad step.

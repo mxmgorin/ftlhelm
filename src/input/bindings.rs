@@ -52,7 +52,7 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    /// Drops pushed states and pending presses, as a new layout needs.
+    /// Drops pushed states and pending presses.
     pub fn reset(&mut self) {
         self.stack.clear();
         self.pending = [None; INPUT_COUNT];
@@ -144,7 +144,6 @@ impl Layer {
         self.bind.slot_mode(&self.layout, slot)
     }
 
-    /// Runs a builtin on the press or release of a source.
     pub fn builtin(&mut self, id: Builtin, source: Source, down: bool) {
         match id {
             Builtin::ContextClick => {
@@ -157,8 +156,7 @@ impl Layer {
                     self.bind.context_done[slot] = None;
                     self.act_on_plate();
                 } else {
-                    // With crew selected and a room under the cursor, A sends them there,
-                    // which the game does on the right button.
+                    // Crew selected over a room: the game orders them there on the right button.
                     let room = self
                         .zone_under_cursor()
                         .is_some_and(|i| matches!(self.zones.list[i].kind, ZoneKind::Room | ZoneKind::EnemyRoom));
@@ -192,7 +190,7 @@ impl Layer {
                     tap_key(key, false);
                 }
             }
-            // Held: doors are the zones for as long as the button is down.
+            // On while held, not toggled.
             Builtin::Precision => self.bind.precision = down,
             Builtin::CenterSwap if down => self.center_swap(),
             Builtin::PrevTab if down => actions::tab_step(-1),
@@ -211,7 +209,6 @@ impl Layer {
         }
     }
 
-    /// Performs an action's press or release.
     pub fn perform(&mut self, action: Action, source: Source, down: bool) {
         match action {
             Action::Key { code, shift } => {

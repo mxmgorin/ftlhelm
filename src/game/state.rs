@@ -9,7 +9,7 @@ use super::mem::Obj;
 use super::offsets::*;
 use super::string::GameString;
 
-/// The game's CApp, recorded by the OnLoop hook.
+/// The game's CApp, or null.
 static APP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 pub fn set_app(app: Ptr) {
@@ -92,7 +92,6 @@ pub fn any_crew_selected() -> bool {
     selected_count() > 0
 }
 
-/// The first crew member of the current selection.
 pub fn first_selected_crew() -> Option<Obj> {
     selected_crew()?.vec_obj(0)
 }
@@ -109,7 +108,7 @@ pub fn window_open(window: Option<Obj>) -> bool {
     window.is_some_and(|w| w.flag(FOCUS_OPEN))
 }
 
-/// A GUI window at an offset, when the GUI exists and the window is open.
+/// Whether the GUI window at `off` is open.
 pub fn gui_window_open(off: usize) -> bool {
     window_open(gui().map(|g| g.at(off)))
 }
@@ -203,7 +202,6 @@ pub fn display_text(text: Obj) -> String {
     result.text()
 }
 
-/// Hotkey of a system type.
 pub fn system_key(kind: i32) -> Option<i32> {
     let key = match kind {
         SYS_SHIELDS => 'a',
@@ -255,7 +253,7 @@ pub fn ability_system(key: i32) -> Option<i32> {
     })
 }
 
-/// Lockdown needs a living crystal crew member.
+/// Whether the player's crew has a living crystal member.
 pub fn has_crystal_crew() -> bool {
     (0..).map_while(crew_at).any(|m| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
 }

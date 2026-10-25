@@ -13,7 +13,7 @@ const WHEEL_SECTION: &str = "wheel:";
 pub const MAX_STATES: usize = 8;
 pub const MAX_WHEELS: usize = 8;
 pub const WHEEL_SLOTS: usize = 8;
-/// Labels and names keep this many characters, as the plates have room for.
+/// Longest label or name a plate shows, in characters.
 pub const LABEL_CHARS: usize = 23;
 
 /// Digital inputs: SIL's named buttons in enum order, then the D-pad and both sticks read
@@ -241,7 +241,6 @@ pub fn key_name(code: i32) -> Option<&'static str> {
     KEY_NAMES.iter().find(|(_, c)| *c == code).map(|&(n, _)| n)
 }
 
-/// Keeps the first `LABEL_CHARS` characters.
 pub fn truncate_label(s: &str) -> String {
     s.chars().take(LABEL_CHARS).collect()
 }

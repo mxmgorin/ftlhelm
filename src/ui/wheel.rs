@@ -243,7 +243,6 @@ fn draw_plate(pl: &Plate, font: i32, cx: f32, cy: f32, selected: bool) {
     } else {
         draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, fill, edge);
     }
-    // With pips the icon box sits at the top, without it is centred.
     let icon_cy = if pl.pips > 0 { y + TILE_PAD + TILE_ICON / 2.0 } else { cy };
     let tint = if pl.available { TEXT_COLOR } else { TEXT_DISABLED_COLOR };
     if pl.icon_well {

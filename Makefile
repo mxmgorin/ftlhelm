@@ -1,5 +1,4 @@
-# Builds the library with cargo and copies it to OUT, for scripts that call make, and the
-# x86_64 probe program launchers run under box64 to check that the library loads.
+# Builds the library into OUT, and the x86_64 probe that shows whether it loads under box64.
 OUT ?= ftlpad.so
 PROBE ?= ftlpad_probe
 # The archive a Linux player unpacks: the library, its layout and the launch wrapper.

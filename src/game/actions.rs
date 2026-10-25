@@ -17,7 +17,7 @@ const MAX_QUEUED_CLICKS: usize = 16;
 const QUEUED_CLICK_FRAMES: i32 = 4;
 const QUEUED_CLICK_PHASES: i32 = 3;
 
-/// How many holders want Shift down; the GetShiftState hook reads it.
+/// How many holders want Shift down; outside the layer, as the game queries it mid-hook.
 static SHIFT_COUNT: AtomicI32 = AtomicI32::new(0);
 
 pub fn shift_held() -> bool {
@@ -203,8 +203,8 @@ impl Layer {
         self.cursor.last_set = state::mouse_point();
     }
 
-    /// Toggles the doors of the player room under the cursor: closes them all while any is
-    /// open, else opens them all, clicking each as the game toggles them.
+    /// Toggles the doors of the player room under the cursor by clicking them: closes the
+    /// open ones while any is open, else opens all.
     pub fn room_doors(&mut self) {
         let Some(under) = self.zone_under_cursor().map(|i| self.zones.list[i]) else {
             return;

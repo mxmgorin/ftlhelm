@@ -25,10 +25,9 @@ A release tag is the `Cargo.toml` version, with or without a leading `v`.
 
 ## Test channel
 
-With `FTLPAD_CMD` naming a FIFO, ftlpad reads commands from it once a frame and logs the
-results to standard error. The commands are the cases of `run_command` in
-`src/debug/commands.rs`: `dump` logs the zones, `state` the state stack, `move X Y` moves
-the cursor, among others.
+With `FTLPAD_CMD` naming a FIFO, ftlpad runs the lines written to it once a frame and logs
+to standard error. Commands are the cases of `run_command` in `src/debug/commands.rs`,
+e.g. `dump` (zones), `state` (state stack), `move X Y` (cursor).
 
     mkfifo /tmp/ftlpad.cmd
     FTLPAD_CMD=/tmp/ftlpad.cmd LD_PRELOAD=$PWD/ftlpad.so FTLPAD_LAYOUT=$PWD/config/ftlpad.ini \
@@ -37,18 +36,18 @@ the cursor, among others.
 
 ## Virtual pad
 
-`tools/vpad.py` makes a uinput pad the game picks up and plays steps on it, and writes to
-the test channel:
+`tools/vpad.py` creates a uinput pad, plays steps on it and writes commands to the test
+channel:
 
     tools/vpad.py --fifo /tmp/ftlpad.cmd tap:a hold:x:1 stick:r:1,0:0.2 cmd:dump
     tools/vpad.py --script dpad
 
-Steps and buttons are listed in `tools/vpad.py --help` and its header. With Steam running,
-Steam takes the virtual pad; close Steam first.
+Steps and buttons: `tools/vpad.py --help` and the script's header. A running Steam grabs
+the virtual pad; close it first.
 
 ## box64 check
 
     FTLPAD_DEBUG=1 BOX64_LOG=1 BOX64_LD_PRELOAD=/path/ftlpad.so box64 ./ftlpad_probe
 
-`ftlpad:` lines in the output mean box64 loaded the library; otherwise box64's errors name
-the reason. The PortMaster launcher runs the same check before the game.
+`ftlpad:` lines in the output: the library loaded; otherwise box64's errors name the
+reason. The PortMaster launcher runs the same check before the game.

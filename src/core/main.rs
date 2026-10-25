@@ -177,7 +177,7 @@ pub extern "C" fn init() {
     let debug = std::env::var_os(DEBUG_ENV).is_some();
     let addrs = resolve_symbols(SYMBOLS);
     if addrs.iter().all(|&a| a == 0) {
-        // Not the game: a launcher script or a tool it runs, which stays silent.
+        // Not the game but a launcher or a tool it runs: stay silent.
         if debug {
             log!("not FTL, inactive");
         }

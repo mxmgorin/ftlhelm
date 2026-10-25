@@ -32,7 +32,7 @@ pub const FLICK_ON: f32 = 0.8;
 pub const FLICK_OFF: f32 = 0.25;
 /// The narrowest band a flick threshold keeps above the re-arm level.
 const FLICK_GAP: f32 = 0.1;
-/// Zero: one flick per deflection, the stick must return to centre.
+/// Zero: one flick until the stick re-centres.
 const FLICK_REPEAT_S: f32 = 0.0;
 /// Zone search cone half-angles: the narrow one first, the wide one when it finds nothing.
 const CONE_NARROW_DEG: f32 = 30.0;
@@ -177,7 +177,7 @@ impl Settings {
     }
 }
 
-/// When the layout file was last read.
+/// When the layout file was last polled, and its mtime then.
 #[derive(Default)]
 pub struct FileWatch {
     last_poll: Option<f64>,

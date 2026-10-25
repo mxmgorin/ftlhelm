@@ -1,15 +1,11 @@
 # Configuration
 
 Settings live in the `[config]` section of `ftlpad.ini`, one `key = value` per line, `#`
-starting a comment. A missing key takes its default; a value outside its range is clamped.
-The file is re-read within a second of saving it, while the game runs.
+starting a comment. Each key is documented in place; switches take `0` (off) or `1` (on).
+A missing key takes its default; a value outside its range is clamped. The file is re-read
+within a second of saving it, while the game runs.
 
 Bindings and wheels are in [Controls](CONTROLS.md#custom-layouts).
-
-## `[config]`
-
-Each key is documented in place in `ftlpad.ini`. `0` is off and `1` is on for the
-switches.
 
 ## Environment variables
 

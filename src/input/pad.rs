@@ -31,7 +31,6 @@ const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
 
-/// One frame of pad state.
 #[derive(Default)]
 pub struct PadFrame {
     pub down: [bool; INPUT_COUNT],
@@ -388,7 +387,8 @@ impl Layer {
         }
     }
 
-    /// Reacts to mode changes read from the game: the cursor starts where the payload wants it.
+    /// Reacts to mode changes read from the game: a new aim moves the cursor to the enemy
+    /// ship, a new crew selection with crew_follow to the member's room.
     fn follow_game_modes(&mut self) {
         let now_aiming = state::aiming();
         let now_crew = state::first_selected_crew();

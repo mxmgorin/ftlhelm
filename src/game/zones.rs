@@ -81,8 +81,8 @@ struct Seen {
 
 static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false });
 
-/// Records a button the game hit-tests, with its box moved to the screen. Runs inside the
-/// game's GenericButton::MouseMove, so it touches only the seen set.
+/// Records a button the game hit-tests, with its box moved to the screen. Touches only the
+/// seen set: a hook may hold the layer meanwhile.
 pub fn record_button(button: Obj) {
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     seen.tested = true;
@@ -202,8 +202,8 @@ impl Zones {
         true
     }
 
-    /// With the map open only its own buttons count, a beacon click jumps by itself; with
-    /// another screen or the menu open the HUD's top and bottom rows drop out.
+    /// The hit-tested buttons: with the map open only its own, with another screen or the
+    /// menu open none from the HUD's top and bottom rows.
     fn add_button_zones(&mut self, screen_open: bool, map: Option<Obj>) {
         for i in 0..self.buttons.len() {
             let b = self.buttons[i];
