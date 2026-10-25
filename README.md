@@ -12,7 +12,7 @@
   <a href="https://github.com/mxmgorin/ftlpad/issues">Issues</a>
 </p>
 
-Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad on Linux. FTL has no controller support; ftlpad adds it without changing the game files.
+Controller support for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux: play it with a gamepad, without changing the game files.
 
 <p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
 
@@ -54,6 +54,15 @@ Settings and bindings are in `ftlpad.ini`. See **[Configuration](docs/CONFIGURAT
 ## Building
 
 See **[Building](docs/BUILDING.md)**.
+
+## How to help
+
+If you find the project useful, here is how you can help:
+
+- **Tell other people about it.** Sharing the project helps it reach more users.
+- **Report bugs and request features** in [Issues](https://github.com/mxmgorin/ftlpad/issues). Feedback is welcome.
+- **Star the repo.** It helps the project get noticed and keeps me motivated.
+- **[Buy me a coffee](https://ko-fi.com/mxmgorin)** on Ko-fi.
 
 ## Credits
 
