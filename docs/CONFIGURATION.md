@@ -2,6 +2,7 @@
 
 `ftlhelm.ini` holds the settings, the button states and the wheels. `#` starts a comment
 outside quotes. The file is re-read within a second of saving it, while the game runs.
+Deleting it resets the layout and the settings: ftlhelm writes the default file in its place.
 
 | Section | Contents |
 | --- | --- |
@@ -146,7 +147,7 @@ without one), and an optional icon: a game image path under `img/` in `ftl.dat`,
 | Variable | Value |
 | --- | --- |
 | `LD_PRELOAD` | path to `ftlhelm.so`; under box64, `BOX64_LD_PRELOAD` |
-| `FTLHELM_LAYOUT` | path to `ftlhelm.ini`; without it, a minimal built-in layout with default settings, and nothing is saved |
+| `FTLHELM_LAYOUT` | path to `ftlhelm.ini`, written with the default layout when missing; without it, the default layout, and nothing is saved |
 | `FTLHELM_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
 | `FTLHELM_CMD` | path to a FIFO for test commands, see [Building](BUILDING.md#test-channel) |
 | `FTLHELM_DEBUG` | set: log every press, wheel pick and D-pad step |

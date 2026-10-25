@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
 use super::util::{line_buffer_stdout, log, now_s};
+use crate::config::layout::DEFAULT_LAYOUT;
 use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, FontData, Point, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
@@ -27,10 +28,6 @@ const DEBUG_ENV: &str = "FTLHELM_DEBUG";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Git revision of the build.
 const REV: &str = env!("FTLHELM_REV");
-
-/// Used when no layout file is named.
-const DEFAULT_LAYOUT: &str =
-    "[controls]\na = space\nback = esc\nstart = j\nl2 = mouse_right\nr2 = mouse_left\nright_analog = mouse_movement\n";
 
 /// push %rbp; push %rbx; mov %rdi,%rbx
 const ONLOOP_PROLOGUE: [u8; 5] = [0x55, 0x53, 0x48, 0x89, 0xfb];

@@ -2,10 +2,11 @@
 //! mtime poll that reloads the layout while the game runs, and the write of the settings
 //! wheel's values back into that section.
 
+use std::io::ErrorKind;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::config::layout::CONFIG_SECTION;
+use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
@@ -194,6 +195,8 @@ pub struct FileWatch {
     layout_mtime: Option<SystemTime>,
     /// The settings wheel's values as the layout file holds them.
     written: Option<Tuned>,
+    /// Writing the default layout failed; no retry until a file appears at the path.
+    default_failed: bool,
 }
 
 /// The settings the settings wheel changes and writes into the layout file.
@@ -265,6 +268,14 @@ fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(&part, path)
 }
 
+/// Writes `text` to `path` when no file is there; returns whether it wrote.
+fn write_if_missing(path: &Path, text: &str) -> std::io::Result<bool> {
+    match std::fs::metadata(path) {
+        Err(e) if e.kind() == ErrorKind::NotFound => write_whole(path, text).map(|()| true),
+        _ => Ok(false),
+    }
+}
+
 fn mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
@@ -308,6 +319,26 @@ impl Layer {
         }
     }
 
+    /// Writes the default layout where the layout file is missing, so deleting the file resets
+    /// the layout; a failed write is logged once until a file appears.
+    fn restore_default(&mut self, path: &Path) {
+        if self.files.default_failed && !path.exists() {
+            return;
+        }
+        match write_if_missing(path, DEFAULT_LAYOUT) {
+            Ok(wrote) => {
+                self.files.default_failed = false;
+                if wrote {
+                    log!("layout: default written to {}", path.display());
+                }
+            }
+            Err(e) => {
+                self.files.default_failed = true;
+                log!("layout: cannot write the default to {}: {e}", path.display());
+            }
+        }
+    }
+
     /// Re-reads the layout when its mtime changes, at most once per poll interval.
     pub fn poll_files(&mut self, t: f64) {
         if self.files.last_poll.is_some_and(|last| t - last < FILE_POLL_S) {
@@ -315,6 +346,7 @@ impl Layer {
         }
         self.files.last_poll = Some(t);
         if let Ok(path) = std::env::var(LAYOUT_ENV) {
+            self.restore_default(Path::new(&path));
             if changed(Path::new(&path), &mut self.files.layout_mtime) {
                 match std::fs::read_to_string(&path) {
                     // An empty file is a save caught midway; the current layout stays.
@@ -376,6 +408,17 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).ok().as_deref(), Some("b"));
         assert!(!path.with_extension("part").exists());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_missing_file_gets_the_text_and_an_existing_one_stays() {
+        let path = std::env::temp_dir().join(format!("ftlhelm-test-missing-{}.ini", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert!(write_if_missing(&path, "a").expect("a writable temp dir"));
+        assert!(!write_if_missing(&path, "b").expect("a writable temp dir"));
+        assert_eq!(std::fs::read_to_string(&path).ok().as_deref(), Some("a"));
+        let _ = std::fs::remove_file(&path);
+        assert!(write_if_missing(&path.join("ftlhelm.ini"), "a").is_err());
     }
 
     #[test]

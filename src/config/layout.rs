@@ -6,6 +6,8 @@ use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::offsets::{KEY_ENTER, KEY_ESCAPE, KEY_F1, KEY_F_COUNT, KEY_LSHIFT, KEY_SPACE};
 
+/// The shipped layout: every binding, wheel and setting at its default.
+pub const DEFAULT_LAYOUT: &str = include_str!("../../config/ftlhelm.ini");
 pub const CONFIG_SECTION: &str = "config";
 const BASE_SECTION: &str = "controls";
 const STATE_SECTION: &str = "controls:";
@@ -565,7 +567,7 @@ mod tests {
 
     #[test]
     fn shipped_scheme_reads_its_settings() {
-        let (l, cfg) = Layout::parse(include_str!("../../config/ftlhelm.ini"));
+        let (l, cfg) = Layout::parse(DEFAULT_LAYOUT);
         assert_eq!(cfg.cursor_deadzone, 0.25);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
         assert!(!l.wheels.is_empty());
