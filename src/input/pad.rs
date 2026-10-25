@@ -261,10 +261,7 @@ impl Layer {
         if in_wheel {
             self.tick_wheel(&p);
         }
-        let snapping = self.cfg.snap_dpad
-            && self.bind.depth() == 0
-            && !self.zones.list.is_empty()
-            && mode[Slot::Dpad as usize] == SlotMode::Keys;
+        let snapping = self.cfg.snap_dpad && !self.zones.list.is_empty() && mode[Slot::Dpad as usize] == SlotMode::Keys;
         self.pad.frame += 1;
         if self.pad.frame.is_multiple_of(BUTTON_REFRESH_FRAMES)
             && self.cursor.synced
@@ -317,8 +314,9 @@ impl Layer {
         }
     }
 
-    /// Turns button changes into presses and releases; with a wheel open or snapping on,
-    /// the D-pad steps the wheel or the focus instead, and its release is swallowed.
+    /// Turns button changes into presses and releases; with a wheel open, or snapping on and
+    /// no state held, the D-pad steps the wheel or the focus instead, and its release is
+    /// swallowed.
     fn apply_buttons(&mut self, p: &PadFrame, t: f64, in_wheel: bool, snapping: bool) {
         const DIR: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
         for input in Input::ALL {
@@ -327,6 +325,9 @@ impl Layer {
                 continue;
             }
             self.pad.held[i] = p.down[i];
+            if p.down[i] {
+                self.settle_pages();
+            }
             // Any button closes the help; that press does nothing else.
             if self.help_shown && p.down[i] && i < SIL_BUTTONS {
                 self.help_shown = false;
@@ -334,7 +335,7 @@ impl Layer {
             }
             if (Input::DpadLeft as usize..=Input::DpadDown as usize).contains(&i) {
                 let d = i - Input::DpadLeft as usize;
-                if p.down[i] && (in_wheel || snapping) {
+                if p.down[i] && (in_wheel || (snapping && self.bind.depth() == 0)) {
                     self.pad.dpad_spent[d] = true;
                     if in_wheel {
                         match d {
@@ -428,7 +429,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{set_pad, with_game, FakePad};
+    use crate::game::fake::{calls, set_pad, with_game, Call, FakePad};
 
     /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
     const RAW_OFFSET: i32 = 100;
@@ -481,6 +482,23 @@ mod tests {
             assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
             l.cfg.swap_ab = true;
             assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
+        });
+    }
+
+    #[test]
+    fn a_press_while_a_page_button_waits_acts_in_the_page() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            l.load_layout("[controls]\nl1 = hold_state page | pause\nup = 1\n[controls:page]\nup = 2\n", "test");
+            let mut p = PadFrame::default();
+            p.down[Input::L1 as usize] = true;
+            l.apply_buttons(&p, 1.0, false, true);
+            p.down[Input::DpadUp as usize] = true;
+            l.apply_buttons(&p, 1.05, false, true);
+            p.down = [false; INPUT_COUNT];
+            l.apply_buttons(&p, 1.1, false, true);
+            assert_eq!(l.bind.depth(), 0);
+            assert_eq!(calls(), [Call::KeyDown('2' as i32), Call::KeyUp('2' as i32)]);
         });
     }
 

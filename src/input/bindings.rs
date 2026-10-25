@@ -329,6 +329,19 @@ impl Layer {
         }
     }
 
+    /// Turns waiting presses whose hold pushes a state into holds, so the press that comes
+    /// while they are down resolves in that state.
+    pub fn settle_pages(&mut self) {
+        for input in Input::ALL {
+            if let Some((b, _)) = self.bind.pending[input as usize] {
+                if matches!(b.hold, Action::State(_)) {
+                    self.bind.pending[input as usize] = None;
+                    self.start_hold(b.hold, input);
+                }
+            }
+        }
+    }
+
     /// Turns presses that outlived the tap threshold into holds.
     pub fn settle_pending(&mut self, t: f64) {
         for (input, b) in self.bind.take_due(t, self.cfg.tap_hold as f64) {
