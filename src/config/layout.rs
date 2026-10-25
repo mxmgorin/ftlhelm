@@ -95,24 +95,24 @@ pub enum SlotMode {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
     Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
-    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom,
+    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom, TextSize,
 }
 
 impl Builtin {
     /// Counts through the last variant; a variant added after it takes its place here.
-    const COUNT: usize = Builtin::Zoom as usize + 1;
+    const COUNT: usize = Builtin::TextSize as usize + 1;
     #[rustfmt::skip]
     pub const ALL: [Builtin; Builtin::COUNT] = [
         Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
-        Builtin::DpadMode, Builtin::Zoom,
+        Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize,
     ];
     #[rustfmt::skip]
     const NAMES: [&'static str; Builtin::COUNT] = [
         "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
-        "fast_forward", "dpad_mode", "zoom",
+        "fast_forward", "dpad_mode", "zoom", "text_size",
     ];
 
     pub fn name(self) -> &'static str {
@@ -569,5 +569,14 @@ mod tests {
         assert_eq!(cfg.cursor_deadzone, 0.25);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
         assert!(!l.wheels.is_empty());
+        let Some(Some(Action::Wheel(settings))) = l.states[0].bind[Input::Select as usize].map(|b| b.tap) else {
+            panic!("a select tap opens a wheel");
+        };
+        let settings = &l.wheels[settings];
+        assert_eq!(settings.kind, WheelKind::Settings);
+        let actions: Vec<Action> = settings.plates.iter().flatten().map(|p| p.action).collect();
+        for b in [Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Help] {
+            assert!(actions.contains(&Action::Builtin(b)));
+        }
     }
 }

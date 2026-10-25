@@ -35,6 +35,20 @@ pub fn draw_text_center(font: i32, x: f32, y: f32, text: &str) {
     unsafe { (api().print_center)(font, x, y, s.as_ptr()) };
 }
 
+/// Prints a WHEEL_FONT_H line centred on (cx, cy), `k` times its size.
+pub fn draw_text_scaled(font: i32, cx: f32, cy: f32, k: f32, text: &str) {
+    let a = api();
+    // SAFETY: the renderer's matrix stack, popped below.
+    unsafe {
+        (a.push_matrix)();
+        (a.translate)(cx, cy, 0.0);
+        (a.scale)(k, k, 1.0);
+    }
+    draw_text_center(font, 0.0, -WHEEL_FONT_H / 2.0, text);
+    // SAFETY: pops the matrix pushed above.
+    unsafe { (a.pop_matrix)() };
+}
+
 pub fn text_width(font: i32, text: &str) -> f32 {
     let s = GameString::new(text);
     // SAFETY: as above.

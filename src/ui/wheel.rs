@@ -4,7 +4,9 @@
 use std::f32::consts::PI;
 
 use super::draw::*;
-use crate::config::layout::{truncate_label, Action, WheelDef, WheelKind, WHEEL_SLOTS};
+use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
+use super::zoom::{self, ZOOM_MIN};
+use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::{tap_key, MouseButton};
@@ -27,6 +29,8 @@ const WHEEL_TILE: f32 = 60.0;
 /// A plate holds an icon box, and under it a row of power pips when the item takes power.
 const TILE_ICON: f32 = 40.0;
 const TILE_PAD: f32 = 5.0;
+/// A plate's label keeps this far from its sides.
+const LABEL_PAD: f32 = 3.0;
 const PIP_H: f32 = 5.0;
 const PIP_GAP: f32 = 2.0;
 const PIP_MAX_W: f32 = 9.0;
@@ -58,6 +62,12 @@ const PLATE_DISABLED_EDGE_COLOR: GlColor = GlColor::new(0.3, 0.34, 0.33, 0.8);
 const PIP_ON_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
+const ZOOM_OFF_BADGE: &str = "Whole frame";
+const AUTO_BADGE: &str = "Auto";
+const MOUSE_ON_BADGE: &str = "On";
+/// A switch plate's one pip, lit while the switch is on.
+const SWITCH_PIPS: i32 = 1;
+const MOUSE_OFF_BADGE: &str = "Off, zones";
 
 /// Where a power wheel finds the item a slot key powers.
 struct Armament {
@@ -228,7 +238,19 @@ fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
     }
 }
 
-fn draw_plate(pl: &Plate, font: i32, cx: f32, cy: f32, selected: bool) {
+/// Whether a plate shows its label in place of an icon.
+fn shows_label(pl: &Plate) -> bool {
+    pl.bound && !pl.empty && pl.available && pl.icon.is_none() && pl.portrait.is_none()
+}
+
+/// The size, up to the font's own, at which every label shown in a plate fits its width.
+fn label_scale(plates: &[Plate], font: i32) -> f32 {
+    let room = WHEEL_TILE - 2.0 * LABEL_PAD;
+    plates.iter().filter(|p| shows_label(p)).map(|p| room / text_width(font, &p.label)).fold(1.0, f32::min)
+}
+
+/// Draws a plate, its label `label_k` times the font's size.
+fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: bool) {
     let (x, y) = (cx - WHEEL_TILE / 2.0, cy - WHEEL_TILE / 2.0);
     if pl.empty || !pl.bound {
         draw_rect_outline(x, y, WHEEL_TILE, WHEEL_TILE, PLATE_EMPTY_EDGE_COLOR);
@@ -258,9 +280,9 @@ fn draw_plate(pl: &Plate, font: i32, cx: f32, cy: f32, selected: bool) {
     }
     if pl.icon.is_some() || pl.portrait.is_some() {
         draw_plate_icon(pl, cx, icon_cy, tint);
-    } else if pl.available {
+    } else if shows_label(pl) {
         set_color(tint);
-        draw_text_center(font, cx, icon_cy - WHEEL_FONT_H / 2.0, &pl.label);
+        draw_text_scaled(font, cx, icon_cy, label_k, &pl.label);
         set_color(TEXT_COLOR);
     }
     if let Some(corner) = pl.corner_icon {
@@ -301,6 +323,17 @@ fn armament_plate(images: &mut Images, pl: &mut Plate, arm: &Armament, item: Obj
     pl.region = None;
     pl.pips = item.i32(arm.power);
     pl.pips_on = if pl.powered { pl.pips } else { 0 };
+}
+
+/// A scale as a badge shows it: no trailing zeros, then "x".
+fn times(k: f32) -> String {
+    let digits = format!("{k:.2}");
+    format!("{}x", digits.trim_end_matches('0').trim_end_matches('.'))
+}
+
+/// Whether a settings plate's builtin is a setting the D-pad steps, the wheel staying open.
+fn is_knob(b: Builtin) -> bool {
+    matches!(b, Builtin::Zoom | Builtin::TextSize)
 }
 
 fn crew_plates() -> [Plate; WHEEL_SLOTS] {
@@ -448,9 +481,10 @@ impl Layer {
             }
         }
         set_color(TEXT_COLOR);
+        let label_k = label_scale(&self.wheel.plates, font);
         for (i, pl) in self.wheel.plates.iter().enumerate() {
             let (cx, cy) = plate_center(origin, i);
-            draw_plate(pl, font, cx, cy, Some(i) == self.wheel.sel);
+            draw_plate(pl, font, label_k, cx, cy, Some(i) == self.wheel.sel);
         }
     }
 
@@ -499,6 +533,51 @@ impl Layer {
             WheelKind::Systems => system_plates(),
             _ => layout_plates(def, &mut self.images),
         };
+        if def.kind == WheelKind::Settings {
+            self.show_settings();
+        }
+    }
+
+    /// Fills the settings plates' state: lit while on, pips for the level or the switch, and
+    /// the value as the badge.
+    fn show_settings(&mut self) {
+        let cursor = self.bind.dpad_mouse;
+        let (zoom, text_scale) = (self.zoom.level, self.cfg.text_scale);
+        for pl in &mut self.wheel.plates {
+            let Some(Action::Builtin(b)) = pl.action else {
+                continue;
+            };
+            match b {
+                Builtin::DpadMode => {
+                    pl.powered = cursor;
+                    (pl.pips, pl.pips_on) = (SWITCH_PIPS, cursor as i32);
+                    pl.badge = if cursor { MOUSE_ON_BADGE } else { MOUSE_OFF_BADGE }.to_string();
+                }
+                Builtin::Zoom => {
+                    pl.powered = zoom > ZOOM_MIN;
+                    (pl.pips, pl.pips_on) = zoom::level_pips(zoom);
+                    pl.badge = if pl.powered { times(zoom) } else { ZOOM_OFF_BADGE.to_string() };
+                }
+                Builtin::TextSize => {
+                    pl.powered = text_scale != TEXT_SCALE_AUTO;
+                    (pl.pips, pl.pips_on) = (TEXT_SIZES, text::size_index(text_scale));
+                    pl.badge =
+                        if pl.powered { times(text_scale) } else { format!("{AUTO_BADGE} {}", times(text::scale())) };
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Whether the wheel at `index` may open now: a settings wheel anywhere, the others
+    /// where wheel_screen allows.
+    fn wheel_allowed(&self, index: usize) -> bool {
+        self.layout.wheels.get(index).is_some_and(|w| w.kind == WheelKind::Settings) || self.wheel_screen()
+    }
+
+    /// Whether the open wheel may stay open.
+    pub fn open_wheel_allowed(&self) -> bool {
+        self.wheel.open.is_some_and(|w| self.wheel_allowed(w))
     }
 
     pub fn close_wheel(&mut self) {
@@ -519,7 +598,7 @@ impl Layer {
             self.close_wheel();
             return;
         }
-        if index >= self.layout.wheels.len() || (self.wheel.open.is_none() && !self.wheel_screen()) {
+        if index >= self.layout.wheels.len() || (self.wheel.open.is_none() && !self.wheel_allowed(index)) {
             return;
         }
         self.wheel.open = Some(index);
@@ -527,7 +606,7 @@ impl Layer {
         self.wheel.opened_aiming = state::aiming();
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
-        if self.cfg.autopause_wheel && !state::game_paused() {
+        if self.cfg.autopause_wheel && state::ship_view() && !state::game_paused() {
             tap_key(KEY_SPACE, false);
             self.wheel.paused = true;
         }
@@ -536,8 +615,9 @@ impl Layer {
         }
     }
 
-    /// Performs the selected plate: keys and clicks run as taps; an action wheel closes
-    /// after, the others refill. The abilities key is remembered for repeat_ability.
+    /// Performs the selected plate: keys and clicks run as taps; an action wheel, or a
+    /// settings wheel on a plate other than a stepped setting, closes after, the others
+    /// refill. The abilities key is remembered for repeat_ability.
     pub fn act_on_plate(&mut self) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
@@ -546,7 +626,8 @@ impl Layer {
             return;
         }
         let kind = self.layout.wheels[w].kind;
-        match self.wheel.plates[sel].action {
+        let action = self.wheel.plates[sel].action;
+        match action {
             // With Shift, a crew member joins the selection.
             Some(Action::Key { code, .. }) if kind == WheelKind::Crew => tap_key(code, state::any_crew_selected()),
             Some(Action::Key { code, shift }) => {
@@ -563,7 +644,8 @@ impl Layer {
         if self.debug {
             log!("wheel {}: {}", self.layout.wheels[w].name, self.wheel.plates[sel].label);
         }
-        if kind == WheelKind::Action {
+        let knob = matches!(action, Some(Action::Builtin(b)) if is_knob(b));
+        if kind == WheelKind::Action || (kind == WheelKind::Settings && !knob) {
             self.close_wheel();
         } else if self.wheel.open.is_some() {
             self.refresh_wheel();
@@ -571,14 +653,27 @@ impl Layer {
     }
 
     /// Adds power to the selected item of a power or systems wheel, or takes it away for a
-    /// negative dir; on the crew wheel, adds the member to the selection or drops them.
+    /// negative dir; on the crew wheel, adds the member to the selection or drops them; on
+    /// the settings wheel, steps the selected setting.
     pub fn adjust_plate(&mut self, dir: i32) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
         };
         let kind = self.layout.wheels[w].kind;
         let plate = &self.wheel.plates[sel];
-        let Some(Action::Key { code, .. }) = plate.action.filter(|_| plate.bound && plate.available) else {
+        let Some(action) = plate.action.filter(|_| plate.bound && plate.available) else {
+            return;
+        };
+        if kind == WheelKind::Settings {
+            match action {
+                Action::Builtin(Builtin::Zoom) => self.zoom_step(dir > 0),
+                Action::Builtin(Builtin::TextSize) => self.text_size_step(dir > 0),
+                _ => return,
+            }
+            self.refresh_wheel();
+            return;
+        }
+        let Action::Key { code, .. } = action else {
             return;
         };
         match kind {
@@ -766,6 +861,35 @@ mod tests {
             assert_eq!(plates(&mut l, "[wheel:power]\nkind = power\nup = 1\n")[0].label, label);
             let translated: String = format!("[{long}]").chars().take(LABEL_CHARS).collect();
             assert_eq!(plates(&mut l, "[wheel:crew]\nkind = crew\n")[0].label, translated);
+        });
+    }
+
+    #[test]
+    fn settings_plates_show_their_values_and_step_them() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            (l.zoom.level, l.cfg.text_scale, l.bind.dpad_mouse) = (2.0, 1.5, true);
+            let layout =
+                "[wheel:settings]\nkind = settings\nup = dpad_mode\nright = zoom\nleft = text_size\ndown = help\n";
+            let p = plates(&mut l, layout);
+            let shown = |p: &Plate| (p.powered, p.pips, p.pips_on, p.badge.clone());
+            assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, MOUSE_ON_BADGE.to_string()));
+            // The stand-in screen has three levels above the whole frame; 2 is the second.
+            assert_eq!(shown(&p[2]), (true, 3, 2, "2x".to_string()));
+            assert_eq!(shown(&p[6]), (true, TEXT_SIZES, 3, "1.5x".to_string()));
+            assert_eq!(shown(&p[4]), (false, 0, 0, String::new()));
+            l.wheel.sel = Some(2);
+            l.adjust_plate(-1);
+            l.adjust_plate(-1);
+            assert_eq!(shown(&l.wheel.plates[2]), (false, 3, 0, ZOOM_OFF_BADGE.to_string()));
+            l.wheel.sel = Some(6);
+            l.adjust_plate(1);
+            assert_eq!(l.cfg.text_scale, 1.75);
+            l.act_on_plate();
+            assert_eq!((l.cfg.text_scale, l.wheel.open), (2.0, Some(0)));
+            l.wheel.sel = Some(0);
+            l.act_on_plate();
+            assert_eq!((l.bind.dpad_mouse, l.wheel.open), (false, None));
         });
     }
 

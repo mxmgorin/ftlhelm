@@ -14,6 +14,7 @@ use std::ffi::c_int;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::api::{api, FontData, Point, Rect};
 use crate::game::mem::Obj;
@@ -27,6 +28,10 @@ pub const TEXT_SCALE_MAX: f32 = 2.0;
 /// Auto scale: the share of the game's text size kept on a shrunk screen.
 const AUTO_TEXT_SIZE: f32 = 0.875;
 const UNSCALED: f32 = 1.0;
+/// The text size steps from UNSCALED to TEXT_SCALE_MAX by this much.
+const TEXT_SCALE_STEP: f32 = 0.25;
+/// Room for float error when a size is matched to a step.
+const STEP_SLACK: f32 = 0.001;
 /// The tallest measured tooltip whose box, titled or not, still starts on screen.
 const TOOLTIP_MAX_H: i32 = TOOLTIP_BOTTOM - TOOLTIP_PAD_H - TOOLTIP_TITLE_PAD_H;
 /// How much a tooltip that does not fit shrinks per measure.
@@ -50,8 +55,41 @@ unsafe impl Sync for Slots {}
 
 static SCALED: Slots = Slots(UnsafeCell::new([FontData::EMPTY; SLOTS]));
 
-fn scale() -> f32 {
+/// The scale event and tooltip text is drawn at.
+pub fn scale() -> f32 {
     f32::from_bits(SCALE.load(Ordering::Relaxed))
+}
+
+/// The number of fixed text sizes, auto aside.
+pub const TEXT_SIZES: i32 = ((TEXT_SCALE_MAX - UNSCALED) / TEXT_SCALE_STEP) as i32 + 1;
+
+/// How many fixed text sizes `setting` reaches; 0 for auto.
+pub fn size_index(setting: f32) -> i32 {
+    if setting == TEXT_SCALE_AUTO {
+        0
+    } else {
+        ((setting - UNSCALED) / TEXT_SCALE_STEP + STEP_SLACK).floor() as i32 + 1
+    }
+}
+
+/// The `text_scale` setting a step up or down from `setting`, auto stepping from `shown`,
+/// the scale it draws at; within UNSCALED..=TEXT_SCALE_MAX.
+pub fn step_setting(setting: f32, shown: f32, up: bool) -> f32 {
+    let from = if setting == TEXT_SCALE_AUTO { shown } else { setting };
+    let at = (from - UNSCALED) / TEXT_SCALE_STEP;
+    let n = if up { (at + STEP_SLACK).floor() + 1.0 } else { (at - STEP_SLACK).ceil() - 1.0 };
+    clampf(UNSCALED + n * TEXT_SCALE_STEP, UNSCALED, TEXT_SCALE_MAX)
+}
+
+/// The `text_scale` setting after `setting` in the cycle: auto, each fixed size up, auto.
+pub fn cycle_setting(setting: f32) -> f32 {
+    if setting == TEXT_SCALE_AUTO {
+        UNSCALED
+    } else if setting >= TEXT_SCALE_MAX - STEP_SLACK {
+        TEXT_SCALE_AUTO
+    } else {
+        step_setting(setting, setting, true)
+    }
 }
 
 /// Sets the scale from the `text_scale` setting, the game's current frame and the zoom
@@ -73,6 +111,20 @@ pub fn update(setting: f32, app: Option<Obj>, zoom: f32) {
 /// The scale for a frame shrunk by `shrink` game pixels per screen pixel; 1 when not shrunk.
 fn auto_scale(shrink: f32) -> f32 {
     clampf(AUTO_TEXT_SIZE * shrink, UNSCALED, TEXT_SCALE_MAX)
+}
+
+impl Layer {
+    /// Moves the text size to the next in the cycle: auto, each fixed size up, auto.
+    pub fn text_size_cycle(&mut self) {
+        self.cfg.text_scale = cycle_setting(self.cfg.text_scale);
+        log!("text size {:.2}", self.cfg.text_scale);
+    }
+
+    /// Steps the text size up or down from the size shown.
+    pub fn text_size_step(&mut self, up: bool) {
+        self.cfg.text_scale = step_setting(self.cfg.text_scale, scale(), up);
+        log!("text size {:.2}", self.cfg.text_scale);
+    }
 }
 
 /// Keeps tooltip fonts scaled for the game code run while it lives; scopes nest, and the
@@ -230,6 +282,21 @@ mod tests {
 
     /// Serialises the tests that set the scale, which is process-wide.
     static SCALE_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn sizes_step_from_what_auto_shows_and_cycle_back_to_auto() {
+        assert_eq!(step_setting(TEXT_SCALE_AUTO, 1.75, true), TEXT_SCALE_MAX);
+        assert_eq!(step_setting(TEXT_SCALE_AUTO, 1.31, false), 1.25);
+        assert_eq!(step_setting(UNSCALED, UNSCALED, false), UNSCALED);
+        assert_eq!(step_setting(TEXT_SCALE_MAX, TEXT_SCALE_MAX, true), TEXT_SCALE_MAX);
+        let mut s = TEXT_SCALE_AUTO;
+        let mut seen = Vec::new();
+        for _ in 0..=TEXT_SIZES {
+            s = cycle_setting(s);
+            seen.push(size_index(s));
+        }
+        assert_eq!(seen, [1, 2, 3, 4, 5, 0]);
+    }
 
     #[test]
     fn auto_scale_only_enlarges() {

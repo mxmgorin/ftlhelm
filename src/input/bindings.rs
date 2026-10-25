@@ -205,6 +205,7 @@ impl Layer {
             }
             Builtin::DpadMode if down => self.bind.dpad_mouse = !self.bind.dpad_mouse,
             Builtin::Zoom if down => self.zoom_cycle(),
+            Builtin::TextSize if down => self.text_size_cycle(),
             Builtin::FastForward => {
                 if down && state::game_paused() {
                     tap_key(KEY_SPACE, false);

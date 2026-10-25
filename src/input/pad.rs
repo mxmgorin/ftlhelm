@@ -306,7 +306,7 @@ impl Layer {
             self.refresh_wheel();
         }
         self.point_wheel(p.stick[0], p.stick[1]);
-        if (state::aiming() && !self.wheel.opened_aiming) || !self.wheel_screen() {
+        if (state::aiming() && !self.wheel.opened_aiming) || !self.open_wheel_allowed() {
             self.close_wheel();
         }
         if !state::aiming() {

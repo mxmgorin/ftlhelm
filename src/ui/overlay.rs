@@ -56,8 +56,9 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::RoomDoors => "Room doors",
         Builtin::Pause => "Pause",
         Builtin::FastForward => "Fast forward",
-        Builtin::DpadMode => "Cursor / zones",
+        Builtin::DpadMode => "Mouse / zones",
         Builtin::Zoom => "Zoom",
+        Builtin::TextSize => "Text size",
     }
 }
 

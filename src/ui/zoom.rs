@@ -159,6 +159,17 @@ fn cycle(levels: &[f32], level: f32) -> f32 {
     }
 }
 
+/// The zoom plate's pips at `level` on the current screen: the levels above the whole
+/// frame, and how many of them `level` reaches.
+pub fn level_pips(level: f32) -> (i32, i32) {
+    let Some(screen) = screen_size() else {
+        return (0, 0);
+    };
+    let all = levels(screen);
+    let reached = all.iter().filter(|&&l| l <= level || same_level(l, level)).count();
+    ((all.len() - 1) as i32, reached.saturating_sub(1) as i32)
+}
+
 /// The centre along one axis for a view of `size` over `frame` that holds `lo..hi` inside
 /// its inner part: on a frame edge where that does, the nearer to `center` of two, else the
 /// nearest to `center`; the middle of `lo..hi` when the inner part is too small. A view on a
@@ -327,6 +338,15 @@ impl Zoom {
 }
 
 impl Layer {
+    /// Steps the ship view's level up or down through the screen's levels.
+    pub fn zoom_step(&mut self, up: bool) {
+        let Some(screen) = screen_size() else {
+            return;
+        };
+        self.zoom.level = step(&levels(screen), self.zoom.level, up);
+        log!("zoom {:.2}", self.zoom.level);
+    }
+
     /// Moves the ship view to the next of the screen's levels, back to the whole frame past
     /// the top.
     pub fn zoom_cycle(&mut self) {
