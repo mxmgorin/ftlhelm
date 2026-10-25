@@ -13,9 +13,9 @@ Deleting it resets the layout and the settings: ftlhelm writes the default file 
 
 ## Settings
 
-One `key = value` per line, each key documented in place in `ftlhelm.ini`. Switches take
-`0` (off) or `1` (on). A missing key takes its default; a value outside its range is
-clamped. When the settings wheel closes, it writes `zoom` and `text_scale` here.
+One `key = value` per line. Switches take `0` (off) or `1` (on). A missing key takes its
+default; a value outside its range is clamped. When the settings wheel closes, it writes
+`zoom` and `text_scale` here.
 
 ### Cursor
 

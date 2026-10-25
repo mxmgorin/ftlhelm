@@ -24,7 +24,7 @@ const RUMBLE_STRENGTH: f32 = 0.4;
 const RUMBLE_S: f32 = 0.05;
 const RUMBLE_S_MIN: f32 = 0.01;
 const RUMBLE_S_MAX: f32 = 0.5;
-const STICK_DEADZONE: f32 = 0.12;
+const STICK_DEADZONE: f32 = 0.25;
 const STICK_DEADZONE_MAX: f32 = 0.9;
 /// Logical pixels per second at full deflection.
 const CURSOR_SPEED: f32 = 800.0;
@@ -419,6 +419,21 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).ok().as_deref(), Some("a"));
         let _ = std::fs::remove_file(&path);
         assert!(write_if_missing(&path.join("ftlhelm.ini"), "a").is_err());
+    }
+
+    #[test]
+    fn the_shipped_layout_holds_the_built_in_defaults() {
+        let (_, mut shipped) = Layout::parse(DEFAULT_LAYOUT);
+        assert_eq!(shipped.describe(), Settings::default().describe());
+    }
+
+    #[test]
+    fn every_setting_is_in_the_shipped_layout_and_the_docs() {
+        let docs = include_str!("../../docs/CONFIGURATION.md");
+        for (key, _) in OPTIONS {
+            assert!(DEFAULT_LAYOUT.lines().any(|l| l.starts_with(&format!("{key} ="))), "{key} not in ftlhelm.ini");
+            assert!(docs.contains(&format!("`{key}`")), "{key} not in CONFIGURATION.md");
+        }
     }
 
     #[test]
