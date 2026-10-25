@@ -21,12 +21,13 @@ Controller support for [FTL: Faster Than Light](https://subsetgames.com/ftl.html
 - **Zones**: the D-pad and sticks jump between rooms, doors, event choices, beacons and buttons
 - **Door mode**: hold L2 to jump between doors, tap it to toggle a room's doors
 - **Wheels** for weapons, crew, systems, ship orders and abilities, in the game's own art
+- **Settings wheel** on a Select tap: mouse mode, zoom, text size and the controls table; zoom and text size are kept between runs
+- **Zoom** for small screens: the ship view magnified around the cursor, filling 4:3 and square screens; the map, ship and store screens and the game menu enlarged to fit. The view rests on the frame's edges, a D-pad press past the last zone moves it further, and holding Start shows the whole frame
+- **Text size** in event boxes and tooltips: auto, larger on screens smaller than 1280x720, or 1 to 2 times the game's own
 - **Tap and hold** actions on every button
 - **Fast forward** while a button is held
-- **Help**: hold Start for the controls table
+- **Mouse mode**: the D-pad and sticks move the game's cursor freely
 - **Editable layout** in `ftlhelm.ini`, re-read while the game runs
-- **Free cursor mode**: the D-pad and sticks move the game's cursor
-- **Larger text** in event boxes and tooltips on screens smaller than 1280x720
 - **Build check**: on an FTL build other than Steam 1.6.13 or GOG 1.6.12, ftlhelm stays inactive and the game runs without it
 
 ## Install
@@ -45,7 +46,7 @@ See **[Linux](docs/LINUX.md)** for GOG, running without Steam and troubleshootin
 
 ## Controls
 
-Hold **Start** in the game for the controls table. See **[Controls](docs/CONTROLS.md)**.
+Tap **Select** in the game and pick **Help** for the controls table. See **[Controls](docs/CONTROLS.md)**.
 
 ## Configuration
 

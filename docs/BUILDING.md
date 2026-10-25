@@ -50,4 +50,4 @@ the virtual pad; close it first.
     FTLHELM_DEBUG=1 BOX64_LOG=1 BOX64_LD_PRELOAD=/path/ftlhelm.so box64 ./ftlhelm_probe
 
 `ftlhelm:` lines in the output: the library loaded; otherwise box64's errors name the
-reason. The PortMaster launcher runs the same check before the game.
+reason.
