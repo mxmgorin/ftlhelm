@@ -2,10 +2,10 @@
 //! discs, game images by path, and the shared palette.
 
 use std::collections::HashMap;
-use std::ffi::{c_void, CString};
 
 use crate::core::util::log;
 use crate::game::api::{api, GlColor, Ptr};
+use crate::game::string::GameString;
 
 const DISC_SCANLINE: f32 = 4.0;
 const BEVEL: f32 = 2.0;
@@ -21,31 +21,6 @@ pub const PLATE_EDGE_COLOR: GlColor = GlColor::new(0.63, 0.9, 0.76, 0.95);
 const PLATE_BEVEL_COLOR: GlColor = GlColor::new(0.0, 0.05, 0.05, 0.9);
 pub const TEXT_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
 pub const TEXT_DISABLED_COLOR: GlColor = GlColor::new(0.42, 0.46, 0.45, 1.0);
-
-/// A std::string built by the game's own constructor, released on drop.
-struct GameString(Ptr);
-
-impl GameString {
-    fn new(text: &str) -> GameString {
-        let c = CString::new(text.replace('\0', "")).expect("NUL bytes were removed");
-        let mut s: Ptr = std::ptr::null_mut();
-        let alloc = 0u8;
-        // SAFETY: the game's std::string constructor, with an allocator it ignores.
-        unsafe { (api().string_ctor)(&mut s, c.as_ptr(), &alloc as *const u8 as *const c_void) };
-        GameString(s)
-    }
-
-    fn as_ptr(&self) -> *const Ptr {
-        &self.0
-    }
-}
-
-impl Drop for GameString {
-    fn drop(&mut self) {
-        // SAFETY: the string came from the game's constructor and is released once.
-        unsafe { (api().string_dtor)(&mut self.0) };
-    }
-}
 
 pub fn draw_text_left(font: i32, x: f32, y: f32, text: &str) {
     let s = GameString::new(text);

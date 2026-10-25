@@ -2,7 +2,7 @@
 //! mode badge.
 
 use super::draw::*;
-use crate::config::layout::{key_name, Action, Binding, Builtin, SIL_BUTTONS};
+use crate::config::layout::{key_name, truncate_label, Action, Binding, Builtin, SIL_BUTTONS};
 use crate::core::layer::Layer;
 use crate::game::offsets::*;
 use crate::game::state;
@@ -172,7 +172,7 @@ impl Layer {
             let weapon = state::weapon_control()
                 .and_then(|c| c.obj(WEAPONCTRL_ARMED))
                 .and_then(|w| w.obj(WEAPON_BLUEPRINT))
-                .map(|bp| state::display_text(bp.at(BLUEPRINT_SHORT_TITLE)))
+                .map(|bp| truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE))))
                 .unwrap_or_default();
             parts.push(if weapon.is_empty() { "Target".to_string() } else { format!("Target: {weapon}") });
         }

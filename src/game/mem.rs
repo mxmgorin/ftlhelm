@@ -3,11 +3,12 @@
 //! ever built from a game address or a pointer field of another `Obj`, so the reads below
 //! trust the game's layout.
 
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr::NonNull;
 
 use super::api::{Point, Ptr, Rect};
 use super::offsets::{VECTOR_BEGIN, VECTOR_END};
+use super::string::chars_text;
 
 const PTR_SIZE: usize = std::mem::size_of::<usize>();
 
@@ -138,11 +139,8 @@ impl Obj {
     /// The text of the game's std::string at a field offset: its data pointer, read up to
     /// the terminator.
     pub fn string(self, off: usize) -> String {
-        match self.obj(off) {
-            // SAFETY: a std::string's data is NUL-terminated.
-            Some(chars) => unsafe { CStr::from_ptr(chars.ptr() as *const _) }.to_string_lossy().into_owned(),
-            None => String::new(),
-        }
+        // SAFETY: a std::string's data is NUL-terminated.
+        unsafe { chars_text(self.get(off)) }
     }
 }
 

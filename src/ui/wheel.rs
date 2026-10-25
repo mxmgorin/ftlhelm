@@ -4,7 +4,7 @@
 use std::f32::consts::PI;
 
 use super::draw::*;
-use crate::config::layout::{Action, WheelDef, WheelKind, WHEEL_SLOTS};
+use crate::config::layout::{truncate_label, Action, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::{tap_key, MouseButton};
@@ -318,7 +318,7 @@ fn crew_plates() -> [Plate; WHEEL_SLOTS] {
         pl.portrait = member.obj(CREW_ANIM).map(Obj::ptr);
         crew_location(pl, member);
         pl.action = Some(Action::Key { code: KEY_F1 + i as i32, shift: false });
-        pl.label = state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME));
+        pl.label = truncate_label(&state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME)));
     }
     // Empty slots keep their places, so positions never shift.
     for pl in &mut plates[slot..] {
@@ -382,7 +382,7 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
             match (item, bp) {
                 (Some(item), Some(bp)) => {
                     pl.powered = item.flag(arm.powered);
-                    pl.label = state::display_text(bp.at(BLUEPRINT_SHORT_TITLE));
+                    pl.label = truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE)));
                     armament_plate(images, pl, arm, item, bp);
                 }
                 _ => pl.label = EMPTY_LABEL.to_string(),

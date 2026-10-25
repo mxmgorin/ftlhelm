@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use super::api::{api, Point, Ptr};
 use super::mem::Obj;
 use super::offsets::*;
-use crate::config::layout::truncate_label;
+use super::string::GameString;
 
 /// The game's CApp, recorded by the OnLoop hook.
 static APP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -187,28 +187,20 @@ pub fn crew_dead(member: Obj) -> bool {
 /// library in its current language.
 pub fn display_text(text: Obj) -> String {
     if text.flag(TEXTSTRING_LITERAL) {
-        return truncate_label(&text.string(TEXTSTRING_TEXT));
+        return text.string(TEXTSTRING_TEXT);
     }
     let a = api();
-    let mut result: Ptr = std::ptr::null_mut();
-    // SAFETY: GetText fills the std::string at `result`, released below.
+    let mut result = GameString::returned();
+    // SAFETY: GetText constructs its result in place; GameString releases it.
     unsafe {
         (a.get_text)(
-            &mut result,
+            result.as_mut_ptr(),
             a.text_library as Ptr,
             text.ptr(),
             (a.text_library + TEXTLIB_LANGUAGE) as *const c_void,
         );
     }
-    let out = if result.is_null() {
-        String::new()
-    } else {
-        // SAFETY: `result` now holds a std::string's NUL-terminated data.
-        unsafe { std::ffi::CStr::from_ptr(result as *const std::ffi::c_char) }.to_string_lossy().into_owned()
-    };
-    // SAFETY: the string came from the game's constructor and is released once.
-    unsafe { (a.string_dtor)(&mut result) };
-    truncate_label(&out)
+    result.text()
 }
 
 /// Hotkey of a system type.
