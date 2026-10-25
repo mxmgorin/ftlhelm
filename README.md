@@ -25,6 +25,7 @@ Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad. 
 - **Help**: hold Start for the controls table
 - **Editable layout** in `ftlpad.ini`, re-read while the game runs
 - **Free cursor mode**: the D-pad and sticks move the game's cursor
+- **Larger text** in event boxes and tooltips on screens smaller than 1280x720
 
 ## Install
 

@@ -8,6 +8,7 @@ use super::mem::Obj;
 use super::offsets::*;
 use super::state;
 use crate::core::layer::Layer;
+use crate::ui::text;
 
 const DOOR_HALF: i32 = 10;
 /// Half the side of the square a beacon counts as.
@@ -194,8 +195,9 @@ impl Zones {
         let Some(choice) = state::open_choice() else {
             return false;
         };
+        let zoom = text::box_zoom(choice.addr());
         for (i, r) in choice.at(CHOICE_RECTS).vec_items::<Rect>().enumerate() {
-            self.push(r, i as i32, ZoneKind::Choice);
+            self.push(zoom.map_or(r, |z| z.to_screen(r)), i as i32, ZoneKind::Choice);
         }
         true
     }

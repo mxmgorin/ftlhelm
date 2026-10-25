@@ -6,6 +6,7 @@ use std::time::SystemTime;
 
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
+use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 
 const LAYOUT_ENV: &str = "FTLPAD_LAYOUT";
 const FILE_POLL_S: f64 = 1.0;
@@ -71,6 +72,8 @@ pub struct Settings {
     pub wheels_ship_only: bool,
     pub rumble_strength: f32,
     pub rumble_time: f32,
+    /// How much larger event and tooltip text is drawn; TEXT_SCALE_AUTO picks by screen size.
+    pub text_scale: f32,
 }
 
 impl Default for Settings {
@@ -98,6 +101,7 @@ impl Default for Settings {
             wheels_ship_only: true,
             rumble_strength: RUMBLE_STRENGTH,
             rumble_time: RUMBLE_S,
+            text_scale: TEXT_SCALE_AUTO,
         }
     }
 }
@@ -133,6 +137,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
     ("rumble_strength", Field::Float(|c| &mut c.rumble_strength, 0.0, 1.0)),
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
+    ("text_scale", Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
 ];
 
 impl Settings {

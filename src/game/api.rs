@@ -47,6 +47,34 @@ impl Rect {
     }
 }
 
+/// freetype::font_data: one entry of the game's font table.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FontData {
+    pub h: f32,
+    /// The engine's font handle.
+    pub font: i32,
+    /// The size glyphs are drawn at.
+    pub size: f32,
+    pub baseline: f32,
+    pub line_height: f32,
+}
+
+impl FontData {
+    pub const EMPTY: FontData = FontData { h: 0.0, font: 0, size: 0.0, baseline: 0.0, line_height: 0.0 };
+
+    /// The same font drawn `k` times larger, its metrics on whole pixels.
+    pub fn scaled(self, k: f32) -> FontData {
+        FontData {
+            h: (self.h * k).round(),
+            font: self.font,
+            size: self.size * k,
+            baseline: (self.baseline * k).round(),
+            line_height: (self.line_height * k).round(),
+        }
+    }
+}
+
 macro_rules! game_api {
     ($($field:ident: $ty:ty = $sym:literal,)*) => {
         /// The resolved entry points and globals. Hooked functions and data are kept as
@@ -126,6 +154,11 @@ game_api! {
     clear_crew: unsafe extern "C" fn(Ptr) = "_ZN11CrewControl17ClearSelectedCrewEv",
     deselect_crew: unsafe extern "C" fn(Ptr, Ptr) = "_ZN11CrewControl12DeselectCrewEP10CrewMember",
     mouse_position: usize = "_ZN12MouseControl5MouseE",
+    font_data: usize = "_ZN15ResourceControl11GetFontDataEib",
+    choice_render: usize = "_ZN9ChoiceBox8OnRenderEv",
+    measure_tooltip: usize = "_ZN12MouseControl14MeasureTooltipEi",
+    choice_mouse_move: usize = "_ZN9ChoiceBox9MouseMoveEii",
+    frame_draw: usize = "_ZN11WindowFrame4DrawEii",
 }
 
 static API: OnceLock<Api> = OnceLock::new();

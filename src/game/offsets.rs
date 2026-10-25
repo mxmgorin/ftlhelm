@@ -52,9 +52,14 @@ pub const STARMAP_SECTOR_OFFSET: usize = 3240;
 pub const STARMAP_SECTOR_HITBOXES: usize = 3256;
 pub const LOCATION_LOC: usize = 0;
 
+/// ChoiceBox::box, the WindowFrame its OnRender builds and draws.
+pub const CHOICE_FRAME: usize = 40;
 pub const CHOICE_TEXT: usize = 48;
 pub const CHOICE_RECTS: usize = 88;
 pub const CHOICE_OPEN_TIME: usize = 132;
+
+/// WindowFrame::rect, relative to the point the frame draws at.
+pub const FRAME_RECT: usize = 0;
 
 pub const BUTTON_HITBOX: usize = 16;
 pub const BUTTON_RENDER_OFF: usize = 34;
@@ -92,6 +97,13 @@ pub const BLUEPRINT_SHORT_TITLE: usize = 32;
 pub const TEXTSTRING_TEXT: usize = 0;
 pub const TEXTSTRING_LITERAL: usize = 8;
 pub const TEXTLIB_LANGUAGE: usize = 0x60;
+/// MouseControl::RenderTooltip moves a tooltip up until its box ends above this line.
+pub const TOOLTIP_BOTTOM: i32 = 670;
+/// What RenderTooltip adds to the measured height for the box: padding, then a title's.
+pub const TOOLTIP_PAD_H: i32 = 18;
+pub const TOOLTIP_TITLE_PAD_H: i32 = 5;
+/// Font ids ResourceControl::GetFontData resolves to the body text fonts, aliases included.
+pub const BODY_FONTS: std::ops::RangeInclusive<i32> = 6..=13;
 pub const TEXTURE_W: usize = 4;
 pub const TEXTURE_H: usize = 8;
 
