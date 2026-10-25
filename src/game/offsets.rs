@@ -1,4 +1,93 @@
 //! The game's object layout, ids and key codes, from the binary's DWARF and symbol table.
+//! The constants hold in every supported build; `Layout` holds the offsets that differ,
+//! one per build, picked at load by the executable's GNU build ID.
+
+use std::sync::OnceLock;
+
+/// Offsets that differ between the supported builds.
+pub struct Layout {
+    pub capp_modifier_x: usize,
+    pub capp_modifier_y: usize,
+    pub capp_mouse_modifier_x: usize,
+    pub capp_mouse_modifier_y: usize,
+    pub capp_x_bar: usize,
+    pub capp_y_bar: usize,
+    pub gui_paused: usize,
+    pub gui_ship_screens: usize,
+    pub gui_store_screens: usize,
+    pub gui_crew_screen: usize,
+    pub gui_equip_screen: usize,
+    pub main_menu_choice_box: usize,
+}
+
+/// A supported FTL.amd64: its GNU build ID and the layout of its objects.
+pub struct Build {
+    pub name: &'static str,
+    pub id: [u8; 20],
+    pub layout: Layout,
+}
+
+pub const BUILDS: [Build; 2] = [
+    Build {
+        name: "Steam 1.6.13",
+        id: [
+            0x93, 0x1e, 0x2d, 0xdf, 0x71, 0x29, 0x32, 0x97, 0x75, 0x91, 0x05, 0x48, 0x6b, 0x73, 0x58, 0x1b, 0x97, 0xbe,
+            0xb8, 0xcf,
+        ],
+        layout: Layout {
+            capp_modifier_x: 14648,
+            capp_modifier_y: 14652,
+            capp_mouse_modifier_x: 14668,
+            capp_mouse_modifier_y: 14672,
+            capp_x_bar: 14692,
+            capp_y_bar: 14696,
+            gui_paused: 12944,
+            gui_ship_screens: 13064,
+            gui_store_screens: 13448,
+            gui_crew_screen: 14552,
+            gui_equip_screen: 15624,
+            main_menu_choice_box: 13864,
+        },
+    },
+    Build {
+        name: "GOG 1.6.12",
+        id: [
+            0x47, 0xa4, 0xe6, 0x0d, 0x29, 0xa1, 0x16, 0xc2, 0xff, 0xd0, 0x2b, 0xbd, 0xc6, 0xf8, 0xfe, 0xd2, 0x50, 0x3b,
+            0xae, 0xbb,
+        ],
+        layout: Layout {
+            capp_modifier_x: 14384,
+            capp_modifier_y: 14388,
+            capp_mouse_modifier_x: 14404,
+            capp_mouse_modifier_y: 14408,
+            capp_x_bar: 14428,
+            capp_y_bar: 14432,
+            gui_paused: 12680,
+            gui_ship_screens: 12800,
+            gui_store_screens: 13184,
+            gui_crew_screen: 14288,
+            gui_equip_screen: 15360,
+            main_menu_choice_box: 13600,
+        },
+    },
+];
+
+static LAYOUT: OnceLock<&'static Layout> = OnceLock::new();
+
+/// Finds the supported build with this GNU build ID.
+pub fn build_by_id(id: &[u8]) -> Option<&'static Build> {
+    BUILDS.iter().find(|b| b.id == id)
+}
+
+/// Installs the running build's layout; the first call wins.
+pub fn install_layout(layout: &'static Layout) {
+    let _ = LAYOUT.set(layout);
+}
+
+/// The running build's layout. Only code that runs after a successful init reaches it.
+pub fn layout() -> &'static Layout {
+    LAYOUT.get().expect("hooks run only after the layout is installed")
+}
 
 /// The game's logical screen.
 pub const GAME_W: i32 = 1280;
@@ -8,12 +97,6 @@ pub const CAPP_GUI: usize = 16;
 pub const CAPP_MAIN_MENU: usize = 32;
 /// The Shift flag CApp::OnLoop samples once a frame and hands to the hotkeys.
 pub const CAPP_SHIFT_HELD: usize = 9;
-pub const CAPP_MODIFIER_X: usize = 14648;
-pub const CAPP_MODIFIER_Y: usize = 14652;
-pub const CAPP_MOUSE_MODIFIER_X: usize = 14668;
-pub const CAPP_MOUSE_MODIFIER_Y: usize = 14672;
-pub const CAPP_X_BAR: usize = 14692;
-pub const CAPP_Y_BAR: usize = 14696;
 
 pub const GUI_CREW_CONTROL: usize = 616;
 pub const CREW_CONTROL_SIZE: usize = 552;
@@ -28,19 +111,11 @@ pub const GUI_SHIP_COMPLETE: usize = 6512;
 pub const GUI_SHIP_POSITION: usize = 6656;
 pub const GUI_CHOICE_BOX: usize = 6688;
 pub const GUI_MENU_BOX: usize = 7232;
-pub const MENU_BOX_SIZE: usize = 1136;
 pub const GUI_OPTIONS_BOX: usize = 8592;
-pub const OPTIONS_BOX_SIZE: usize = 4352;
-pub const GUI_PAUSED: usize = 12944;
-pub const GUI_SHIP_SCREENS: usize = 13064;
-pub const GUI_STORE_SCREENS: usize = 13448;
-pub const GUI_CREW_SCREEN: usize = 14552;
-pub const GUI_EQUIP_SCREEN: usize = 15624;
 
 pub const FOCUS_OPEN: usize = 8;
 
 pub const MAIN_MENU_OPEN: usize = 0;
-pub const MAIN_MENU_CHOICE_BOX: usize = 13864;
 
 pub const STARMAP_SIZE: usize = 3280;
 pub const STARMAP_LOCATIONS: usize = 40;

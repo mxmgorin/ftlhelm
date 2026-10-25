@@ -410,7 +410,7 @@ mod tests {
             };
             let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
             assert_eq!(cancel(&mut l), []);
-            g.gui.at(GUI_SHIP_SCREENS).set(FOCUS_OPEN, 1u8);
+            g.gui.at(layout().gui_ship_screens).set(FOCUS_OPEN, 1u8);
             assert_eq!(cancel(&mut l), escape);
             let member = g.arena.alloc(std::mem::size_of::<usize>());
             g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(member)]);

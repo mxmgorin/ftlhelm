@@ -18,8 +18,7 @@ use crate::core::util::{clampf, log};
 use crate::game::api::{api, FontData, Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::{
-    BODY_FONTS, CAPP_MOUSE_MODIFIER_X, CAPP_MOUSE_MODIFIER_Y, CHOICE_FRAME, FRAME_RECT, GAME_H, GAME_W, TOOLTIP_BOTTOM,
-    TOOLTIP_PAD_H, TOOLTIP_TITLE_PAD_H,
+    layout, BODY_FONTS, CHOICE_FRAME, FRAME_RECT, GAME_H, GAME_W, TOOLTIP_BOTTOM, TOOLTIP_PAD_H, TOOLTIP_TITLE_PAD_H,
 };
 
 /// The `text_scale` value that leaves the scale to the screen.
@@ -58,7 +57,10 @@ fn scale() -> f32 {
 /// Sets the scale from the `text_scale` setting and the game's current frame; logs a change.
 pub fn update(setting: f32, app: Option<Obj>) {
     let scale = if setting == TEXT_SCALE_AUTO {
-        app.map_or(UNSCALED, |a| auto_scale(a.f32(CAPP_MOUSE_MODIFIER_X).max(a.f32(CAPP_MOUSE_MODIFIER_Y))))
+        app.map_or(UNSCALED, |a| {
+            let l = layout();
+            auto_scale(a.f32(l.capp_mouse_modifier_x).max(a.f32(l.capp_mouse_modifier_y)))
+        })
     } else {
         clampf(setting, UNSCALED, TEXT_SCALE_MAX)
     };

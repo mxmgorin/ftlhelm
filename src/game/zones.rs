@@ -220,8 +220,10 @@ impl Zones {
     /// Equipment and crew slots of an open ship screen, which are not buttons; the overflow
     /// boxes only while shown.
     fn add_slot_zones(&mut self, gui: Obj) {
-        let screens: [(usize, usize, &[ShownBox]); 2] =
-            [(GUI_EQUIP_SCREEN, EQUIP_BOXES, &EQUIP_OVERFLOW), (GUI_CREW_SCREEN, CREWSCREEN_BOXES, &[])];
+        let screens: [(usize, usize, &[ShownBox]); 2] = [
+            (layout().gui_equip_screen, EQUIP_BOXES, &EQUIP_OVERFLOW),
+            (layout().gui_crew_screen, CREWSCREEN_BOXES, &[]),
+        ];
         for (window, boxes, overflow) in screens {
             let window = gui.at(window);
             if !window.flag(FOCUS_OPEN) {
@@ -467,7 +469,7 @@ mod tests {
         with_game(|g| {
             let menu = g.app.at(CAPP_MAIN_MENU);
             menu.set(MAIN_MENU_OPEN, 1u8);
-            let choice = menu.at(MAIN_MENU_CHOICE_BOX);
+            let choice = menu.at(layout().main_menu_choice_box);
             choice.set(FOCUS_OPEN, 1u8);
             g.arena.vector(choice, CHOICE_RECTS, &[rect(500, 300)]);
             assert_eq!(built(&mut Layer::default()), [(ZoneKind::Choice, 0, rect(500, 300))]);
@@ -478,8 +480,8 @@ mod tests {
     fn the_equipment_screen_lists_shown_slots_and_buttons_off_the_hud() {
         with_game(|g| {
             two_ships(g);
-            g.gui.at(GUI_SHIP_SCREENS).set(FOCUS_OPEN, 1u8);
-            let equip = g.gui.at(GUI_EQUIP_SCREEN);
+            g.gui.at(layout().gui_ship_screens).set(FOCUS_OPEN, 1u8);
+            let equip = g.gui.at(layout().gui_equip_screen);
             equip.set(FOCUS_OPEN, 1u8);
             let mut slot = |r: Rect| {
                 let b = g.arena.alloc(EQUIPBOX_HITBOX + size_of::<Rect>());

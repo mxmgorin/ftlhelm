@@ -101,7 +101,7 @@ pub fn crew_is_selected(member: Obj) -> bool {
 }
 
 pub fn game_paused() -> bool {
-    gui().is_some_and(|g| g.flag(GUI_PAUSED))
+    gui().is_some_and(|g| g.flag(layout().gui_paused))
 }
 
 pub fn window_open(window: Option<Obj>) -> bool {
@@ -123,7 +123,8 @@ pub fn star_map_open() -> bool {
 
 /// The open dialog with choices: the main menu's while the menu is up, else the event box.
 pub fn open_choice() -> Option<Obj> {
-    let choice = if main_menu_open() { main_menu()?.at(MAIN_MENU_CHOICE_BOX) } else { gui()?.at(GUI_CHOICE_BOX) };
+    let choice =
+        if main_menu_open() { main_menu()?.at(layout().main_menu_choice_box) } else { gui()?.at(GUI_CHOICE_BOX) };
     choice.flag(FOCUS_OPEN).then_some(choice)
 }
 
@@ -134,16 +135,15 @@ pub fn choice_open() -> bool {
 /// The open tabbed screen (ship or store).
 pub fn open_tabbed() -> Option<Obj> {
     let g = gui()?;
-    [GUI_SHIP_SCREENS, GUI_STORE_SCREENS].into_iter().map(|off| g.at(off)).find(|w| w.flag(FOCUS_OPEN))
+    [layout().gui_ship_screens, layout().gui_store_screens]
+        .into_iter()
+        .map(|off| g.at(off))
+        .find(|w| w.flag(FOCUS_OPEN))
 }
 
-/// The game menu or the options screen when one is open, with its size: only its buttons
-/// count.
-pub fn modal_window(gui: Obj) -> Option<(Obj, usize)> {
-    [(GUI_OPTIONS_BOX, OPTIONS_BOX_SIZE), (GUI_MENU_BOX, MENU_BOX_SIZE)]
-        .into_iter()
-        .map(|(off, size)| (gui.at(off), size))
-        .find(|(w, _)| w.flag(FOCUS_OPEN))
+/// The game menu or the options screen, when one is open.
+pub fn modal_window(gui: Obj) -> Option<Obj> {
+    [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
 }
 
 /// The weapon or drone object in slot i of an armament control.

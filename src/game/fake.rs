@@ -18,14 +18,16 @@ use super::mem::Obj;
 use super::offsets::*;
 use super::state;
 
+/// The layout the stand-in game takes: the first supported build's.
+const STAND_IN: &Layout = &BUILDS[0].layout;
 /// A std::vector's begin and end pointers.
 const VECTOR_FIELDS: usize = VECTOR_END + size_of::<usize>();
 /// Reaches the last mouse field the readers use.
 const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
 /// Reaches the last CApp field the readers use.
-const APP_SIZE: usize = CAPP_Y_BAR + size_of::<i32>();
+const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
-const GUI_SIZE: usize = GUI_EQUIP_SCREEN + EQUIP_OVER_AUG_CAPACITY + size_of::<u8>();
+const GUI_SIZE: usize = STAND_IN.gui_equip_screen + EQUIP_OVER_AUG_CAPACITY + size_of::<u8>();
 const MANAGER_SIZE: usize = SHIPMANAGER_SHIP + SHIP_AIRLOCKS + VECTOR_FIELDS;
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
@@ -244,6 +246,7 @@ extern "C" fn joy_read_dpad(_dev: c_int, x: *mut c_int, y: *mut c_int) {
 }
 
 fn install_api() -> usize {
+    install_layout(STAND_IN);
     let words = STATICS_SIZE.div_ceil(size_of::<u64>());
     let block = Box::leak(vec![0u64; words].into_boxed_slice()).as_mut_ptr() as usize;
     // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a

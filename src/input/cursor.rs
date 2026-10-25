@@ -72,12 +72,13 @@ impl Layer {
         let Some(app) = state::app() else {
             return (gx as i32, gy as i32);
         };
-        let mx = app.f32(CAPP_MOUSE_MODIFIER_X);
-        let my = app.f32(CAPP_MOUSE_MODIFIER_Y);
+        let l = layout();
+        let mx = app.f32(l.capp_mouse_modifier_x);
+        let my = app.f32(l.capp_mouse_modifier_y);
         let mx = if mx <= 0.0 { 1.0 } else { mx };
         let my = if my <= 0.0 { 1.0 } else { my };
-        let wx = ((gx + app.i32(CAPP_MODIFIER_X) as f32) / mx).round() as i32 + app.i32(CAPP_X_BAR);
-        let wy = ((gy + app.i32(CAPP_MODIFIER_Y) as f32) / my).round() as i32 + app.i32(CAPP_Y_BAR);
+        let wx = ((gx + app.i32(l.capp_modifier_x) as f32) / mx).round() as i32 + app.i32(l.capp_x_bar);
+        let wy = ((gy + app.i32(l.capp_modifier_y) as f32) / my).round() as i32 + app.i32(l.capp_y_bar);
         (wx, wy)
     }
 
