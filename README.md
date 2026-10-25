@@ -64,8 +64,8 @@ See **[Linux](docs/LINUX.md)** for GOG, running without Steam and troubleshootin
 
 ## Docs
 
-- **[Controls](docs/CONTROLS.md)**: wheels, settings wheel, custom layouts
-- **[Configuration](docs/CONFIGURATION.md)**: settings, environment variables
+- **[Controls](docs/CONTROLS.md)**: zones, doors, mouse mode, wheels, zoom, text size
+- **[Configuration](docs/CONFIGURATION.md)**: settings, bindings, wheels, environment variables
 - **[Linux](docs/LINUX.md)**: GOG, without Steam, troubleshooting
 - **[Building](docs/BUILDING.md)**: build commands, CI, test channel
 

@@ -15,8 +15,7 @@ GOG 1.6.12. The library needs glibc 2.35 or later.
 | `LICENSE` | the GNU General Public License v3.0 |
 | `NOTICE` | copyright, additional license terms, third-party notices |
 
-`ftlhelm.sh` expects the other two files next to it. The settings wheel writes its values
-into `ftlhelm.ini`.
+`ftlhelm.sh` expects the other two files next to it.
 
 ## Steam
 
@@ -41,12 +40,6 @@ The environment `ftlhelm.sh` sets, for another launcher:
     LD_PRELOAD=/path/ftlhelm.so FTLHELM_LAYOUT=/path/ftlhelm.ini
 
 Other variables are in [Configuration](CONFIGURATION.md#environment-variables).
-
-## Pads
-
-Face buttons go by their labels. With `SDL_GAMECONTROLLERCONFIG` set, its mapping names
-them. Without it, `swap_ab` and `swap_xy` in `[config]` swap the raw A/B and X/Y pairs;
-both are off by default.
 
 ## Troubleshooting
 
