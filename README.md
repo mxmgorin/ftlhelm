@@ -29,7 +29,7 @@ Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad. 
 
 ## Install
 
-Requires the Steam build of FTL 1.6.13.
+Requires FTL 1.6.13 from Steam or 1.6.12 from GOG. The steps below are for Steam.
 
 1. Download [`ftlpad-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlpad/releases/latest/download/ftlpad-linux-x86_64.tar.gz) from the [latest release](https://github.com/mxmgorin/ftlpad/releases/latest) and unpack it anywhere, e.g. `~/ftlpad/`.
 2. In Steam, open FTL's **Properties > General > Launch Options** and enter:
@@ -38,7 +38,7 @@ Requires the Steam build of FTL 1.6.13.
 
 3. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
 
-See **[Linux](docs/LINUX.md)** for running without Steam and troubleshooting.
+See **[Linux](docs/LINUX.md)** for GOG, running without Steam and troubleshooting.
 
 ## Controls
 

@@ -1,7 +1,7 @@
 # Linux
 
-ftlpad runs inside the native Linux build of FTL (`FTL.amd64`, x86_64). The library needs
-glibc 2.35 or later.
+ftlpad runs inside the native Linux build of FTL (`FTL.amd64`, x86_64): Steam 1.6.13 or
+GOG 1.6.12. The library needs glibc 2.35 or later.
 
 ## Files
 
@@ -22,11 +22,16 @@ glibc 2.35 or later.
 Setup steps are in the [README](../README.md#install). `ftlpad.sh` keeps the preloads Steam
 sets, such as the Steam overlay.
 
+## GOG
+
+    ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh "/path/to/the GOG install/start.sh"
+
 ## Without Steam
 
-    ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh "/path/to/FTL Faster Than Light/FTL"
+A Steam copy runs from its own directory:
 
-`FTL` is the game's own launch script; it starts `data/FTL.amd64`.
+    cd "/path/to/FTL Faster Than Light"
+    ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh ./FTL
 
 ## By hand
 
@@ -50,6 +55,6 @@ start Steam from a terminal to see it.
 | Log | Meaning |
 | --- | --- |
 | no `ftlpad:` lines | the library did not load, or the process is not FTL: check the path in the launch options |
-| `unknown build, inactive` | an FTL build other than Steam 1.6.13 |
+| `unknown build, inactive` | an FTL build other than Steam 1.6.13 or GOG 1.6.12 |
 
 `FTLPAD_DEBUG=1` also logs every press, wheel pick and D-pad step.
