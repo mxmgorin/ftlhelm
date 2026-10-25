@@ -144,6 +144,11 @@ without one), and an optional icon: a game image path under `img/` in `ftl.dat`,
 
 ## Environment variables
 
+`ftlhelm.sh` sets `LD_PRELOAD` and `FTLHELM_LAYOUT`, keeping the preloads already set, such as
+the Steam overlay. Another launcher sets them itself:
+
+    LD_PRELOAD=/path/ftlhelm.so FTLHELM_LAYOUT=/path/ftlhelm.ini
+
 | Variable | Value |
 | --- | --- |
 | `LD_PRELOAD` | path to `ftlhelm.so`; under box64, `BOX64_LD_PRELOAD` |

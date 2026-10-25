@@ -50,23 +50,37 @@ Tap **Select** in the game for the settings wheel: mouse mode, zoom, text size a
 
 ## Install
 
-Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG. The Windows and macOS builds are not supported. On another Linux build, ftlhelm stays inactive and the game runs without it. The steps below are for Steam.
+Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG, and glibc 2.35 or later. The Windows and macOS builds are not supported. On another Linux build, ftlhelm stays inactive and the game runs without it.
 
-1. Download [`ftlhelm-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlhelm/releases/latest/download/ftlhelm-linux-x86_64.tar.gz) from the [latest release](https://github.com/mxmgorin/ftlhelm/releases/latest) and unpack it anywhere, e.g. `~/ftlhelm/`.
-2. In Steam, open FTL's **Properties > General > Launch Options** and enter:
+Download [`ftlhelm-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlhelm/releases/latest/download/ftlhelm-linux-x86_64.tar.gz) from the [latest release](https://github.com/mxmgorin/ftlhelm/releases/latest) and unpack it anywhere, e.g. `~/ftlhelm/`. `ftlhelm.sh` expects the other files next to it.
+
+### Steam
+
+1. In FTL's **Properties > General > Launch Options**, enter:
 
        ~/ftlhelm/ftlhelm-linux-x86_64/ftlhelm.sh %command%
 
-3. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
-4. In **Properties > Compatibility**, leave **Force the use of a specific Steam Play compatibility tool** off.
+2. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
+3. In **Properties > Compatibility**, leave **Force the use of a specific Steam Play compatibility tool** off.
 
-See **[Linux](docs/LINUX.md)** for GOG, running without Steam and troubleshooting.
+### GOG
+
+    ~/ftlhelm/ftlhelm-linux-x86_64/ftlhelm.sh "/path/to/the GOG install/start.sh"
+
+### Without Steam
+
+A Steam copy runs from its own directory:
+
+    cd "/path/to/FTL Faster Than Light"
+    ~/ftlhelm/ftlhelm-linux-x86_64/ftlhelm.sh ./FTL
+
+If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
 
 - **[Controls](docs/CONTROLS.md)**: zones, doors, mouse mode, wheels, zoom, text size
 - **[Configuration](docs/CONFIGURATION.md)**: settings, bindings, wheels, environment variables
-- **[Linux](docs/LINUX.md)**: GOG, without Steam, troubleshooting
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)**: the log and what its lines mean
 - **[Building](docs/BUILDING.md)**: build commands, CI, test channel
 
 ## How to help
