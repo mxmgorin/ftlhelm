@@ -5,6 +5,7 @@ use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotM
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, MouseButton};
+use crate::game::api::api;
 use crate::game::offsets::*;
 use crate::game::state;
 use crate::game::zones::ZoneKind;
@@ -170,7 +171,7 @@ impl Layer {
             Builtin::Cancel if down => {
                 if self.wheel.open.is_some() {
                     self.close_wheel();
-                } else if state::gui_window_open(GUI_MENU_BOX) || state::gui_window_open(GUI_OPTIONS_BOX) {
+                } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some()) {
                     tap_key(KEY_ESCAPE, false);
                 } else if state::aiming() {
                     // The right button cancels targeting.
@@ -178,7 +179,7 @@ impl Layer {
                 } else if state::any_crew_selected() {
                     if let Some(gui) = state::gui() {
                         // SAFETY: ClearSelectedCrew on the GUI's CrewControl.
-                        unsafe { (crate::game::api::api().clear_crew)(gui.at(GUI_CREW_CONTROL).ptr()) };
+                        unsafe { (api().clear_crew)(gui.at(GUI_CREW_CONTROL).ptr()) };
                     }
                 } else if state::open_tabbed().is_some() || state::choice_open() || state::star_map_open() {
                     tap_key(KEY_ESCAPE, false);
