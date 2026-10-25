@@ -54,7 +54,7 @@ start Steam from a terminal to see it.
 
 | Log | Meaning |
 | --- | --- |
-| no `ftlpad:` lines | the library did not load, or the process is not FTL: check the path in the launch options |
+| no `ftlpad:` lines | the library did not load, or the process is not the native FTL: check the path in the launch options and that no Steam Play compatibility tool is forced |
 | `unknown build, inactive` | an FTL build other than Steam 1.6.13 or GOG 1.6.12 |
 
 `FTLPAD_DEBUG=1` also logs every press, wheel pick and D-pad step.

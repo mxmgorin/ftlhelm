@@ -2,6 +2,7 @@
 
 <div align="center">
   <a href="https://github.com/mxmgorin/ftlpad/releases/latest"><img src="https://img.shields.io/github/v/release/mxmgorin/ftlpad?style=flat-square&labelColor=16171a&color=3fb8a0&cacheSeconds=180&label=release" alt="Latest release"></a>
+  <a href="https://github.com/mxmgorin/ftlpad/releases"><img src="https://img.shields.io/github/downloads/mxmgorin/ftlpad/total?style=flat-square&labelColor=16171a&color=3fb8a0&label=downloads&cacheSeconds=180" alt="Downloads"></a>
   <a href="https://github.com/mxmgorin/ftlpad/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/mxmgorin/ftlpad/check.yml?branch=main&style=flat-square&labelColor=16171a&color=3fb8a0&cacheSeconds=180&logo=githubactions&logoColor=white&label=ci" alt="CI"></a>
 </div>
 
@@ -11,7 +12,7 @@
   <a href="https://github.com/mxmgorin/ftlpad/issues">Issues</a>
 </p>
 
-Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad. FTL has no controller support; ftlpad adds it without changing the game files.
+Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad on Linux. FTL has no controller support; ftlpad adds it without changing the game files.
 
 <p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
 
@@ -26,10 +27,11 @@ Play [FTL: Faster Than Light](https://subsetgames.com/ftl.html) with a gamepad. 
 - **Editable layout** in `ftlpad.ini`, re-read while the game runs
 - **Free cursor mode**: the D-pad and sticks move the game's cursor
 - **Larger text** in event boxes and tooltips on screens smaller than 1280x720
+- **Build check**: on an FTL build other than Steam 1.6.13 or GOG 1.6.12, ftlpad stays inactive and the game runs without it
 
 ## Install
 
-Requires FTL 1.6.13 from Steam or 1.6.12 from GOG. The steps below are for Steam.
+Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG. The Windows and macOS builds are not supported. The steps below are for Steam.
 
 1. Download [`ftlpad-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlpad/releases/latest/download/ftlpad-linux-x86_64.tar.gz) from the [latest release](https://github.com/mxmgorin/ftlpad/releases/latest) and unpack it anywhere, e.g. `~/ftlpad/`.
 2. In Steam, open FTL's **Properties > General > Launch Options** and enter:
@@ -37,6 +39,7 @@ Requires FTL 1.6.13 from Steam or 1.6.12 from GOG. The steps below are for Steam
        ~/ftlpad/ftlpad-linux-x86_64/ftlpad.sh %command%
 
 3. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
+4. In **Properties > Compatibility**, leave **Force the use of a specific Steam Play compatibility tool** off.
 
 See **[Linux](docs/LINUX.md)** for GOG, running without Steam and troubleshooting.
 
