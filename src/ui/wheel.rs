@@ -160,6 +160,13 @@ fn wheel_origin(cx: f32, cy: f32) -> (f32, f32) {
     (clampf(cx, reach, GAME_W as f32 - reach), clampf(cy, reach, GAME_H as f32 - reach))
 }
 
+/// The frame area a wheel opened at (cx, cy) covers: left, top, right, bottom.
+pub fn wheel_area(cx: f32, cy: f32) -> [f32; 4] {
+    let (ox, oy) = wheel_origin(cx, cy);
+    let r = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_DISC_PAD;
+    [ox - r, oy - r, ox + r, oy + r]
+}
+
 /// Plate centre for a wheel slot around an origin.
 fn plate_center((ox, oy): (f32, f32), slot: usize) -> (f32, f32) {
     let angle = slot as f32 * PI / 4.0;

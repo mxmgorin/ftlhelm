@@ -4,6 +4,8 @@
 
 use std::sync::OnceLock;
 
+use super::api::Rect;
+
 /// Offsets that differ between the supported builds.
 pub struct Layout {
     pub capp_modifier_x: usize,
@@ -114,6 +116,26 @@ pub const GUI_MENU_BOX: usize = 7232;
 pub const GUI_OPTIONS_BOX: usize = 8592;
 
 pub const FOCUS_OPEN: usize = 8;
+pub const TABBED_CURRENT_TAB: usize = 104;
+/// The store's sell tab, which adds a sell box left of the window.
+pub const STORE_SELL_TAB: i32 = 1;
+/// MenuScreen::confirmDialog, the yes-or-no window over the game menu.
+pub const MENU_CONFIRM: usize = 120;
+/// MenuScreen::bShowControls: the controls overview over the whole frame.
+pub const MENU_SHOW_CONTROLS: usize = 776;
+/// OptionsScreen::bCustomizeControls: the hotkey screen over the whole frame.
+pub const OPTIONS_CUSTOMIZE_CONTROLS: usize = 672;
+
+/// Windows' extents in the frame, tabs and buttons included, as the game places them.
+pub const SHIP_SCREENS_RECT: Rect = Rect { x: 342, y: 85, w: 587, h: 511 };
+pub const STAR_MAP_RECT: Rect = Rect { x: 340, y: 83, w: 752, h: 580 };
+pub const MENU_RECT: Rect = Rect { x: 421, y: 220, w: 479, h: 281 };
+pub const OPTIONS_RECT: Rect = Rect { x: 237, y: 150, w: 806, h: 430 };
+/// The left edge of the store's sell box.
+const SELL_BOX_X: i32 = 67;
+/// The store's sell tab: the ship screens' extent widened to the sell box.
+pub const STORE_SELL_RECT: Rect =
+    Rect { x: SELL_BOX_X, w: SHIP_SCREENS_RECT.x + SHIP_SCREENS_RECT.w - SELL_BOX_X, ..SHIP_SCREENS_RECT };
 
 pub const MAIN_MENU_OPEN: usize = 0;
 

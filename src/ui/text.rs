@@ -54,12 +54,13 @@ fn scale() -> f32 {
     f32::from_bits(SCALE.load(Ordering::Relaxed))
 }
 
-/// Sets the scale from the `text_scale` setting and the game's current frame; logs a change.
-pub fn update(setting: f32, app: Option<Obj>) {
+/// Sets the scale from the `text_scale` setting, the game's current frame and the zoom
+/// level it is shown at; logs a change.
+pub fn update(setting: f32, app: Option<Obj>, zoom: f32) {
     let scale = if setting == TEXT_SCALE_AUTO {
         app.map_or(UNSCALED, |a| {
             let l = layout();
-            auto_scale(a.f32(l.capp_mouse_modifier_x).max(a.f32(l.capp_mouse_modifier_y)))
+            auto_scale(a.f32(l.capp_mouse_modifier_x).max(a.f32(l.capp_mouse_modifier_y)) / zoom)
         })
     } else {
         clampf(setting, UNSCALED, TEXT_SCALE_MAX)

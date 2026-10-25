@@ -197,8 +197,14 @@ impl Layer {
             Builtin::NextTab if down => actions::tab_step(1),
             Builtin::Help if down => self.help_shown = !self.help_shown,
             Builtin::RoomDoors if down => self.room_doors(),
-            Builtin::Pause if down => tap_key(KEY_SPACE, false),
+            Builtin::Pause => {
+                if down {
+                    tap_key(KEY_SPACE, false);
+                }
+                self.zoom_peek(down);
+            }
             Builtin::DpadMode if down => self.bind.dpad_mouse = !self.bind.dpad_mouse,
+            Builtin::Zoom if down => self.zoom_cycle(),
             Builtin::FastForward => {
                 if down && state::game_paused() {
                     tap_key(KEY_SPACE, false);
@@ -270,21 +276,9 @@ impl Layer {
         self.bind.active[input as usize] = Some(action);
     }
 
-    /// Whether wheels may open: anywhere, or with wheels_ship_only only on the ship view
-    /// with nothing over it (no menu, ship or store screen, dialog or map).
+    /// Whether wheels may open: anywhere, or with wheels_ship_only only on the ship view.
     pub fn wheel_screen(&self) -> bool {
-        if !self.cfg.wheels_ship_only {
-            return true;
-        }
-        let Some(gui) = state::gui() else {
-            return false;
-        };
-        state::player_complete().is_some()
-            && !state::main_menu_open()
-            && state::open_tabbed().is_none()
-            && state::modal_window(gui).is_none()
-            && !state::choice_open()
-            && !state::star_map_open()
+        !self.cfg.wheels_ship_only || state::ship_view()
     }
 
     /// A press runs its binding at once, unless it carries a tap half that would act: then

@@ -13,6 +13,7 @@ use crate::input::cursor::{Cursor, FirstFocus};
 use crate::input::pad::PadState;
 use crate::ui::draw::{Images, WHEEL_FONT};
 use crate::ui::wheel::WheelUi;
+use crate::ui::zoom::Zoom;
 
 /// Everything the hooks share; each module adds its methods.
 pub struct Layer {
@@ -28,6 +29,7 @@ pub struct Layer {
     pub actions: Actions,
     pub pad: PadState,
     pub wheel: WheelUi,
+    pub zoom: Zoom,
     pub images: Images,
     /// The font of the wheel's text.
     pub plate_font: i32,
@@ -50,6 +52,7 @@ impl Default for Layer {
             actions: Actions::default(),
             pad: PadState::default(),
             wheel: WheelUi::default(),
+            zoom: Zoom::default(),
             images: Images::default(),
             plate_font: WHEEL_FONT,
             help_shown: false,

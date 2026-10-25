@@ -159,6 +159,10 @@ game_api! {
     measure_tooltip: usize = "_ZN12MouseControl14MeasureTooltipEi",
     choice_mouse_move: usize = "_ZN9ChoiceBox9MouseMoveEii",
     frame_draw: usize = "_ZN11WindowFrame4DrawEii",
+    display_width: unsafe extern "C" fn() -> c_int = "graphics_display_width",
+    display_height: unsafe extern "C" fn() -> c_int = "graphics_display_height",
+    set_viewport: unsafe extern "C" fn(c_int, c_int, c_int, c_int) = "_ZN8CSurface14GL_SetViewPortEiiii",
+    blit_frame: usize = "_ZN8CSurface18GL_BlitFrameBufferEPiffb",
 }
 
 static API: OnceLock<Api> = OnceLock::new();

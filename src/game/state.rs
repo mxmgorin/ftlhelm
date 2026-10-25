@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use super::api::{api, Point, Ptr};
+use super::api::{api, Point, Ptr, Rect};
 use super::mem::Obj;
 use super::offsets::*;
 use super::string::GameString;
@@ -139,6 +139,50 @@ pub fn open_tabbed() -> Option<Obj> {
         .into_iter()
         .map(|off| g.at(off))
         .find(|w| w.flag(FOCUS_OPEN))
+}
+
+/// Whether the ship view is up with nothing over it: no menu, ship or store screen, dialog
+/// or map.
+pub fn ship_view() -> bool {
+    let Some(gui) = gui() else {
+        return false;
+    };
+    player_complete().is_some()
+        && !main_menu_open()
+        && open_tabbed().is_none()
+        && modal_window(gui).is_none()
+        && !choice_open()
+        && !star_map_open()
+}
+
+/// The extent of the topmost window over the frame: the options, the game menu, a store or
+/// ship screen, or the map; None with no window, a dialog, or a screen over the whole frame.
+pub fn window_rect() -> Option<Rect> {
+    let gui = gui()?;
+    if main_menu_open() {
+        return None;
+    }
+    let options = gui.at(GUI_OPTIONS_BOX);
+    if options.flag(FOCUS_OPEN) {
+        return (!options.flag(OPTIONS_CUSTOMIZE_CONTROLS)).then_some(OPTIONS_RECT);
+    }
+    let menu = gui.at(GUI_MENU_BOX);
+    if menu.flag(FOCUS_OPEN) {
+        let whole = menu.flag(MENU_SHOW_CONTROLS) || menu.at(MENU_CONFIRM).flag(FOCUS_OPEN);
+        return (!whole).then_some(MENU_RECT);
+    }
+    if choice_open() {
+        return None;
+    }
+    let store = gui.at(layout().gui_store_screens);
+    if store.flag(FOCUS_OPEN) {
+        let sell = store.i32(TABBED_CURRENT_TAB) == STORE_SELL_TAB;
+        return Some(if sell { STORE_SELL_RECT } else { SHIP_SCREENS_RECT });
+    }
+    if gui.at(layout().gui_ship_screens).flag(FOCUS_OPEN) {
+        return Some(SHIP_SCREENS_RECT);
+    }
+    star_map_open().then_some(STAR_MAP_RECT)
 }
 
 /// The game menu or the options screen, when one is open.
@@ -283,6 +327,31 @@ pub fn fps_control() -> Obj {
 mod tests {
     use super::*;
     use crate::game::fake::{live_strings, with_game};
+
+    #[test]
+    fn the_topmost_window_gives_the_rect() {
+        with_game(|g| {
+            assert_eq!(window_rect(), None);
+            let ships = g.gui.at(layout().gui_ship_screens);
+            ships.set(FOCUS_OPEN, 1u8);
+            assert_eq!(window_rect(), Some(SHIP_SCREENS_RECT));
+            ships.set(FOCUS_OPEN, 0u8);
+            let store = g.gui.at(layout().gui_store_screens);
+            store.set(FOCUS_OPEN, 1u8);
+            store.set(TABBED_CURRENT_TAB, STORE_SELL_TAB);
+            assert_eq!(window_rect(), Some(STORE_SELL_RECT));
+            // A dialog over the store shows the whole frame; the game menu over the dialog is fitted.
+            g.gui.at(GUI_CHOICE_BOX).set(FOCUS_OPEN, 1u8);
+            assert_eq!(window_rect(), None);
+            let menu = g.gui.at(GUI_MENU_BOX);
+            menu.set(FOCUS_OPEN, 1u8);
+            assert_eq!(window_rect(), Some(MENU_RECT));
+            menu.set(MENU_SHOW_CONTROLS, 1u8);
+            assert_eq!(window_rect(), None);
+            g.gui.at(GUI_OPTIONS_BOX).set(FOCUS_OPEN, 1u8);
+            assert_eq!(window_rect(), Some(OPTIONS_RECT));
+        });
+    }
 
     #[test]
     fn display_text_reads_literals_and_translates_keys() {

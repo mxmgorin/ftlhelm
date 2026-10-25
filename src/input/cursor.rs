@@ -140,6 +140,10 @@ impl Layer {
             log!("focus {:.0},{:.0}: from {} to {}", dx / len, dy / len, index(from), index(best));
         }
         let Some(best) = best else {
+            // Nothing that way: a zoomed view looks there instead.
+            if self.zoom_pan(dx, dy) {
+                self.buzz();
+            }
             return;
         };
         (self.cursor.x, self.cursor.y) = rects[best].center();

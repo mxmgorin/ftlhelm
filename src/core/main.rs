@@ -6,6 +6,7 @@
 //! - ChoiceBox::OnRender, WindowFrame::Draw and ChoiceBox::MouseMove draw and hit-test
 //!   event boxes scaled;
 //! - MouseControl::MeasureTooltip and ResourceControl::GetFontData scale tooltip fonts;
+//! - CSurface::GL_BlitFrameBuffer shows the zoomed view;
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
 use std::ffi::{c_int, c_void};
@@ -20,7 +21,7 @@ use crate::game::mem::Obj;
 use crate::game::offsets::{build_by_id, install_layout};
 use crate::game::zones::record_button;
 use crate::game::{sound, state};
-use crate::ui::text;
+use crate::ui::{text, zoom};
 
 const DEBUG_ENV: &str = "FTLHELM_DEBUG";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -45,6 +46,8 @@ const MEASURE_TOOLTIP_PROLOGUE: [u8; 5] = [0x41, 0x55, 0x0f, 0x57, 0xc9];
 const CHOICE_MOUSE_MOVE_PROLOGUE: [u8; 5] = [0x41, 0x55, 0x41, 0x89, 0xd5];
 /// push %r12; mov %edx,%r12d
 const FRAME_DRAW_PROLOGUE: [u8; 5] = [0x41, 0x54, 0x41, 0x89, 0xd4];
+/// push %r12; mov %esi,%r12d
+const BLIT_FRAME_PROLOGUE: [u8; 5] = [0x41, 0x54, 0x41, 0x89, 0xf4];
 /// sub $0x8,%rsp; mov $KEY_LEFTSHIFT,%edi
 const GET_SHIFT_PROLOGUE: [u8; 9] = [0x48, 0x83, 0xec, 0x08, 0xbf, 0x4b, 0x00, 0x00, 0x00];
 /// mov 0x10(%rdi),%eax; movzbl 0x49(%rdi),%r8d
@@ -60,6 +63,7 @@ static CHOICE_RENDER_ORIG: AtomicUsize = AtomicUsize::new(0);
 static MEASURE_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CHOICE_MOUSE_MOVE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static FRAME_DRAW_ORIG: AtomicUsize = AtomicUsize::new(0);
+static BLIT_FRAME_ORIG: AtomicUsize = AtomicUsize::new(0);
 
 /// The original of a hooked `extern "C"` function of type F.
 /// # Safety
@@ -79,7 +83,7 @@ extern "C" fn onloop_hook(app: Ptr) {
             sound::report();
         }
         l.poll_files(t);
-        text::update(l.cfg.text_scale, state::app());
+        text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         l.run_queued_clicks();
         l.sync_cursor();
         l.build_zones();
@@ -89,6 +93,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.poll_commands();
         let pad = l.poll_pad();
         l.apply_pad(pad, t, frame.dt);
+        l.update_zoom(frame.dt);
         if l.debug && frame.beat {
             log!(
                 "{} frames, pad {}, cursor {},{}, depth {}",
@@ -140,6 +145,13 @@ extern "C" fn choice_mouse_move_hook(this: Ptr, x: c_int, y: c_int) {
 extern "C" fn measure_tooltip_hook(this: Ptr, width: c_int) -> Point {
     // SAFETY: the original MouseControl::MeasureTooltip with its own arguments.
     text::measure_tooltip(|| unsafe { orig::<extern "C" fn(Ptr, c_int) -> Point>(&MEASURE_TOOLTIP_ORIG)(this, width) })
+}
+
+extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
+    zoom::blit_frame(w, h, smooth, |smooth| {
+        // SAFETY: the original CSurface::GL_BlitFrameBuffer with its own frame buffer and size.
+        unsafe { orig::<extern "C" fn(Ptr, f32, f32, bool)>(&BLIT_FRAME_ORIG)(fb, w, h, smooth) }
+    });
 }
 
 extern "C" fn get_shift_hook() -> bool {
@@ -266,19 +278,27 @@ pub extern "C" fn init() {
             &FONT_DATA_PROLOGUE,
             &FONT_DATA_ORIG,
         );
+    let zoom = install(
+        "CSurface::GL_BlitFrameBuffer",
+        a.blit_frame,
+        blit_frame_hook as *const () as usize,
+        &BLIT_FRAME_PROLOGUE,
+        &BLIT_FRAME_ORIG,
+    );
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
-        "active on {}: overlay {}, shift {}, buttons {}, event text {}, tooltip text {}, step cap {}, \
-         pad scan {}, sound recovery {}",
+        "active on {}: overlay {}, shift {}, buttons {}, event text {}, tooltip text {}, zoom {}, \
+         step cap {}, pad scan {}, sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
         on(buttons),
         on(event_text),
         on(tooltip_text),
+        on(zoom),
         on(step_cap.is_some()),
         on(pad_scan),
         on(sound_recovery)

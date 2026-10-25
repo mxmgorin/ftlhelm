@@ -20,6 +20,8 @@ const HELP_VERSION: &str = concat!("ftlhelm ", env!("CARGO_PKG_VERSION"));
 const URL_SCHEME: &str = "https://";
 /// A held click drags: a selection box over the ship, an item on a screen.
 const CLICK_HOLD_TITLE: &str = "Drag select";
+/// A held pause shows the whole frame of a zoomed view.
+const PAUSE_HOLD_TITLE: &str = "Whole frame";
 const BADGE_H: f32 = 30.0;
 const BADGE_PAD: f32 = 14.0;
 const BADGE_SEPARATOR: &str = " / ";
@@ -29,6 +31,7 @@ const TEXT_DY: f32 = 5.0;
 
 const INPUT_TITLES: [&str; SIL_BUTTONS] =
     ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
+const PAUSED_TITLE: &str = "Paused";
 
 /// What the game's own hotkeys do, as the help names them.
 #[rustfmt::skip]
@@ -54,6 +57,7 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::Pause => "Pause",
         Builtin::FastForward => "Fast forward",
         Builtin::DpadMode => "Cursor / zones",
+        Builtin::Zoom => "Zoom",
     }
 }
 
@@ -81,7 +85,8 @@ impl Layer {
             let text = self.badge_text();
             if !text.is_empty() {
                 let w = text_width(WHEEL_FONT, &text) + 2.0 * BADGE_PAD;
-                let (x, y) = (GAME_W as f32 - BADGE_MARGIN - w, BADGE_MARGIN);
+                let (right, top) = self.zoom.view.map_or((GAME_W as f32, 0.0), |v| (v.right(), v.y));
+                let (x, y) = (right - BADGE_MARGIN - w, top + BADGE_MARGIN);
                 draw_panel(x, y, w, BADGE_H, PLATE_COLOR, PLATE_EDGE_COLOR);
                 draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
             }
@@ -122,6 +127,7 @@ impl Layer {
             None if b.hold == Action::Builtin(Builtin::ContextClick) => {
                 (self.describe(b.hold), CLICK_HOLD_TITLE.to_string())
             }
+            None if b.hold == Action::Builtin(Builtin::Pause) => (self.describe(b.hold), PAUSE_HOLD_TITLE.to_string()),
             None if is_hold_action(b.hold) => (String::new(), self.describe(b.hold)),
             None => (self.describe(b.hold), String::new()),
         }
@@ -161,13 +167,17 @@ impl Layer {
         set_color(TEXT_COLOR);
     }
 
-    /// The mode badge text, empty in the plain state: the weapon waiting for a target and
-    /// the layer's own modes, which the game does not show.
+    /// The mode badge text, empty in the plain state: the pause on a zoomed ship view, the weapon
+    /// waiting for a target and the layer's own modes, which the game does not show.
     pub fn badge_text(&self) -> String {
         if self.wheel.open.is_some() {
             return String::new();
         }
         let mut parts = Vec::new();
+        // The game shows its pause in the middle of the frame, which a zoomed ship view may leave out.
+        if self.zoom.view.is_some() && state::ship_view() && state::game_paused() {
+            parts.push(PAUSED_TITLE.to_string());
+        }
         if state::mouse().i32(MOUSE_AIMING) != 0 {
             let weapon = state::weapon_control()
                 .and_then(|c| c.obj(WEAPONCTRL_ARMED))

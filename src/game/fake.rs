@@ -4,8 +4,8 @@
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
 //! time. Every data symbol resolves into one zeroed block that starts with the mouse state.
 //! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
-//! are malloc'd copies `live_strings` counts, the joystick reports a `FakePad`. Any other
-//! call lands in non-executable memory and faults.
+//! are malloc'd copies `live_strings` counts, the joystick reports a `FakePad`, the display
+//! is SCREEN. Any other call lands in non-executable memory and faults.
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
@@ -33,6 +33,9 @@ const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
 /// Reaches the literal flag of the member's name, its field farthest in.
 const CREW_SIZE: usize = CREW_BLUEPRINT + CREWBP_NAME + TEXTSTRING_LITERAL + size_of::<u8>();
+
+/// The display size the stand-in engine reports.
+pub const SCREEN: (c_int, c_int) = (640, 480);
 
 /// Zeroed memory blocks that stay put until the arena drops.
 #[derive(Default)]
@@ -207,6 +210,14 @@ extern "C" fn measure_width(_font: c_int, string: *const Ptr) -> c_int {
     unsafe { CStr::from_ptr(string.read() as *const c_char) }.to_bytes().len() as c_int
 }
 
+extern "C" fn display_width() -> c_int {
+    SCREEN.0
+}
+
+extern "C" fn display_height() -> c_int {
+    SCREEN.1
+}
+
 extern "C" fn joy_count() -> c_int {
     pad().index.map_or(0, |i| i + 1)
 }
@@ -264,6 +275,8 @@ fn install_api() -> usize {
     stand_in.string_dtor = string_dtor;
     stand_in.get_text = get_text;
     stand_in.measure_width = measure_width;
+    stand_in.display_width = display_width;
+    stand_in.display_height = display_height;
     stand_in.joy_count = joy_count;
     stand_in.joy_connected = joy_connected;
     stand_in.joy_num_sticks = joy_num_sticks;

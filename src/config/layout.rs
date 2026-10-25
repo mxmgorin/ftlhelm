@@ -95,24 +95,24 @@ pub enum SlotMode {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
     Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
-    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode,
+    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom,
 }
 
 impl Builtin {
     /// Counts through the last variant; a variant added after it takes its place here.
-    const COUNT: usize = Builtin::DpadMode as usize + 1;
+    const COUNT: usize = Builtin::Zoom as usize + 1;
     #[rustfmt::skip]
     pub const ALL: [Builtin; Builtin::COUNT] = [
         Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
-        Builtin::DpadMode,
+        Builtin::DpadMode, Builtin::Zoom,
     ];
     #[rustfmt::skip]
     const NAMES: [&'static str; Builtin::COUNT] = [
         "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
-        "fast_forward", "dpad_mode",
+        "fast_forward", "dpad_mode", "zoom",
     ];
 
     pub fn name(self) -> &'static str {
@@ -476,14 +476,15 @@ fn parse_icon(spec: &str) -> Option<IconSpec> {
 }
 
 impl Layer {
-    /// Replaces the layout and the settings with those parsed from `text`, closing any wheel
-    /// and dropping pushed states and pending presses.
+    /// Replaces the layout and the settings with those parsed from `text`, closing any wheel,
+    /// dropping pushed states and pending presses, and setting the zoom level.
     pub fn load_layout(&mut self, text: &str, origin: &str) {
         let (layout, cfg) = Layout::parse(text);
         self.close_wheel();
         log!("layout: {} states, {} wheels from {origin}", layout.states.len(), layout.wheels.len());
         self.cfg = cfg;
         log!("config:{}", self.cfg.describe());
+        self.zoom.level = self.cfg.zoom;
         self.layout = layout;
         self.bind.reset();
     }
