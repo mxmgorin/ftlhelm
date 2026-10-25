@@ -1,7 +1,11 @@
-//! Settings with their defaults and ranges, read from the layout's [config] section, and
-//! the mtime poll that reloads the layout while the game runs.
+//! Settings with their defaults and ranges, read from the layout's [config] section, the
+//! mtime poll that reloads the layout while the game runs, and the file beside the layout
+//! that keeps what the settings wheel changes.
+//!
+//! The saved values override the layout's at start. A reload while the game runs takes a
+//! saved key from the layout only when the layout's own value for it changed.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::core::layer::Layer;
@@ -10,6 +14,9 @@ use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 use crate::ui::zoom::{ZOOM_MAX, ZOOM_MIN};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
+/// The file beside the layout that keeps the settings wheel's values.
+const SAVED_NAME: &str = "ftlhelm-saved.ini";
+const SAVED_HEADER: &str = "# Zoom and text size from the game's settings wheel; they override ftlhelm.ini.";
 const FILE_POLL_S: f64 = 1.0;
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -187,6 +194,58 @@ impl Settings {
 pub struct FileWatch {
     last_poll: Option<f64>,
     layout_mtime: Option<SystemTime>,
+    /// The saved settings as the layout file last gave them; None before the first read.
+    layout_tuned: Option<Tuned>,
+    /// The saved settings as last read from or written to the saved file.
+    saved: Option<Tuned>,
+}
+
+/// The settings the settings wheel changes and the saved file keeps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tuned {
+    pub zoom: f32,
+    pub text_scale: f32,
+}
+
+impl Tuned {
+    /// Each value from `layout` where it differs from `before`, the layout's previous
+    /// value, else from `running`.
+    fn edited(layout: Tuned, before: Tuned, running: Tuned) -> Tuned {
+        let pick = |l: f32, b: f32, r: f32| if l != b { l } else { r };
+        Tuned {
+            zoom: pick(layout.zoom, before.zoom, running.zoom),
+            text_scale: pick(layout.text_scale, before.text_scale, running.text_scale),
+        }
+    }
+
+    /// `base` with the "key = value" lines of saved file text applied over it.
+    fn read(text: &str, base: Tuned) -> Tuned {
+        let mut cfg = Settings { zoom: base.zoom, text_scale: base.text_scale, ..Settings::default() };
+        for line in text.lines() {
+            let line = line.split('#').next().unwrap_or_default();
+            if let Some((key, value)) = line.split_once('=') {
+                cfg.apply(key.trim(), value.trim());
+            }
+        }
+        Tuned { zoom: cfg.zoom, text_scale: cfg.text_scale }
+    }
+
+    /// The saved file's text; the values print in full, so they read back the same.
+    fn text(self) -> String {
+        format!("{SAVED_HEADER}\nzoom = {}\ntext_scale = {}\n", self.zoom, self.text_scale)
+    }
+}
+
+/// The saved file's path: beside the layout file, when there is one.
+fn saved_path() -> Option<PathBuf> {
+    std::env::var_os(LAYOUT_ENV).map(|layout| Path::new(&layout).with_file_name(SAVED_NAME))
+}
+
+/// Writes `text` to `path` through a file beside it, so a cut write leaves the old file.
+fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
+    let part = path.with_extension("part");
+    std::fs::write(&part, text)?;
+    std::fs::rename(&part, path)
 }
 
 /// Whether the file at `path` changed since `last`; records the new mtime.
@@ -202,6 +261,51 @@ fn changed(path: &Path, last: &mut Option<SystemTime>) -> bool {
 }
 
 impl Layer {
+    pub fn tuned(&self) -> Tuned {
+        Tuned { zoom: self.zoom.level, text_scale: self.cfg.text_scale }
+    }
+
+    fn set_tuned(&mut self, t: Tuned) {
+        self.zoom.level = t.zoom;
+        self.cfg.text_scale = t.text_scale;
+    }
+
+    /// Writes the saved settings when they changed since the saved file was last read or
+    /// written.
+    pub fn save_tuned(&mut self) {
+        let (Some(path), t) = (saved_path(), self.tuned()) else {
+            return;
+        };
+        if self.files.saved == Some(t) {
+            return;
+        }
+        match write_whole(&path, &t.text()) {
+            Ok(()) => {
+                self.files.saved = Some(t);
+                log!("saved: zoom {:.2}, text_scale {:.2}", t.zoom, t.text_scale);
+            }
+            Err(e) => log!("cannot save {}: {e}", path.display()),
+        }
+    }
+
+    /// Settles the saved settings after the layout file is read: at the first read the
+    /// saved file overrides it, later the keys the layout changed win and are saved.
+    fn settle_tuned(&mut self, running: Tuned) {
+        let layout = self.tuned();
+        match self.files.layout_tuned.replace(layout) {
+            None => {
+                let saved = saved_path().and_then(|p| std::fs::read_to_string(p).ok());
+                let t = saved.map_or(layout, |text| Tuned::read(&text, layout));
+                self.set_tuned(t);
+                self.files.saved = Some(t);
+            }
+            Some(before) => {
+                self.set_tuned(Tuned::edited(layout, before, running));
+                self.save_tuned();
+            }
+        }
+    }
+
     /// Re-reads the layout when its mtime changes, at most once per poll interval.
     pub fn poll_files(&mut self, t: f64) {
         if self.files.last_poll.is_some_and(|last| t - last < FILE_POLL_S) {
@@ -213,7 +317,11 @@ impl Layer {
                 match std::fs::read_to_string(&path) {
                     // An empty file is a save caught midway; the current layout stays.
                     Ok(text) if text.is_empty() => {}
-                    Ok(text) => self.load_layout(&text, &path),
+                    Ok(text) => {
+                        let running = self.tuned();
+                        self.load_layout(&text, &path);
+                        self.settle_tuned(running);
+                    }
                     Err(_) => log!("layout: cannot open {path}"),
                 }
             }
@@ -240,6 +348,27 @@ mod tests {
         assert_eq!(cfg.tap_hold, 0.3);
         assert_eq!(cfg.cursor_speed, 900.0);
         assert_eq!(cfg.speed_level, 3);
+    }
+
+    #[test]
+    fn saved_values_round_trip_and_an_edited_layout_key_wins() {
+        let base = Tuned { zoom: 1.0, text_scale: 0.0 };
+        let tuned = Tuned { zoom: 4.0 / 3.0, text_scale: 1.25 };
+        assert_eq!(Tuned::read(&tuned.text(), base), tuned);
+        assert_eq!(Tuned::read("zoom = 2 # note\n", base), Tuned { zoom: 2.0, ..base });
+        let before = Tuned { zoom: 1.0, text_scale: 0.0 };
+        let layout = Tuned { zoom: 1.0, text_scale: 1.5 };
+        assert_eq!(Tuned::edited(layout, before, tuned), Tuned { zoom: tuned.zoom, text_scale: 1.5 });
+    }
+
+    #[test]
+    fn a_whole_write_replaces_the_file() {
+        let path = std::env::temp_dir().join(format!("ftlhelm-test-{}.ini", std::process::id()));
+        write_whole(&path, "a").expect("a writable temp dir");
+        write_whole(&path, "b").expect("a writable temp dir");
+        assert_eq!(std::fs::read_to_string(&path).ok().as_deref(), Some("b"));
+        assert!(!path.with_extension("part").exists());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

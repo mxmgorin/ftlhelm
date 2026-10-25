@@ -580,15 +580,19 @@ impl Layer {
         self.wheel.open.is_some_and(|w| self.wheel_allowed(w))
     }
 
+    /// Closes the open wheel, unpausing what it paused; a settings wheel saves its values.
     pub fn close_wheel(&mut self) {
-        if self.wheel.open.take().is_none() {
+        let Some(closed) = self.wheel.open.take() else {
             return;
-        }
+        };
         if self.wheel.paused && state::game_paused() {
             tap_key(KEY_SPACE, false);
         }
         self.wheel.paused = false;
         self.wheel.sel = None;
+        if self.layout.wheels.get(closed).is_some_and(|w| w.kind == WheelKind::Settings) {
+            self.save_tuned();
+        }
     }
 
     /// Opens a wheel on its top plate, or the first pickable one clockwise, in place of the
