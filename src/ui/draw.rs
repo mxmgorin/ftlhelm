@@ -37,6 +37,11 @@ pub fn draw_text_center(font: i32, x: f32, y: f32, text: &str) {
 
 /// Prints a WHEEL_FONT_H line centred on (cx, cy), `k` times its size.
 pub fn draw_text_scaled(font: i32, cx: f32, cy: f32, k: f32, text: &str) {
+    with_scale(cx, cy, k, || draw_text_center(font, 0.0, -WHEEL_FONT_H / 2.0, text));
+}
+
+/// Runs `draw` with (cx, cy) as the origin and everything drawn `k` times its size.
+pub fn with_scale(cx: f32, cy: f32, k: f32, draw: impl FnOnce()) {
     let a = api();
     // SAFETY: the renderer's matrix stack, popped below.
     unsafe {
@@ -44,7 +49,7 @@ pub fn draw_text_scaled(font: i32, cx: f32, cy: f32, k: f32, text: &str) {
         (a.translate)(cx, cy, 0.0);
         (a.scale)(k, k, 1.0);
     }
-    draw_text_center(font, 0.0, -WHEEL_FONT_H / 2.0, text);
+    draw();
     // SAFETY: pops the matrix pushed above.
     unsafe { (a.pop_matrix)() };
 }

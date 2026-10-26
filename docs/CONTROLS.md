@@ -4,6 +4,12 @@ Buttons go by their labels. The default buttons are in the [README](../README.md
 the Help plate of the settings wheel shows them in the game. Settings, bindings and wheels
 are set in `ftlhelm.ini`, see [Configuration](CONFIGURATION.md).
 
+## Pads
+
+ftlhelm reads one pad: the first connected, then whichever pad presses a button while the
+active one has none down. When the active pad disconnects, the ship view pauses and
+"Pad disconnected" shows until a button is pressed.
+
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick

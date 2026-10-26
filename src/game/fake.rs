@@ -4,8 +4,9 @@
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
 //! time. Every data symbol resolves into one zeroed block that starts with the mouse state.
 //! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
-//! are malloc'd copies `live_strings` counts, the joystick reports a `FakePad`, the display
-//! is SCREEN. Any other call lands in non-executable memory and faults.
+//! are malloc'd copies `live_strings` counts, the joystick reports `FakePad`s, also written
+//! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
+//! non-executable memory and faults.
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
@@ -100,10 +101,13 @@ pub enum Call {
     ClearCrew(usize),
 }
 
-/// The pad the joystick functions report: one connected pad at `index`, or none.
+/// A pad the joystick functions report: connected at `index`, or not at all.
 #[derive(Clone, Default)]
 pub struct FakePad {
     pub index: Option<i32>,
+    /// The device's name, vendor and product.
+    pub name: &'static str,
+    pub id: (u16, u16),
     /// The raw button behind each SIL button; none past the list's end.
     pub mapping: Vec<i32>,
     /// Raw buttons held down.
@@ -113,20 +117,40 @@ pub struct FakePad {
     pub dpad: [i32; 2],
 }
 
-/// The block every data symbol resolves to.
-static STATICS: OnceLock<usize> = OnceLock::new();
+/// The blocks the data symbols resolve to: every symbol's, then SIL's pad and device tables.
+static STATICS: OnceLock<Statics> = OnceLock::new();
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
-static PAD: Mutex<FakePad> =
-    Mutex::new(FakePad { index: None, mapping: Vec::new(), held: Vec::new(), sticks: [[0.0; 2]; 3], dpad: [0; 2] });
+static PADS: Mutex<Vec<FakePad>> = Mutex::new(Vec::new());
 static LIVE_STRINGS: AtomicIsize = AtomicIsize::new(0);
+
+#[derive(Clone, Copy)]
+struct Statics {
+    shared: usize,
+    joysticks: usize,
+    devices: usize,
+}
+
+const JOYSTICKS_SIZE: usize = SIL_TABLE_LEN * SILJOY_SIZE;
+const DEVICES_SIZE: usize = SIL_TABLE_LEN * EVDEV_INFO_SIZE;
 
 fn record(call: Call) {
     CALLS.lock().unwrap_or_else(|e| e.into_inner()).push(call);
 }
 
-fn pad() -> MutexGuard<'static, FakePad> {
-    PAD.lock().unwrap_or_else(|e| e.into_inner())
+fn pads() -> MutexGuard<'static, Vec<FakePad>> {
+    PADS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Runs `f` on the pad at `dev`, or on an unplugged one.
+fn with_pad<R>(dev: c_int, f: impl FnOnce(&FakePad) -> R) -> R {
+    let pads = pads();
+    f(pads.iter().find(|p| p.index == Some(dev)).unwrap_or(&FakePad::default()))
+}
+
+/// A zeroed block of `size` bytes that lives as long as the process.
+fn leak_block(size: usize) -> usize {
+    Box::leak(vec![0u64; size.div_ceil(size_of::<u64>())].into_boxed_slice()).as_mut_ptr() as usize
 }
 
 /// Takes the calls recorded since the last take.
@@ -135,7 +159,31 @@ pub fn calls() -> Vec<Call> {
 }
 
 pub fn set_pad(state: FakePad) {
-    *pad() = state;
+    set_pads(vec![state]);
+}
+
+/// Connects `state`'s pads, each in its slot of SIL's tables, as the only ones.
+pub fn set_pads(state: Vec<FakePad>) {
+    let statics = *STATICS.get().expect("pads are set inside with_game");
+    // SAFETY: the leaked tables, SIL_TABLE_LEN entries each.
+    let (joysticks, devices) = unsafe { (Obj::from_addr(statics.joysticks), Obj::from_addr(statics.devices)) };
+    let (joysticks, devices) = (joysticks.expect("a leaked block"), devices.expect("a leaked block"));
+    for pad in &state {
+        let Some(dev) = pad.index else {
+            continue;
+        };
+        let joy = joysticks.at(dev as usize * SILJOY_SIZE);
+        joy.set(SILJOY_EVENT_DEV, dev);
+        joy.set(SILJOY_VENDOR, pad.id.0);
+        joy.set(SILJOY_PRODUCT, pad.id.1);
+        let buttons = pad.mapping.iter().chain(&pad.held).max().map_or(0, |&b| b + 1);
+        joy.set(SILJOY_NUM_BUTTONS, buttons);
+        let device = devices.at(dev as usize * EVDEV_INFO_SIZE);
+        for (i, b) in pad.name.bytes().chain([0]).enumerate() {
+            device.set(EVDEV_NAME + i, b);
+        }
+    }
+    *pads() = state;
 }
 
 /// The game strings built and not yet destroyed.
@@ -219,27 +267,27 @@ extern "C" fn display_height() -> c_int {
 }
 
 extern "C" fn joy_count() -> c_int {
-    pad().index.map_or(0, |i| i + 1)
+    pads().iter().filter_map(|p| p.index).max().map_or(0, |i| i + 1)
 }
 
 extern "C" fn joy_connected(dev: c_int) -> c_int {
-    (pad().index == Some(dev)) as c_int
+    pads().iter().any(|p| p.index == Some(dev)) as c_int
 }
 
-extern "C" fn joy_num_sticks(_dev: c_int) -> c_int {
-    pad().sticks.len() as c_int
+extern "C" fn joy_num_sticks(dev: c_int) -> c_int {
+    with_pad(dev, |p| p.sticks.len() as c_int)
 }
 
-extern "C" fn joy_button_mapping(_dev: c_int, button: c_int) -> c_int {
-    pad().mapping.get(button as usize).copied().unwrap_or(-1)
+extern "C" fn joy_button_mapping(dev: c_int, button: c_int) -> c_int {
+    with_pad(dev, |p| p.mapping.get(button as usize).copied().unwrap_or(-1))
 }
 
-extern "C" fn joy_button_state(_dev: c_int, raw: c_int) -> c_int {
-    pad().held.contains(&raw) as c_int
+extern "C" fn joy_button_state(dev: c_int, raw: c_int) -> c_int {
+    with_pad(dev, |p| p.held.contains(&raw) as c_int)
 }
 
-extern "C" fn joy_read_stick(_dev: c_int, stick: c_int, x: *mut f32, y: *mut f32) {
-    let [sx, sy] = pad().sticks[stick as usize];
+extern "C" fn joy_read_stick(dev: c_int, stick: c_int, x: *mut f32, y: *mut f32) {
+    let [sx, sy] = with_pad(dev, |p| p.sticks[stick as usize]);
     // SAFETY: the caller passes places for both axes.
     unsafe {
         x.write(sx);
@@ -247,8 +295,8 @@ extern "C" fn joy_read_stick(_dev: c_int, stick: c_int, x: *mut f32, y: *mut f32
     }
 }
 
-extern "C" fn joy_read_dpad(_dev: c_int, x: *mut c_int, y: *mut c_int) {
-    let [dx, dy] = pad().dpad;
+extern "C" fn joy_read_dpad(dev: c_int, x: *mut c_int, y: *mut c_int) {
+    let [dx, dy] = with_pad(dev, |p| p.dpad);
     // SAFETY: the caller passes places for both axes.
     unsafe {
         x.write(dx);
@@ -256,13 +304,18 @@ extern "C" fn joy_read_dpad(_dev: c_int, x: *mut c_int, y: *mut c_int) {
     }
 }
 
-fn install_api() -> usize {
+fn install_api() -> Statics {
     install_layout(STAND_IN);
-    let words = STATICS_SIZE.div_ceil(size_of::<u64>());
-    let block = Box::leak(vec![0u64; words].into_boxed_slice()).as_mut_ptr() as usize;
+    let statics = Statics {
+        shared: leak_block(STATICS_SIZE),
+        joysticks: leak_block(JOYSTICKS_SIZE),
+        devices: leak_block(DEVICES_SIZE),
+    };
     // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a
     // test reaches, and the rest are never called.
-    let mut stand_in = unsafe { Api::from_addresses(&vec![block; SYMBOLS.len()]) };
+    let mut stand_in = unsafe { Api::from_addresses(&vec![statics.shared; SYMBOLS.len()]) };
+    stand_in.sil_joysticks = statics.joysticks;
+    stand_in.sil_event_info = statics.devices;
     stand_in.key_down = key_down;
     stand_in.key_up = key_up;
     stand_in.lbutton_down = lbutton_down;
@@ -285,7 +338,7 @@ fn install_api() -> usize {
     stand_in.joy_read_stick = joy_read_stick;
     stand_in.joy_read_dpad = joy_read_dpad;
     api::install(stand_in);
-    block
+    statics
 }
 
 /// Clears the CApp pointer when a game test ends, failed or not.
@@ -311,10 +364,14 @@ pub struct Game {
 pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let statics = *STATICS.get_or_init(install_api);
-    // SAFETY: the leaked block of STATICS_SIZE bytes.
-    unsafe { std::ptr::write_bytes(statics as *mut u8, 0, STATICS_SIZE) };
+    // SAFETY: the leaked blocks of these sizes.
+    unsafe {
+        std::ptr::write_bytes(statics.shared as *mut u8, 0, STATICS_SIZE);
+        std::ptr::write_bytes(statics.joysticks as *mut u8, 0, JOYSTICKS_SIZE);
+        std::ptr::write_bytes(statics.devices as *mut u8, 0, DEVICES_SIZE);
+    }
     calls();
-    set_pad(FakePad::default());
+    set_pads(Vec::new());
     LIVE_STRINGS.store(0, Ordering::Relaxed);
     let _reset = AppReset;
     let mut arena = Arena::default();
@@ -323,7 +380,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     app.set(CAPP_GUI, gui.addr());
     state::set_app(app.ptr());
     // SAFETY: the leaked block of STATICS_SIZE bytes.
-    let mouse = unsafe { Obj::from_addr(statics) }.expect("a leaked block is non-null");
+    let mouse = unsafe { Obj::from_addr(statics.shared) }.expect("a leaked block is non-null");
     let mut game = Game { arena, app, gui, mouse };
     f(&mut game)
 }

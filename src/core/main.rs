@@ -1,6 +1,6 @@
 //! Load-time setup and the hooks:
 //! - CApp::OnLoop runs the layer once a frame, and installs the crash report on the first;
-//! - MouseControl::OnRender draws the overlay;
+//! - MouseControl::OnRender draws the overlay around the game's pointer;
 //! - CEvent::GetShiftState adds the layer's Shift;
 //! - GenericButton::MouseMove records the buttons the game hit-tests;
 //! - ChoiceBox::OnRender, WindowFrame::Draw and ChoiceBox::MouseMove draw and hit-test
@@ -93,7 +93,7 @@ extern "C" fn onloop_hook(app: Ptr) {
             l.focus_first_on_open();
         }
         l.poll_commands();
-        let pad = l.poll_pad();
+        let pad = l.poll_pad(frame.dt);
         l.apply_pad(pad, t, frame.dt);
         l.update_zoom(frame.dt);
         if l.debug && frame.beat {
@@ -122,6 +122,10 @@ extern "C" fn mouse_render_hook(this: Ptr) {
         // SAFETY: the original MouseControl::OnRender on its own object.
         unsafe { orig::<extern "C" fn(Ptr)>(&MOUSE_RENDER_ORIG)(this) };
     }
+    with_layer(|l| {
+        let _phase = crash::enter(Phase::Overlay);
+        l.draw_overlay_top();
+    });
 }
 
 extern "C" fn font_data_hook(this: Ptr, id: c_int, flag: bool) -> *const FontData {

@@ -1,9 +1,11 @@
-//! What the layer draws over the game each frame: the open wheel, the help table and the
-//! mode badge.
+//! What the layer draws over the game each frame: the open wheel, the help table, a notice
+//! and the mode badge.
 
 use super::draw::*;
+use super::text;
 use crate::config::layout::{key_name, truncate_label, Action, Binding, Builtin, SIL_BUTTONS};
 use crate::core::layer::Layer;
+use crate::core::util::clampf;
 use crate::game::offsets::*;
 use crate::game::state;
 
@@ -28,6 +30,31 @@ const BADGE_SEPARATOR: &str = " / ";
 const BADGE_MARGIN: f32 = 8.0;
 /// Text sits this far below a panel row's top edge.
 const TEXT_DY: f32 = 5.0;
+/// The least room a scaled panel leaves to the edges of what is shown.
+const PANEL_MARGIN: f32 = 8.0;
+
+pub const PAD_LOST_NOTICE: &[&str] = &["Pad disconnected"];
+
+/// A message over the frame, its lines centred.
+pub struct Notice {
+    lines: &'static [&'static str],
+    /// Seconds it has left on screen; None while it waits for a button.
+    left: Option<f32>,
+}
+
+impl Notice {
+    /// A notice that stays until a button is pressed.
+    pub fn until_press(lines: &'static [&'static str]) -> Notice {
+        Notice { lines, left: None }
+    }
+}
+
+/// The scale of a `w` by `h` panel shown in `area`: the text size, as far as the area holds
+/// it within PANEL_MARGIN; never below the game's own.
+fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
+    let fit = ((area_w - 2.0 * PANEL_MARGIN) / w).min((area_h - 2.0 * PANEL_MARGIN) / h);
+    clampf(text, 1.0, fit.max(1.0))
+}
 
 const INPUT_TITLES: [&str; SIL_BUTTONS] =
     ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
@@ -73,8 +100,8 @@ fn is_hold_action(a: Action) -> bool {
 }
 
 impl Layer {
-    /// Draws the overlay; returns whether the game's own pointer should be drawn, as it
-    /// would cover the middle of an open wheel.
+    /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
+    /// should be drawn, as they would cover an open wheel.
     pub fn draw_overlay(&self) -> bool {
         if self.wheel.open.is_some() {
             self.draw_wheel();
@@ -93,6 +120,13 @@ impl Layer {
             }
         }
         self.wheel.open.is_none()
+    }
+
+    /// Draws what lies over the game's pointer and tooltip: the notice.
+    pub fn draw_overlay_top(&self) {
+        if let Some(notice) = self.notice.as_ref().filter(|_| self.notice_shown()) {
+            self.draw_notice(notice.lines);
+        }
     }
 
     fn describe(&self, a: Action) -> String {
@@ -168,6 +202,47 @@ impl Layer {
         set_color(TEXT_COLOR);
     }
 
+    /// Whether the notice is on screen: the help covers it.
+    fn notice_shown(&self) -> bool {
+        self.cursor.synced && !self.help_shown
+    }
+
+    /// Counts the notice's time down while it is on screen; drops it when the time is up or,
+    /// for one waiting for a button, on a press.
+    pub fn age_notice(&mut self, dt: f32, pressed: bool) {
+        let shown = self.notice_shown();
+        let Some(notice) = &mut self.notice else {
+            return;
+        };
+        let done = match &mut notice.left {
+            Some(left) => {
+                if shown {
+                    *left -= dt;
+                }
+                *left <= 0.0
+            }
+            None => pressed,
+        };
+        if done {
+            self.notice = None;
+        }
+    }
+
+    /// Draws a notice in the middle of what is shown, at the text size as far as it fits.
+    fn draw_notice(&self, lines: &[&str]) {
+        let w = lines.iter().map(|l| text_width(HELP_FONT, l)).fold(0.0, f32::max) + 2.0 * HELP_PAD;
+        let h = HELP_LINE * lines.len() as f32 + 2.0 * HELP_PAD;
+        let (x, y, area_w, area_h) =
+            self.zoom.view.map_or((0.0, 0.0, GAME_W as f32, GAME_H as f32), |v| (v.x, v.y, v.w, v.h));
+        let k = panel_scale(text::scale(), w, h, (area_w, area_h));
+        with_scale(x + area_w / 2.0, y + area_h / 2.0, k, || {
+            draw_panel(-w / 2.0, -h / 2.0, w, h, PLATE_COLOR, PLATE_EDGE_COLOR);
+            for (i, line) in lines.iter().enumerate() {
+                draw_text_center(HELP_FONT, 0.0, -h / 2.0 + HELP_PAD + i as f32 * HELP_LINE + TEXT_DY, line);
+            }
+        });
+    }
+
     /// The mode badge text, empty in the plain state: the pause on a zoomed ship view, the weapon
     /// waiting for a target and the layer's own modes, which the game does not show.
     pub fn badge_text(&self) -> String {
@@ -199,7 +274,18 @@ mod tests {
     use super::*;
     use crate::config::layout::LABEL_CHARS;
     use crate::game::fake::with_game;
+    use crate::ui::text::TEXT_SCALE_MAX;
     use std::mem::size_of;
+
+    #[test]
+    fn a_panel_grows_with_the_text_as_far_as_it_fits() {
+        let frame = (GAME_W as f32, GAME_H as f32);
+        let h = 400.0;
+        let fit = ((frame.0 - 2.0 * PANEL_MARGIN) / HELP_W).min((frame.1 - 2.0 * PANEL_MARGIN) / h);
+        assert_eq!(panel_scale(1.0, HELP_W, h, frame), 1.0);
+        assert_eq!(panel_scale(TEXT_SCALE_MAX, HELP_W, h, frame), fit);
+        assert_eq!(panel_scale(TEXT_SCALE_MAX, 2.0 * frame.0, h, frame), 1.0);
+    }
 
     #[test]
     fn the_badge_names_the_armed_weapon_and_the_layer_modes() {

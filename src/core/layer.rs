@@ -12,6 +12,7 @@ use crate::input::bindings::Bindings;
 use crate::input::cursor::{Cursor, FirstFocus};
 use crate::input::pad::PadState;
 use crate::ui::draw::{Images, WHEEL_FONT};
+use crate::ui::overlay::Notice;
 use crate::ui::wheel::WheelUi;
 use crate::ui::zoom::Zoom;
 
@@ -34,6 +35,7 @@ pub struct Layer {
     /// The font of the wheel's text.
     pub plate_font: i32,
     pub help_shown: bool,
+    pub notice: Option<Notice>,
     pub cmd: Commands,
 }
 
@@ -56,6 +58,7 @@ impl Default for Layer {
             images: Images::default(),
             plate_font: WHEEL_FONT,
             help_shown: false,
+            notice: None,
             cmd: Commands::default(),
         }
     }

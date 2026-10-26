@@ -284,11 +284,18 @@ pub const WEAPON_SLOTS: i32 = 4;
 pub const DRONE_SLOTS: i32 = 3;
 
 /// SIL's Linux tables, one entry per pad and per input device.
+pub const SIL_TABLE_LEN: usize = 64;
 pub const SILJOY_SIZE: usize = 832;
 pub const SILJOY_EVENT_DEV: usize = 0;
+pub const SILJOY_VENDOR: usize = 10;
+pub const SILJOY_PRODUCT: usize = 12;
+pub const SILJOY_NUM_BUTTONS: usize = 656;
 pub const SILJOY_KEYMAP_LOW: usize = 664;
 pub const SILJOY_KEYMAP_HIGH: usize = 696;
 pub const EVDEV_INFO_SIZE: usize = 408;
+/// The device's name, NUL-terminated.
+pub const EVDEV_NAME: usize = 37;
+pub const EVDEV_NAME_LEN: usize = 256;
 /// The device's EV_KEY bitmap, one bit per key code.
 pub const EVDEV_KEY_BITS: usize = 297;
 pub const EVDEV_KEY_CODES: usize = 768;

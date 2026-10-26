@@ -9,14 +9,16 @@ use crate::game::actions::{mouse_move, request_exit, tap_key};
 use crate::game::api::api;
 use crate::game::mem::Obj;
 use crate::game::offsets::{
-    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, KEY_SPACE, SILJOY_EVENT_DEV, SILJOY_KEYMAP_HIGH,
-    SILJOY_KEYMAP_LOW, SILJOY_SIZE,
+    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, EVDEV_NAME, EVDEV_NAME_LEN, KEY_SPACE, SILJOY_EVENT_DEV,
+    SILJOY_KEYMAP_HIGH, SILJOY_KEYMAP_LOW, SILJOY_NUM_BUTTONS, SILJOY_PRODUCT, SILJOY_SIZE, SILJOY_VENDOR,
+    SIL_TABLE_LEN,
 };
 use crate::game::state;
 use crate::game::zones::ship_center;
 use crate::input::sdl_map::{
     self, Resolved, SdlMap, BTN_JOYSTICK, BTN_TRIGGER_HAPPY, SIL_KEYMAP_HIGH_LEN, SIL_KEYMAP_LOW_LEN,
 };
+use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
 
 /// PortMaster's per-device SDL mapping.
 const SDL_MAP_ENV: &str = "SDL_GAMECONTROLLERCONFIG";
@@ -30,6 +32,10 @@ const BUTTON_REFRESH_FRAMES: u64 = 6;
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
+
+/// SIL pads, one bit per table entry.
+type PadSet = u64;
+const _: () = assert!(SIL_TABLE_LEN <= PadSet::BITS as usize, "a pad set holds every SIL pad");
 
 #[derive(Default)]
 pub struct PadFrame {
@@ -51,7 +57,20 @@ pub struct PadState {
     chord_since: Option<f64>,
     exit_requested: bool,
     frame: u64,
+    /// The active pad.
     pub index: Option<i32>,
+    /// The connected pads and those with a button down, as last seen.
+    connected: PadSet,
+    down: PadSet,
+}
+
+/// What changed among the pads since the frame before.
+#[derive(Default)]
+struct PadChange {
+    /// The active pad went away.
+    lost: bool,
+    /// A button went down on some pad.
+    pressed: bool,
 }
 
 impl Default for PadState {
@@ -69,6 +88,8 @@ impl Default for PadState {
             exit_requested: false,
             frame: 0,
             index: None,
+            connected: 0,
+            down: 0,
         }
     }
 }
@@ -90,11 +111,49 @@ fn stick_directions(x: f32, y: f32, was: &[bool]) -> [bool; 4] {
     ]
 }
 
-/// The first connected pad.
-fn active_pad() -> Option<i32> {
+fn bit(dev: i32) -> PadSet {
+    1 << dev
+}
+
+fn lowest(pads: PadSet) -> Option<i32> {
+    (pads != 0).then(|| pads.trailing_zeros() as i32)
+}
+
+/// The pads of a set, lowest first.
+fn each(pads: PadSet) -> impl Iterator<Item = i32> {
+    (0..SIL_TABLE_LEN as i32).filter(move |&dev| pads & bit(dev) != 0)
+}
+
+fn joystick(dev: i32) -> Option<Obj> {
+    // SAFETY: SIL's pad table, indexed by a connected pad.
+    unsafe { Obj::table_entry(api().sil_joysticks, dev, SILJOY_SIZE) }
+}
+
+/// Whether a button or D-pad direction of a connected pad is down.
+fn any_button_down(dev: i32) -> bool {
     let a = api();
-    // SAFETY: the engine's joystick queries take any index below the count.
-    unsafe { (0..(a.joy_count)()).find(|&i| (a.joy_connected)(i) != 0) }
+    let buttons = joystick(dev).map_or(0, |j| j.i32(SILJOY_NUM_BUTTONS));
+    let (mut x, mut y) = (0, 0);
+    // SAFETY: the engine's queries on a connected pad, its buttons below its count.
+    unsafe {
+        (a.joy_read_dpad)(dev, &mut x, &mut y);
+        x != 0 || y != 0 || (0..buttons).any(|b| (a.joy_button_state)(dev, b) != 0)
+    }
+}
+
+/// A connected pad's device name, vendor and product.
+fn identity(dev: i32) -> (String, u16, u16) {
+    let Some(joy) = joystick(dev) else {
+        return (String::new(), 0, 0);
+    };
+    // SAFETY: SIL's device table, indexed by the pad's device.
+    let info = unsafe { Obj::table_entry(api().sil_event_info, joy.i32(SILJOY_EVENT_DEV), EVDEV_INFO_SIZE) };
+    let name = info.map_or_else(String::new, |info| {
+        let bytes: [u8; EVDEV_NAME_LEN] = info.get(EVDEV_NAME);
+        let end = bytes.iter().position(|&b| b == 0).unwrap_or(EVDEV_NAME_LEN);
+        String::from_utf8_lossy(&bytes[..end]).into_owned()
+    });
+    (name, joy.get(SILJOY_VENDOR), joy.get(SILJOY_PRODUCT))
 }
 
 /// A pointer source's mode under the mode toggle: with `free_cursor` the D-pad and every
@@ -130,8 +189,7 @@ impl PadState {
             return;
         };
         let a = api();
-        // SAFETY: SIL's pad table, indexed by a connected pad.
-        let Some(joy) = (unsafe { Obj::table_entry(a.sil_joysticks, dev, SILJOY_SIZE) }) else {
+        let Some(joy) = joystick(dev) else {
             return;
         };
         let event_dev = joy.i32(SILJOY_EVENT_DEV);
@@ -170,13 +228,62 @@ impl PadState {
         );
         self.resolved = Some(((dev, event_dev), r));
     }
+
+    /// Follows the connected pads, logging each that comes or goes. The active pad gives way
+    /// to one starting a press while it has none down; a lost one to the first left.
+    fn follow_pads(&mut self) -> PadChange {
+        let a = api();
+        // SAFETY: the engine's pad count.
+        let count = unsafe { (a.joy_count)() }.clamp(0, SIL_TABLE_LEN as i32);
+        let (mut connected, mut down) = (0, 0);
+        for dev in 0..count {
+            // SAFETY: the engine's joystick queries take any index below the count.
+            if unsafe { (a.joy_connected)(dev) } != 0 {
+                connected |= bit(dev);
+                if any_button_down(dev) {
+                    down |= bit(dev);
+                }
+            }
+        }
+        let mut change = PadChange::default();
+        for dev in each(connected & !self.connected) {
+            let (name, vendor, product) = identity(dev);
+            log!("pad {dev}: {name} ({vendor:04x}:{product:04x})");
+        }
+        for dev in each(self.connected & !connected) {
+            log!("pad {dev}: gone");
+        }
+        let pressed = down & !self.down;
+        (self.connected, self.down) = (connected, down);
+        change.pressed = pressed != 0;
+        let active = self.index.filter(|&dev| connected & bit(dev) != 0);
+        change.lost = self.index.is_some() && active.is_none();
+        let next = match active {
+            Some(dev) if down & bit(dev) != 0 => Some(dev),
+            Some(dev) => lowest(pressed).or(Some(dev)),
+            None => lowest(pressed).or(lowest(connected)),
+        };
+        if let Some(dev) = next.filter(|&dev| Some(dev) != self.index) {
+            log!("pad {dev}: active");
+        }
+        self.index = next;
+        change
+    }
 }
 
 impl Layer {
-    /// Reads the first connected pad, its SDL mapping resolved on first sight; an idle frame
-    /// while none is connected.
-    pub fn poll_pad(&mut self) -> PadFrame {
-        self.pad.index = active_pad();
+    /// Reads the active pad, its SDL mapping resolved on first sight; an idle frame while none
+    /// is connected. Losing the active pad pauses the ship view; `dt` ages the notices.
+    pub fn poll_pad(&mut self, dt: f32) -> PadFrame {
+        let change = self.pad.follow_pads();
+        self.age_notice(dt, change.pressed);
+        if change.lost {
+            if state::ship_view() && !state::game_paused() {
+                tap_key(KEY_SPACE, false);
+                log!("pad lost: paused");
+            }
+            self.notice = Some(Notice::until_press(PAD_LOST_NOTICE));
+        }
         let Some(dev) = self.pad.index else {
             return PadFrame::default();
         };
@@ -429,7 +536,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{calls, set_pad, with_game, Call, FakePad};
+    use crate::game::fake::{calls, set_pad, set_pads, with_game, Call, FakePad};
 
     /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
     const RAW_OFFSET: i32 = 100;
@@ -442,11 +549,22 @@ mod tests {
         Input::ALL.into_iter().filter(|&i| p.down[i as usize]).collect()
     }
 
+    /// A pad at `index` with A mapped, held when `pressed`.
+    fn pad(index: i32, pressed: bool) -> FakePad {
+        let a = raw(Input::FaceDown);
+        FakePad {
+            index: Some(index),
+            mapping: vec![a],
+            held: if pressed { vec![a] } else { vec![] },
+            ..FakePad::default()
+        }
+    }
+
     #[test]
     fn polling_reads_the_connected_pad_or_idles() {
         with_game(|_| {
             let mut l = Layer::default();
-            let idle = l.poll_pad();
+            let idle = l.poll_pad(0.0);
             assert_eq!((l.pad.index, held(&idle)), (None, vec![]));
             set_pad(FakePad {
                 index: Some(0),
@@ -454,15 +572,14 @@ mod tests {
                 held: vec![raw(Input::Home)],
                 ..FakePad::default()
             });
-            let frame = l.poll_pad();
+            let frame = l.poll_pad(0.0);
             assert_eq!((l.pad.index, held(&frame)), (Some(0), vec![Input::Home]));
         });
     }
 
     #[test]
-    fn the_first_connected_pad_reads_through_the_engine_mapping() {
+    fn a_connected_pad_reads_through_the_engine_mapping() {
         with_game(|_| {
-            assert_eq!(active_pad(), None);
             let mut mapping: Vec<i32> = (0..SIL_BUTTONS as i32).map(|b| b + RAW_OFFSET).collect();
             for trigger in [Input::L2, Input::R2] {
                 mapping[trigger as usize] = -1;
@@ -473,15 +590,55 @@ mod tests {
                 held: vec![raw(Input::Start), raw(Input::FaceDown)],
                 sticks: [[-0.6, 0.1], [0.0, 0.9], [0.5, -1.0]],
                 dpad: [1, 0],
+                ..FakePad::default()
             });
-            assert_eq!(active_pad(), Some(1));
             let mut l = Layer::default();
+            l.poll_pad(0.0);
+            assert_eq!(l.pad.index, Some(1));
             let p = l.read_pad(1);
             let expected = [Input::Start, Input::FaceDown, Input::L2, Input::DpadRight, Input::LsLeft, Input::RsDown];
             assert_eq!(held(&p), expected);
             assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
             l.cfg.swap_ab = true;
             assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
+        });
+    }
+
+    #[test]
+    fn a_new_press_on_another_pad_takes_over_while_the_active_one_has_none_down() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let mut step = |pads: [bool; 2]| {
+                set_pads(vec![pad(0, pads[0]), pad(2, pads[1])]);
+                l.poll_pad(0.0);
+                l.pad.index
+            };
+            assert_eq!(step([false, false]), Some(0), "the first connected pad starts");
+            assert_eq!(step([true, true]), Some(0), "the active pad keeps a shared press");
+            assert_eq!(step([false, true]), Some(0), "a held button is no new press");
+            step([false, false]);
+            assert_eq!(step([false, true]), Some(2));
+            assert_eq!(step([true, true]), Some(2), "the active pad holds its press");
+        });
+    }
+
+    #[test]
+    fn losing_the_active_pad_pauses_the_ship_view_and_says_so_until_a_press() {
+        with_game(|g| {
+            g.player_manager();
+            let mut l = Layer::default();
+            set_pads(vec![pad(0, false), pad(1, false)]);
+            l.poll_pad(0.0);
+            set_pads(vec![pad(1, false)]);
+            l.poll_pad(0.0);
+            assert_eq!(calls(), [Call::KeyDown(KEY_SPACE), Call::KeyUp(KEY_SPACE)]);
+            assert_eq!(l.pad.index, Some(1));
+            l.cursor.synced = true;
+            l.poll_pad(f32::MAX);
+            assert!(l.notice.is_some());
+            set_pads(vec![pad(1, true)]);
+            l.poll_pad(0.0);
+            assert!(l.notice.is_none());
         });
     }
 
