@@ -1,5 +1,5 @@
 //! Load-time setup and the hooks:
-//! - CApp::OnLoop runs the layer once a frame;
+//! - CApp::OnLoop runs the layer once a frame, and installs the crash report on the first;
 //! - MouseControl::OnRender draws the overlay;
 //! - CEvent::GetShiftState adds the layer's Shift;
 //! - GenericButton::MouseMove records the buttons the game hit-tests;
@@ -13,6 +13,7 @@ use std::ffi::{c_int, c_void};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::crash::{self, Phase};
 use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
 use super::util::{line_buffer_stdout, log, now_s, open_log_file};
@@ -76,10 +77,12 @@ extern "C" fn onloop_hook(app: Ptr) {
     state::set_app(app);
     let t = now_s();
     with_layer(|l| {
+        let _phase = crash::enter(Phase::OnLoop);
         let frame = l.clock.tick(t);
         if frame.count == 1 {
             log!("first OnLoop");
             sound::report();
+            crash::install(api().onloop);
         }
         l.poll_files(t);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
@@ -109,7 +112,11 @@ extern "C" fn onloop_hook(app: Ptr) {
 }
 
 extern "C" fn mouse_render_hook(this: Ptr) {
-    let draw_pointer = with_layer(|l| l.draw_overlay()).unwrap_or(true);
+    let draw_pointer = with_layer(|l| {
+        let _phase = crash::enter(Phase::Overlay);
+        l.draw_overlay()
+    })
+    .unwrap_or(true);
     if draw_pointer {
         let _tooltip = text::TooltipScope::enter();
         // SAFETY: the original MouseControl::OnRender on its own object.
@@ -161,6 +168,7 @@ extern "C" fn get_shift_hook() -> bool {
 extern "C" fn button_move_hook(this: Ptr, x: i32, y: i32, silent: bool) {
     // SAFETY: the game passes its GenericButton as `this`.
     if let Some(button) = unsafe { Obj::from_ptr(this as *const c_void) } {
+        let _phase = crash::enter(Phase::ButtonMove);
         record_button(button);
     }
     // SAFETY: the original GenericButton::MouseMove with its own arguments.
@@ -207,6 +215,7 @@ pub extern "C" fn init() {
         log!("build id {hex}: unknown build, inactive");
         return;
     };
+    crash::log_panics();
     install_layout(&build.layout);
     // SAFETY: every symbol resolved in this FTL build, in SYMBOLS order.
     api::install(unsafe { Api::from_addresses(&addrs) });

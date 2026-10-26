@@ -19,4 +19,4 @@ opt-level = 2
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
+strip = "debuginfo"

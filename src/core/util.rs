@@ -3,6 +3,7 @@
 
 use std::fs::File;
 use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -12,6 +13,8 @@ const LOG_PREFIX: &str = "ftlhelm: ";
 const PREVIOUS_LOG_EXT: &str = "old.log";
 const HEARTBEAT_S: f64 = 10.0;
 const MAX_DT: f64 = 0.05;
+/// Longest line log_line_unlocked writes, newline excluded.
+const LINE_MAX: usize = 255;
 
 static LOG_FILE: OnceLock<File> = OnceLock::new();
 
@@ -71,10 +74,43 @@ pub fn log_line(args: std::fmt::Arguments) {
     }
 }
 
+/// A line formatted on the stack; what does not fit is cut, leaving room for the newline.
+struct StackLine {
+    bytes: [u8; LINE_MAX + 1],
+    len: usize,
+}
+
+impl std::fmt::Write for StackLine {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        let n = s.len().min(LINE_MAX - self.len);
+        self.bytes[self.len..self.len + n].copy_from_slice(&s.as_bytes()[..n]);
+        self.len += n;
+        Ok(())
+    }
+}
+
+/// Writes one log line as log_line does, taking no lock and allocating nothing, so a
+/// signal handler may call it. A line past LINE_MAX bytes is cut.
+pub fn log_line_unlocked(args: std::fmt::Arguments) {
+    let mut line = StackLine { bytes: [0; LINE_MAX + 1], len: 0 };
+    let _ = std::fmt::Write::write_fmt(&mut line, format_args!("{LOG_PREFIX}{:7.2} {args}", now_s()));
+    line.bytes[line.len] = b'\n';
+    let fds = [Some(libc::STDERR_FILENO), LOG_FILE.get().map(|f| f.as_raw_fd())];
+    for fd in fds.into_iter().flatten() {
+        // SAFETY: writes the initialized head of a live buffer.
+        unsafe { libc::write(fd, line.bytes.as_ptr().cast(), line.len + 1) };
+    }
+}
+
 macro_rules! log {
     ($($arg:tt)*) => { $crate::core::util::log_line(format_args!($($arg)*)) };
 }
 pub(crate) use log;
+
+macro_rules! log_unlocked {
+    ($($arg:tt)*) => { $crate::core::util::log_line_unlocked(format_args!($($arg)*)) };
+}
+pub(crate) use log_unlocked;
 
 /// Starts the log file at `path`, the previous run's file kept beside it; the lines after
 /// go to it as well as to stderr. Logs a failure.

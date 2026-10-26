@@ -11,5 +11,7 @@ before. Attach `ftlhelm.log` to a bug report.
 | `cannot save` | `ftlhelm.ini` or its directory is not writable; zoom and text size reset on the next run |
 | `cannot write the default` | `ftlhelm.ini` is missing and its directory is not writable; the default layout runs, nothing is saved |
 | `zoom off` in the `active` line | the game's frame blit was not found; zoom is unavailable |
+| `panic at FILE:LINE` | an ftlhelm bug, at that place in its source |
+| `crash:` lines | the game crashed: the signal, the code it crashed in (`game` or `ftlhelm+OFFSET`), and the ftlhelm hook running, if any |
 
 `FTLHELM_DEBUG=1` also logs every press, wheel pick and D-pad step.

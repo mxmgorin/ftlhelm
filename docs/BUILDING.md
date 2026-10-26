@@ -45,6 +45,14 @@ channel:
 Steps and buttons: `tools/vpad.py --help` and the script's header. A running Steam grabs
 the virtual pad; close it first.
 
+## Crash reports
+
+`tools/crash.py` prints the `crash:` and `panic at` lines of a log, each `rip` resolved by
+`addr2line`: a `game` address against the game's executable, an `ftlhelm+OFFSET` against the
+`ftlhelm.so` of that run.
+
+    tools/crash.py ftlhelm.log --game "/path/to/FTL Faster Than Light/data/FTL.amd64" --lib ftlhelm.so
+
 ## box64 check
 
     FTLHELM_DEBUG=1 BOX64_LOG=1 BOX64_LD_PRELOAD=/path/ftlhelm.so box64 ./ftlhelm_probe

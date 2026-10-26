@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
+use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::sync::Mutex;
 
@@ -286,22 +287,28 @@ pub fn slot_target(slot: usize) -> usize {
 /// Whether addr lies in an executable mapping of this process; a preload also lands in
 /// the launcher's processes.
 pub fn mapped_executable(addr: usize) -> bool {
-    let Ok(maps) = std::fs::read_to_string(MAPS) else {
-        return false;
-    };
-    maps.lines().any(|line| {
-        let mut parts = line.split_whitespace();
-        let (Some(range), Some(perms)) = (parts.next(), parts.next()) else {
-            return false;
-        };
-        let Some((lo, hi)) = range.split_once('-') else {
-            return false;
-        };
-        let (Ok(lo), Ok(hi)) = (usize::from_str_radix(lo, 16), usize::from_str_radix(hi, 16)) else {
-            return false;
-        };
-        perms.as_bytes().get(2) == Some(&b'x') && lo <= addr && addr < hi
-    })
+    mapping_of(addr).is_some_and(|m| m.exec)
+}
+
+/// One mapping of this process's address space.
+pub struct Mapping {
+    pub range: Range<usize>,
+    pub exec: bool,
+}
+
+/// The mapping that holds `addr`; None when no mapping does.
+pub fn mapping_of(addr: usize) -> Option<Mapping> {
+    let maps = std::fs::read_to_string(MAPS).ok()?;
+    maps.lines().filter_map(parse_mapping).find(|m| m.range.contains(&addr))
+}
+
+/// Reads one line of the maps file.
+fn parse_mapping(line: &str) -> Option<Mapping> {
+    let mut parts = line.split_whitespace();
+    let (lo, hi) = parts.next()?.split_once('-')?;
+    let perms = parts.next()?;
+    let range = usize::from_str_radix(lo, 16).ok()?..usize::from_str_radix(hi, 16).ok()?;
+    Some(Mapping { range, exec: perms.as_bytes().get(2) == Some(&b'x') })
 }
 
 fn protect(at: usize, len: usize, prot: libc::c_int) -> bool {
