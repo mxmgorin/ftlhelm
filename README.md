@@ -90,7 +90,7 @@ If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 If you find the project useful, here is how you can help:
 
 - **Tell other people about it.** Sharing the project helps it reach more users.
-- **Report bugs and request features** in [Issues](https://github.com/mxmgorin/ftlhelm/issues). Feedback is welcome.
+- **Report bugs and request features** in [Issues](https://github.com/mxmgorin/ftlhelm/issues). Feedback is welcome. Attach `ftlhelm.log` from the ftlhelm folder to a bug report.
 - **Star the repo.** It helps the project get noticed and keeps me motivated.
 - **[Buy me a coffee](https://ko-fi.com/mxmgorin)** on Ko-fi.
 

@@ -10,11 +10,12 @@
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
 use std::ffi::{c_int, c_void};
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
 use super::layer::with_layer;
-use super::util::{line_buffer_stdout, log, now_s};
+use super::util::{line_buffer_stdout, log, now_s, open_log_file};
 use crate::config::layout::DEFAULT_LAYOUT;
 use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, FontData, Point, Ptr, SYMBOLS};
@@ -25,6 +26,7 @@ use crate::game::{sound, state};
 use crate::ui::{text, zoom};
 
 const DEBUG_ENV: &str = "FTLHELM_DEBUG";
+const LOG_ENV: &str = "FTLHELM_LOG";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Git revision of the build.
 const REV: &str = env!("FTLHELM_REV");
@@ -186,6 +188,9 @@ pub extern "C" fn init() {
             log!("not FTL, inactive");
         }
         return;
+    }
+    if let Some(path) = std::env::var_os(LOG_ENV) {
+        open_log_file(Path::new(&path));
     }
     log!("ftlhelm {VERSION} ({REV})");
     let missing: Vec<_> = SYMBOLS.iter().zip(&addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();

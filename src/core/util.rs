@@ -1,13 +1,19 @@
-//! Clocks since load and per frame, a clamp that never panics, the stderr log, and line
-//! buffering for the game's stdout.
+//! Clocks since load and per frame, a clamp that never panics, the log on stderr and in
+//! its file, and line buffering for the game's stdout.
 
+use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 const LOG_PREFIX: &str = "ftlhelm: ";
+/// The previous run's log keeps the log file's name with this extension.
+const PREVIOUS_LOG_EXT: &str = "old.log";
 const HEARTBEAT_S: f64 = 10.0;
 const MAX_DT: f64 = 0.05;
+
+static LOG_FILE: OnceLock<File> = OnceLock::new();
 
 fn epoch() -> Instant {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
@@ -58,14 +64,29 @@ pub fn clampf(v: f32, lo: f32, hi: f32) -> f32 {
 
 /// Writes one log line: prefix, seconds since load, the message.
 pub fn log_line(args: std::fmt::Arguments) {
-    let mut err = std::io::stderr().lock();
-    let _ = writeln!(err, "{LOG_PREFIX}{:7.2} {args}", now_s());
+    let line = format!("{LOG_PREFIX}{:7.2} {args}\n", now_s());
+    let _ = std::io::stderr().lock().write_all(line.as_bytes());
+    if let Some(mut file) = LOG_FILE.get() {
+        let _ = file.write_all(line.as_bytes());
+    }
 }
 
 macro_rules! log {
     ($($arg:tt)*) => { $crate::core::util::log_line(format_args!($($arg)*)) };
 }
 pub(crate) use log;
+
+/// Starts the log file at `path`, the previous run's file kept beside it; the lines after
+/// go to it as well as to stderr. Logs a failure.
+pub fn open_log_file(path: &Path) {
+    let _ = std::fs::rename(path, path.with_extension(PREVIOUS_LOG_EXT));
+    match File::create(path) {
+        Ok(file) => {
+            let _ = LOG_FILE.set(file);
+        }
+        Err(e) => log!("cannot write the log {}: {e}", path.display()),
+    }
+}
 
 extern "C" {
     static mut stdout: *mut libc::FILE;

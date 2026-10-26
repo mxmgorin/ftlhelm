@@ -144,15 +144,16 @@ without one), and an optional icon: a game image path under `img/` in `ftl.dat`,
 
 ## Environment variables
 
-`ftlhelm.sh` sets `LD_PRELOAD` and `FTLHELM_LAYOUT`, keeping the preloads already set, such as
-the Steam overlay. Another launcher sets them itself:
+`ftlhelm.sh` sets `LD_PRELOAD`, `FTLHELM_LAYOUT` and `FTLHELM_LOG`, keeping the preloads already
+set, such as the Steam overlay. Another launcher sets them itself:
 
-    LD_PRELOAD=/path/ftlhelm.so FTLHELM_LAYOUT=/path/ftlhelm.ini
+    LD_PRELOAD=/path/ftlhelm.so FTLHELM_LAYOUT=/path/ftlhelm.ini FTLHELM_LOG=/path/ftlhelm.log
 
 | Variable | Value |
 | --- | --- |
 | `LD_PRELOAD` | path to `ftlhelm.so`; under box64, `BOX64_LD_PRELOAD` |
 | `FTLHELM_LAYOUT` | path to `ftlhelm.ini`, written with the default layout when missing; without it, the default layout, and nothing is saved |
+| `FTLHELM_LOG` | path to the log file, written anew each run; the previous run's log is kept with `.old.log` in place of the extension; without it, the log goes to standard error only |
 | `FTLHELM_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
 | `FTLHELM_CMD` | path to a FIFO for test commands, see [Building](BUILDING.md#test-channel) |
 | `FTLHELM_DEBUG` | set: log every press, wheel pick and D-pad step |
