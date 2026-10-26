@@ -101,13 +101,10 @@ fn is_hold_action(a: Action) -> bool {
 
 impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
-    /// should be drawn, as they would cover an open wheel.
+    /// should be drawn, as they would cover an open wheel or the help.
     pub fn draw_overlay(&self) -> bool {
         if self.wheel.open.is_some() {
             self.draw_wheel();
-        }
-        if self.help_shown && self.cursor.synced {
-            self.draw_help();
         }
         if self.cursor.synced && self.cfg.overlay && state::gui().is_some() {
             let text = self.badge_text();
@@ -119,7 +116,10 @@ impl Layer {
                 draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
             }
         }
-        self.wheel.open.is_none()
+        if self.help_shown && self.cursor.synced {
+            self.draw_help();
+        }
+        self.wheel.open.is_none() && !self.help_shown
     }
 
     /// Draws what lies over the game's pointer and tooltip: the notice.
@@ -168,7 +168,17 @@ impl Layer {
         }
     }
 
-    /// Draws the base state's bindings as a table: button, tap, hold.
+    /// Shows or hides the help; the first hide clears `help_at_start` in the layout file.
+    pub fn show_help(&mut self, shown: bool) {
+        self.help_shown = shown;
+        if !shown && self.cfg.help_at_start {
+            self.cfg.help_at_start = false;
+            self.save_tuned();
+        }
+    }
+
+    /// Draws the base state's bindings as a table: button, tap, hold; at the text size, as far
+    /// as the frame holds it.
     fn draw_help(&self) {
         let Some(base) = self.layout.states.first() else {
             return;
@@ -176,30 +186,34 @@ impl Layer {
         let rows: Vec<(usize, Binding)> = (0..SIL_BUTTONS).filter_map(|i| base.bind[i].map(|b| (i, b))).collect();
         // A header row, the bindings, then the footer.
         let h = HELP_LINE * (rows.len() + 2) as f32 + 2.0 * HELP_PAD;
-        let (x, y) = ((GAME_W as f32 - HELP_W) / 2.0, (GAME_H as f32 - h) / 2.0);
-        draw_panel(x, y, HELP_W, h, PLATE_COLOR, PLATE_EDGE_COLOR);
-        let mut line_y = y + HELP_PAD + HELP_LINE;
-        let rule_y = line_y - HELP_RULE_GAP;
-        let header_y = band_text_top(y, rule_y);
-        draw_text_left(HELP_FONT, x + HELP_PAD, header_y, "BUTTON");
-        draw_text_left(HELP_FONT, x + HELP_COL_TAP, header_y, "TAP");
-        draw_text_left(HELP_FONT, x + HELP_COL_HOLD, header_y, "HOLD");
-        draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
-        for (i, b) in rows {
-            let (tap, hold) = self.help_row(b);
-            draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, INPUT_TITLES[i]);
-            draw_text_left(HELP_FONT, x + HELP_COL_TAP, line_y + TEXT_DY, &tap);
-            draw_text_left(HELP_FONT, x + HELP_COL_HOLD, line_y + TEXT_DY, &hold);
-            line_y += HELP_LINE;
-        }
-        let rule_y = line_y - HELP_RULE_GAP;
-        draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
-        let footer_y = band_text_top(rule_y + HELP_RULE_H, y + h);
-        let url = env!("CARGO_PKG_REPOSITORY").trim_start_matches(URL_SCHEME);
-        set_color(TEXT_DISABLED_COLOR);
-        draw_text_left(HELP_FONT, x + HELP_PAD, footer_y, HELP_VERSION);
-        draw_text_left(HELP_FONT, x + HELP_W - HELP_PAD - text_width(HELP_FONT, url), footer_y, url);
-        set_color(TEXT_COLOR);
+        let (frame_w, frame_h) = (GAME_W as f32, GAME_H as f32);
+        let k = panel_scale(text::scale(), HELP_W, h, (frame_w, frame_h));
+        with_scale(frame_w / 2.0, frame_h / 2.0, k, || {
+            let (x, y) = (-HELP_W / 2.0, -h / 2.0);
+            draw_panel(x, y, HELP_W, h, PLATE_COLOR, PLATE_EDGE_COLOR);
+            let mut line_y = y + HELP_PAD + HELP_LINE;
+            let rule_y = line_y - HELP_RULE_GAP;
+            let header_y = band_text_top(y, rule_y);
+            draw_text_left(HELP_FONT, x + HELP_PAD, header_y, "BUTTON");
+            draw_text_left(HELP_FONT, x + HELP_COL_TAP, header_y, "TAP");
+            draw_text_left(HELP_FONT, x + HELP_COL_HOLD, header_y, "HOLD");
+            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+            for (i, b) in rows {
+                let (tap, hold) = self.help_row(b);
+                draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, INPUT_TITLES[i]);
+                draw_text_left(HELP_FONT, x + HELP_COL_TAP, line_y + TEXT_DY, &tap);
+                draw_text_left(HELP_FONT, x + HELP_COL_HOLD, line_y + TEXT_DY, &hold);
+                line_y += HELP_LINE;
+            }
+            let rule_y = line_y - HELP_RULE_GAP;
+            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+            let footer_y = band_text_top(rule_y + HELP_RULE_H, y + h);
+            let url = env!("CARGO_PKG_REPOSITORY").trim_start_matches(URL_SCHEME);
+            set_color(TEXT_DISABLED_COLOR);
+            draw_text_left(HELP_FONT, x + HELP_PAD, footer_y, HELP_VERSION);
+            draw_text_left(HELP_FONT, x + HELP_W - HELP_PAD - text_width(HELP_FONT, url), footer_y, url);
+            set_color(TEXT_COLOR);
+        });
     }
 
     /// Whether the notice is on screen: the help covers it.
@@ -285,6 +299,15 @@ mod tests {
         assert_eq!(panel_scale(1.0, HELP_W, h, frame), 1.0);
         assert_eq!(panel_scale(TEXT_SCALE_MAX, HELP_W, h, frame), fit);
         assert_eq!(panel_scale(TEXT_SCALE_MAX, 2.0 * frame.0, h, frame), 1.0);
+    }
+
+    #[test]
+    fn closing_the_help_ends_its_showing_at_start() {
+        let mut l = Layer::default();
+        l.show_help(true);
+        assert!(l.cfg.help_at_start);
+        l.show_help(false);
+        assert!(!l.help_shown && !l.cfg.help_at_start);
     }
 
     #[test]

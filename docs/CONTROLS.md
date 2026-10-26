@@ -4,6 +4,8 @@ Buttons go by their labels. The default buttons are in the [README](../README.md
 the Help plate of the settings wheel shows them in the game. Settings, bindings and wheels
 are set in `ftlhelm.ini`, see [Configuration](CONFIGURATION.md).
 
+The controls table shows at the first start, once a pad is connected; any button but the D-pad closes it.
+
 ## Pads
 
 ftlhelm reads one pad: the first connected, then whichever pad presses a button while the
@@ -92,4 +94,5 @@ The view rests on the frame's edges while the cursor stays clear of the view's e
 ## Text size
 
 Text sizes apply to event boxes and tooltips: 1 to 2 times the game's own, or auto. Auto
-enlarges them on screens smaller than 1280x720, less at higher zoom levels.
+enlarges them on screens smaller than 1280x720, less at higher zoom levels. The controls
+table and notices take the same size, as far as the frame holds them.

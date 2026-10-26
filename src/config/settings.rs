@@ -1,6 +1,6 @@
 //! Settings with their defaults and ranges, read from the layout's [config] section, the
-//! mtime poll that reloads the layout while the game runs, and the write of the settings
-//! wheel's values back into that section.
+//! mtime poll that reloads the layout while the game runs, and the write of the layer's own
+//! values back into that section.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -13,9 +13,10 @@ use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
-/// The keys the settings wheel writes back.
+/// The keys the layer writes back.
 const ZOOM_KEY: &str = "zoom";
 const TEXT_SCALE_KEY: &str = "text_scale";
+const HELP_AT_START_KEY: &str = "help_at_start";
 const FILE_POLL_S: f64 = 1.0;
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -83,6 +84,8 @@ pub struct Settings {
     pub text_scale: f32,
     /// The ship view's zoom level; ZOOM_AUTO picks by screen size.
     pub zoom: f32,
+    /// The help shows at start, until it is first closed.
+    pub help_at_start: bool,
 }
 
 impl Default for Settings {
@@ -112,6 +115,7 @@ impl Default for Settings {
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
             zoom: ZOOM_AUTO,
+            help_at_start: true,
         }
     }
 }
@@ -149,6 +153,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
+    (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
 ];
 
 impl Settings {
@@ -193,17 +198,19 @@ impl Settings {
 pub struct FileWatch {
     last_poll: Option<f64>,
     layout_mtime: Option<SystemTime>,
-    /// The settings wheel's values as the layout file holds them.
+    /// The layer's own values as the layout file holds them.
     written: Option<Tuned>,
     /// Writing the default layout failed; no retry until a file appears at the path.
     default_failed: bool,
 }
 
-/// The settings the settings wheel changes and writes into the layout file.
+/// The settings the layer itself changes and writes into the layout file: the settings
+/// wheel's values and whether the help shows at start.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tuned {
     pub zoom: f32,
     pub text_scale: f32,
+    pub help_at_start: bool,
 }
 
 /// The section a "[NAME]" line opens, as the layout parser reads it.
@@ -294,11 +301,11 @@ fn changed(path: &Path, last: &mut Option<SystemTime>) -> bool {
 
 impl Layer {
     pub fn tuned(&self) -> Tuned {
-        Tuned { zoom: self.zoom.level, text_scale: self.cfg.text_scale }
+        Tuned { zoom: self.zoom.level, text_scale: self.cfg.text_scale, help_at_start: self.cfg.help_at_start }
     }
 
-    /// Writes the settings wheel's values into the layout file's [config] section when they
-    /// differ from what it holds.
+    /// Writes the layer's own values into the layout file's [config] section when they differ
+    /// from what it holds.
     pub fn save_tuned(&mut self) {
         let (Ok(path), t) = (std::env::var(LAYOUT_ENV), self.tuned()) else {
             return;
@@ -307,13 +314,22 @@ impl Layer {
             return;
         }
         let path = Path::new(&path);
-        let values = [(ZOOM_KEY, t.zoom.to_string()), (TEXT_SCALE_KEY, t.text_scale.to_string())];
+        let values = [
+            (ZOOM_KEY, t.zoom.to_string()),
+            (TEXT_SCALE_KEY, t.text_scale.to_string()),
+            (HELP_AT_START_KEY, (t.help_at_start as i32).to_string()),
+        ];
         match std::fs::read_to_string(path).and_then(|text| write_whole(path, &set_config(&text, &values))) {
             Ok(()) => {
                 self.files.written = Some(t);
                 // The layer's own write is no edit to reload.
                 self.files.layout_mtime = mtime(path);
-                log!("saved: zoom {:.2}, text_scale {:.2}", t.zoom, t.text_scale);
+                log!(
+                    "saved: zoom {:.2}, text_scale {:.2}, help_at_start {}",
+                    t.zoom,
+                    t.text_scale,
+                    t.help_at_start as i32
+                );
             }
             Err(e) => log!("cannot save {}: {e}", path.display()),
         }

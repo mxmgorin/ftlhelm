@@ -15,7 +15,7 @@ Deleting it resets the layout and the settings: ftlhelm writes the default file 
 
 One `key = value` per line. Switches take `0` (off) or `1` (on). A missing key takes its
 default; a value outside its range is clamped. When the settings wheel closes, it writes
-`zoom` and `text_scale` here.
+`zoom` and `text_scale` here; when the controls table first closes, `help_at_start = 0`.
 
 ### Cursor
 
@@ -67,6 +67,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `overlay` | 1 | switch | the mode badge in the top right corner |
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
+| `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
 
 ## Bindings
 

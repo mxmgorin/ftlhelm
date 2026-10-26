@@ -73,6 +73,8 @@ struct PadChange {
     lost: bool,
     /// A button went down on some pad.
     pressed: bool,
+    /// A pad became active while none was.
+    gained: bool,
 }
 
 impl Default for PadState {
@@ -271,6 +273,7 @@ impl PadState {
         if let Some(dev) = next.filter(|&dev| Some(dev) != self.index) {
             log!("pad {dev}: active");
         }
+        change.gained = self.index.is_none() && next.is_some();
         self.index = next;
         change
     }
@@ -278,10 +281,14 @@ impl PadState {
 
 impl Layer {
     /// Reads the active pad, its SDL mapping resolved on first sight; an idle frame while none
-    /// is connected. Losing the active pad pauses the ship view; `dt` ages the notices.
+    /// is connected. The first pad brings the help at start; losing the active pad pauses the
+    /// ship view; `dt` ages the notices.
     pub fn poll_pad(&mut self, dt: f32) -> PadFrame {
         let change = self.pad.follow_pads();
         self.age_notice(dt, change.pressed);
+        if change.gained && self.cfg.help_at_start {
+            self.help_shown = true;
+        }
         if change.lost {
             if state::ship_view() && !state::game_paused() {
                 tap_key(KEY_SPACE, false);
@@ -442,7 +449,7 @@ impl Layer {
             }
             // Any button closes the help; that press does nothing else.
             if self.help_shown && p.down[i] && i < SIL_BUTTONS {
-                self.help_shown = false;
+                self.show_help(false);
                 continue;
             }
             if (Input::DpadLeft as usize..=Input::DpadDown as usize).contains(&i) {
@@ -624,6 +631,24 @@ mod tests {
             step([false, false]);
             assert_eq!(step([false, true]), Some(2));
             assert_eq!(step([true, true]), Some(2), "the active pad holds its press");
+        });
+    }
+
+    #[test]
+    fn the_first_pad_brings_the_help_at_start_until_it_is_closed_once() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            l.poll_pad(0.0);
+            assert!(!l.help_shown, "no pad: no help");
+            set_pads(vec![pad(0, false)]);
+            l.poll_pad(0.0);
+            assert!(l.help_shown);
+            l.show_help(false);
+            set_pads(vec![]);
+            l.poll_pad(0.0);
+            set_pads(vec![pad(0, false)]);
+            l.poll_pad(0.0);
+            assert!(!l.help_shown, "closed once: not again");
         });
     }
 
