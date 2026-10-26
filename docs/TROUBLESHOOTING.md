@@ -14,6 +14,7 @@ before. Attach `ftlhelm.log` to a bug report.
 | `pad N: NAME (VENDOR:PRODUCT)` | a pad connected |
 | `pad N: active` | ftlhelm reads this pad |
 | `pad N: gone` | the pad disconnected |
+| `pad N: fed by Steam Input` | Steam Input is on for FTL; if presses act twice, set it to **Disabled** in FTL's **Properties > Controller**, or on a Steam Deck use the **Gamepad** template |
 | `panic at FILE:LINE` | an ftlhelm bug, at that place in its source |
 | `crash:` lines | the game crashed: the signal, the code it crashed in (`game` or `ftlhelm+OFFSET`), and the ftlhelm hook running, if any |
 

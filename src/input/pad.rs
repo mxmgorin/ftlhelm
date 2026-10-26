@@ -32,6 +32,8 @@ const BUTTON_REFRESH_FRAMES: u64 = 6;
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
+/// The pad Steam Input feeds: Valve's vendor id and the product id of its virtual pad.
+const STEAM_VIRTUAL_PAD: (u16, u16) = (0x28de, 0x11ff);
 
 /// SIL pads, one bit per table entry.
 type PadSet = u64;
@@ -249,6 +251,9 @@ impl PadState {
         for dev in each(connected & !self.connected) {
             let (name, vendor, product) = identity(dev);
             log!("pad {dev}: {name} ({vendor:04x}:{product:04x})");
+            if (vendor, product) == STEAM_VIRTUAL_PAD {
+                log!("pad {dev}: fed by Steam Input");
+            }
         }
         for dev in each(self.connected & !connected) {
             log!("pad {dev}: gone");
@@ -639,6 +644,15 @@ mod tests {
             set_pads(vec![pad(1, true)]);
             l.poll_pad(0.0);
             assert!(l.notice.is_none());
+        });
+    }
+
+    #[test]
+    fn a_pads_identity_is_its_name_and_ids() {
+        with_game(|_| {
+            let name = "Steam Virtual Gamepad";
+            set_pads(vec![FakePad { name, id: STEAM_VIRTUAL_PAD, ..pad(0, false) }]);
+            assert_eq!(identity(0), (name.to_string(), STEAM_VIRTUAL_PAD.0, STEAM_VIRTUAL_PAD.1));
         });
     }
 
