@@ -35,25 +35,25 @@ jobs:
       - name: Build
         run: |
           make dist
-          cd dist && sha256sum ftlpad-linux-x86_64.tar.gz > ftlpad-linux-x86_64.tar.gz.sha256
+          cd dist && sha256sum ftlhelm-linux-x86_64.tar.gz > ftlhelm-linux-x86_64.tar.gz.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ftlpad-linux-x86_64
-          path: dist/ftlpad-linux-x86_64/
+          name: ftlhelm-linux-x86_64
+          path: dist/ftlhelm-linux-x86_64/
           retention-days: 14
 
       - name: Attest build provenance
         if: github.event_name == 'release'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/ftlpad-linux-x86_64.tar.gz
+          subject-path: dist/ftlhelm-linux-x86_64.tar.gz
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/ftlpad-linux-x86_64.tar.gz
-            dist/ftlpad-linux-x86_64.tar.gz.sha256
+            dist/ftlhelm-linux-x86_64.tar.gz
+            dist/ftlhelm-linux-x86_64.tar.gz.sha256

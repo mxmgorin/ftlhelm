@@ -1,6 +1,6 @@
 # Controls
 
-The default layout is `ftlpad.ini`, each binding commented in place; holding Start in the
+The default layout is `ftlhelm.ini`, each binding commented in place; holding Start in the
 game shows a table of what each button does. Buttons go by their labels.
 
 ## Wheels
@@ -19,7 +19,7 @@ released.
 
 ## Custom layouts
 
-`ftlpad.ini` holds the settings, the button states and the wheels. `#` starts a comment
+`ftlhelm.ini` holds the settings, the button states and the wheels. `#` starts a comment
 outside quotes.
 
 | Section | Contents |

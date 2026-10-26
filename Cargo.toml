@@ -1,10 +1,10 @@
 [package]
-name = "ftlpad"
+name = "ftlhelm"
 version = "1.0.0"
 edition = "2021"
 authors = ["Maxim Gorin"]
 description = "Gamepad layer for FTL: Faster Than Light"
-repository = "https://github.com/mxmgorin/ftlpad"
+repository = "https://github.com/mxmgorin/ftlhelm"
 license = "GPL-3.0-or-later"
 publish = false
 

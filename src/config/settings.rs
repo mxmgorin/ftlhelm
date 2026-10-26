@@ -8,7 +8,7 @@ use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 
-const LAYOUT_ENV: &str = "FTLPAD_LAYOUT";
+const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
 const FILE_POLL_S: f64 = 1.0;
 
 const SPEED_LEVEL_MIN: f32 = 1.0;

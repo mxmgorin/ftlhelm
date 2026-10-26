@@ -5,7 +5,7 @@ use std::io::Write;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-const LOG_PREFIX: &str = "ftlpad: ";
+const LOG_PREFIX: &str = "ftlhelm: ";
 const HEARTBEAT_S: f64 = 10.0;
 const MAX_DT: f64 = 0.05;
 

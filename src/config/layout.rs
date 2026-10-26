@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn shipped_scheme_reads_its_settings() {
-        let (l, cfg) = Layout::parse(include_str!("../../config/ftlpad.ini"));
+        let (l, cfg) = Layout::parse(include_str!("../../config/ftlhelm.ini"));
         assert_eq!(cfg.cursor_deadzone, 0.25);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
         assert!(!l.wheels.is_empty());

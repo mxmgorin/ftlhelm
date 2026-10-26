@@ -1,4 +1,4 @@
-//! ftlpad: a gamepad layer for the Linux build of FTL, preloaded into the game process
+//! ftlhelm: a gamepad layer for the Linux build of FTL, preloaded into the game process
 //! natively or under box64.
 //!
 //! The game's SIL engine polls joysticks every frame, but nothing in the game reads them.

@@ -22,10 +22,10 @@ use crate::game::zones::record_button;
 use crate::game::{sound, state};
 use crate::ui::text;
 
-const DEBUG_ENV: &str = "FTLPAD_DEBUG";
+const DEBUG_ENV: &str = "FTLHELM_DEBUG";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Git revision of the build.
-const REV: &str = env!("FTLPAD_REV");
+const REV: &str = env!("FTLHELM_REV");
 
 /// Used when no layout file is named.
 const DEFAULT_LAYOUT: &str =
@@ -178,7 +178,7 @@ pub extern "C" fn init() {
         }
         return;
     }
-    log!("ftlpad {VERSION} ({REV})");
+    log!("ftlhelm {VERSION} ({REV})");
     let missing: Vec<_> = SYMBOLS.iter().zip(&addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
     if !missing.is_empty() {
         for name in missing {

@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use super::util::log;
 
-const EXE_ENV: &str = "FTLPAD_EXE";
+const EXE_ENV: &str = "FTLHELM_EXE";
 const EXE_FALLBACK: &str = "/proc/self/exe";
 const MAPS: &str = "/proc/self/maps";
 
@@ -566,7 +566,7 @@ mod tests {
     /// An in-memory file holding `bytes`.
     fn memfile(bytes: &[u8]) -> File {
         // SAFETY: memfd_create with a NUL-terminated name.
-        let fd = unsafe { libc::memfd_create(c"ftlpad-test".as_ptr(), 0) };
+        let fd = unsafe { libc::memfd_create(c"ftlhelm-test".as_ptr(), 0) };
         assert!(fd >= 0, "memfd_create failed");
         // SAFETY: a fresh descriptor the File now owns.
         let mut f = unsafe { File::from_raw_fd(fd) };
@@ -712,21 +712,21 @@ mod tests {
     }
 
     #[no_mangle]
-    extern "C" fn ftlpad_test_marker_a() -> i32 {
+    extern "C" fn ftlhelm_test_marker_a() -> i32 {
         1
     }
 
     #[no_mangle]
-    extern "C" fn ftlpad_test_marker_b() -> i32 {
+    extern "C" fn ftlhelm_test_marker_b() -> i32 {
         2
     }
 
     /// The markers' link-time addresses in this binary's .symtab, and their runtime ones.
     fn markers(f: &File) -> ([usize; 2], [usize; 2]) {
         let mut found = [0; 2];
-        scan_symtab(f, &["ftlpad_test_marker_a", "ftlpad_test_marker_b"], &mut found);
+        scan_symtab(f, &["ftlhelm_test_marker_a", "ftlhelm_test_marker_b"], &mut found);
         assert!(found.iter().all(|&a| a != 0), "markers missing from .symtab: {found:x?}");
-        (found, [ftlpad_test_marker_a as *const () as usize, ftlpad_test_marker_b as *const () as usize])
+        (found, [ftlhelm_test_marker_a as *const () as usize, ftlhelm_test_marker_b as *const () as usize])
     }
 
     #[test]

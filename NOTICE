@@ -1,6 +1,6 @@
-ftlpad - gamepad layer for FTL: Faster Than Light
+ftlhelm - gamepad layer for FTL: Faster Than Light
 Copyright (C) 2026 Maxim Gorin (mxmgorin)
-https://github.com/mxmgorin/ftlpad
+https://github.com/mxmgorin/ftlhelm
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -28,14 +28,14 @@ Additional terms under section 7 of the GNU General Public License
 
 FTL: Faster Than Light
 
-ftlpad is an unofficial mod, not affiliated with or endorsed by Subset Games.
-"FTL: Faster Than Light" is a trademark of Subset Games. ftlpad contains none
+ftlhelm is an unofficial mod, not affiliated with or endorsed by Subset Games.
+"FTL: Faster Than Light" is a trademark of Subset Games. ftlhelm contains none
 of the game's files.
 
 
 Third-party code
 
-ftlpad.so statically links the Rust standard library and the libc crate
+ftlhelm.so statically links the Rust standard library and the libc crate
 (https://github.com/rust-lang/libc), both dual-licensed under MIT or Apache-2.0
 and used here under the MIT license:
 

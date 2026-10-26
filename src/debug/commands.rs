@@ -15,7 +15,7 @@ use crate::game::zones::ZoneKind;
 use crate::input::bindings::Source;
 use crate::ui::draw::{text_width, WHEEL_FONT};
 
-const CMD_ENV: &str = "FTLPAD_CMD";
+const CMD_ENV: &str = "FTLHELM_CMD";
 const CMD_BUF: usize = 512;
 
 /// The command FIFO and the text read from it short of a newline.

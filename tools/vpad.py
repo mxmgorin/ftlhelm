@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Virtual gamepad for desktop test runs of ftlpad.
+"""Virtual gamepad for desktop test runs of ftlhelm.
 
 Creates a uinput pad with the evdev layout the SIL engine's scanner picks up, waits for
 the game, then plays steps given on the command line or a named script:
@@ -13,7 +13,7 @@ Steps:
     down:BUTTON, up:BUTTON
     stick:l|r:X,Y:S       deflect a stick (-1..1 per axis) for S seconds, then centre it
     wait:S
-    cmd:TEXT              write TEXT to the ftlpad command FIFO (underscores become spaces)
+    cmd:TEXT              write TEXT to the ftlhelm command FIFO (underscores become spaces)
 
 Buttons are evdev positions: south, east, west, north (a, b, x, y on an Xbox pad), l1,
 r1, l2, r2, l3, r3, select, start, guide, up, down, left, right. The game polls once a
@@ -89,14 +89,14 @@ def run(ui, step, fifo):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Virtual gamepad for ftlpad test runs.")
+    parser = argparse.ArgumentParser(description="Virtual gamepad for ftlhelm test runs.")
     parser.add_argument("--delay", type=float, default=4.0, help="seconds to wait before the first step")
-    parser.add_argument("--fifo", help="the ftlpad command FIFO, for cmd: steps")
+    parser.add_argument("--fifo", help="the ftlhelm command FIFO, for cmd: steps")
     parser.add_argument("--script", choices=sorted(SCRIPTS), help="a named step list")
     parser.add_argument("steps", nargs="*")
     args = parser.parse_args()
     steps = SCRIPTS[args.script] + args.steps if args.script else args.steps
-    ui = UInput(CAPS, name="ftlpad virtual pad", vendor=0x045e, product=0x028e, version=0x110)
+    ui = UInput(CAPS, name="ftlhelm virtual pad", vendor=0x045e, product=0x028e, version=0x110)
     print(f"vpad: {ui.device.path} up, waiting {args.delay}s", flush=True)
     time.sleep(args.delay)
     try:

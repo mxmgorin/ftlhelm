@@ -16,7 +16,7 @@ const HELP_COL_HOLD: f32 = 430.0;
 const HELP_RULE_H: f32 = 1.0;
 /// A rule sits this far above the top of the row it opens.
 const HELP_RULE_GAP: f32 = 2.0;
-const HELP_VERSION: &str = concat!("ftlpad ", env!("CARGO_PKG_VERSION"));
+const HELP_VERSION: &str = concat!("ftlhelm ", env!("CARGO_PKG_VERSION"));
 const URL_SCHEME: &str = "https://";
 /// A held click drags: a selection box over the ship, an item on a screen.
 const CLICK_HOLD_TITLE: &str = "Drag select";
