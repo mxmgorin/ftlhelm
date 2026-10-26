@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
+use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
@@ -86,6 +87,10 @@ pub struct Settings {
     pub zoom: f32,
     /// The help shows at start, until it is first closed.
     pub help_at_start: bool,
+    /// A frame the screen shrinks is area-averaged; off, the game filters it.
+    pub frame_filter: bool,
+    /// The unsharp mask's amount over the area-averaged frame.
+    pub sharpen: f32,
 }
 
 impl Default for Settings {
@@ -116,6 +121,8 @@ impl Default for Settings {
             text_scale: TEXT_SCALE_AUTO,
             zoom: ZOOM_AUTO,
             help_at_start: true,
+            frame_filter: true,
+            sharpen: SHARPEN_DEFAULT,
         }
     }
 }
@@ -154,6 +161,8 @@ const OPTIONS: &[(&str, Field)] = &[
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
+    ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
+    ("sharpen", Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
 ];
 
 impl Settings {
@@ -450,6 +459,17 @@ mod tests {
             assert!(DEFAULT_LAYOUT.lines().any(|l| l.starts_with(&format!("{key} ="))), "{key} not in ftlhelm.ini");
             assert!(docs.contains(&format!("`{key}`")), "{key} not in CONFIGURATION.md");
         }
+    }
+
+    #[test]
+    fn the_frame_filter_switches_off_and_sharpen_stays_in_range() {
+        let mut cfg = Settings::default();
+        cfg.apply("frame_filter", "0");
+        assert!(!cfg.frame_filter);
+        cfg.apply("sharpen", "3");
+        assert_eq!(cfg.sharpen, SHARPEN_MAX);
+        cfg.apply("sharpen", "-1");
+        assert_eq!(cfg.sharpen, 0.0);
     }
 
     #[test]

@@ -24,7 +24,7 @@ use crate::game::mem::Obj;
 use crate::game::offsets::{build_by_id, install_layout};
 use crate::game::zones::record_button;
 use crate::game::{sound, state};
-use crate::ui::{text, zoom};
+use crate::ui::{shrink, text, zoom};
 
 const DEBUG_ENV: &str = "FTLHELM_DEBUG";
 const LOG_ENV: &str = "FTLHELM_LOG";
@@ -86,6 +86,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         }
         l.poll_files(t);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
+        shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
         l.run_queued_clicks();
         l.sync_cursor();
         l.build_zones();

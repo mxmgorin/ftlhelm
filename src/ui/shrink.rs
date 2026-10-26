@@ -10,13 +10,14 @@
 //! Per axis, the filter pairs up the texels under a screen pixel's footprint and reads each
 //! pair with one bilinear tap placed so the hardware applies the pair's box weights; the
 //! pairs' weighted sum is the exact box average. An unsharp mask then pushes that average
-//! SHARPEN times its difference away from a blur: four bilinear taps half a screen pixel out
-//! along the diagonals. The engine prepends its GLSL header and frees the source after
-//! compiling it, so the source is in its dialect (`in`, `color_out`, `texp`) and copied into
-//! its heap.
+//! away from a blur, the configured amount times their difference; the blur is four bilinear
+//! taps half a screen pixel out along the diagonals. The engine prepends its GLSL header and
+//! frees the source after compiling it, so the source is in its dialect (`in`, `color_out`,
+//! `texp`) and copied into its heap.
 //!
-//! The generator is installed at the first shrunk blit. Where the engine refuses it, or the
-//! filter fails to build, blits keep the game's own filter.
+//! The generator is installed at the first shrunk blit with the filter on. Where the engine
+//! refuses it, or the filter fails to build, blits keep the game's own filter, as they do
+//! while the filter is off.
 //!
 //! The frame blit is one textured quad whose texture is frame-sized: the whole draw takes
 //! the filter's key, and `size` maps its texcoords to texels.
@@ -37,8 +38,9 @@ const FAILED_PROGRAM: c_uint = !0;
 /// The shader table size and growth the engine sets up for its own generator.
 const TABLE_SIZE: c_int = 0xf00;
 const TABLE_GROWS: c_int = 0;
-/// The unsharp mask's amount.
-const SHARPEN: f32 = 0.5;
+/// The unsharp mask's amount by default, and its most.
+pub const SHARPEN_DEFAULT: f32 = 0.5;
+pub const SHARPEN_MAX: f32 = 1.0;
 /// The engine allocator's default alignment and no flags.
 const ALLOC_DEFAULT_ALIGN: c_int = 0;
 const ALLOC_NO_FLAGS: c_int = 0;
@@ -87,6 +89,9 @@ void main() {
 static FILTERING: AtomicBool = AtomicBool::new(false);
 /// The last key handed out for the filter.
 static LAST_FILTER_KEY: AtomicU32 = AtomicU32::new(INVALID_KEY);
+/// Whether shrunk frames are area-averaged, and the unsharp amount, as last configured.
+static ENABLED: AtomicBool = AtomicBool::new(true);
+static SHARPEN: AtomicU32 = AtomicU32::new(SHARPEN_DEFAULT.to_bits());
 
 enum State {
     Uninstalled,
@@ -94,6 +99,7 @@ enum State {
     Installed {
         size: c_int,
         span: c_int,
+        sharpen: c_int,
         confirmed: bool,
     },
     Failed,
@@ -181,8 +187,7 @@ fn install() -> State {
             log!("frame filter: not installed, game's own");
             return State::Failed;
         }
-        (a.set_shader_uniform_float)(sharpen, SHARPEN);
-        State::Installed { size, span, confirmed: false }
+        State::Installed { size, span, sharpen, confirmed: false }
     }
 }
 
@@ -200,15 +205,25 @@ fn filter_built() -> Option<bool> {
     Some(!info.is_null() && unsafe { (*info).program } != FAILED_PROGRAM)
 }
 
+/// Sets whether shrunk frames are area-averaged and the unsharp amount, for the blits that
+/// follow.
+pub fn configure(enabled: bool, sharpen: f32) {
+    ENABLED.store(enabled, Ordering::Relaxed);
+    SHARPEN.store(sharpen.to_bits(), Ordering::Relaxed);
+}
+
 /// Runs `blit`, the game's blit of a `frame_w` x `frame_h` frame, with each screen pixel
-/// averaging the `span` frame pixels per axis it covers; plainly where the filter is
+/// averaging the `span` frame pixels per axis it covers; plainly while the filter is off or
 /// unavailable. `blit` must filter the frame smoothly.
 pub fn blit(frame_w: f32, frame_h: f32, span: (f32, f32), blit: impl FnOnce()) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return blit();
+    }
     let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
     if let State::Uninstalled = *state {
         *state = install();
     }
-    let State::Installed { size, span: span_id, confirmed } = *state else {
+    let State::Installed { size, span: span_id, sharpen, confirmed } = *state else {
         drop(state);
         return blit();
     };
@@ -217,13 +232,14 @@ pub fn blit(frame_w: f32, frame_h: f32, span: (f32, f32), blit: impl FnOnce()) {
     unsafe {
         (a.set_shader_uniform_vec2)(size, &[frame_w, frame_h]);
         (a.set_shader_uniform_vec2)(span_id, &[span.0, span.1]);
+        (a.set_shader_uniform_float)(sharpen, f32::from_bits(SHARPEN.load(Ordering::Relaxed)));
     }
     FILTERING.store(true, Ordering::Relaxed);
     blit();
     FILTERING.store(false, Ordering::Relaxed);
     if let Some(built) = (!confirmed).then(filter_built).flatten() {
         log!("frame filter: {}", if built { "area average" } else { "failed to build, game's own" });
-        *state = if built { State::Installed { size, span: span_id, confirmed: true } } else { State::Failed };
+        *state = if built { State::Installed { size, span: span_id, sharpen, confirmed: true } } else { State::Failed };
     }
 }
 

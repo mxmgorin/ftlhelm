@@ -68,6 +68,8 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
 | `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
+| `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |
+| `sharpen` | 0.5 | 0 to 1 | sharpening of that averaged frame; 0: none |
 
 ## Bindings
 
