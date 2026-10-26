@@ -80,7 +80,7 @@ pub fn player_manager() -> Option<Obj> {
 }
 
 /// CrewControl's vector of selected crew.
-fn selected_crew() -> Option<Obj> {
+pub fn selected_crew() -> Option<Obj> {
     Some(gui()?.at(GUI_CREW_CONTROL + CREW_SELECTED))
 }
 

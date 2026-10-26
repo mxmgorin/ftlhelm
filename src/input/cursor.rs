@@ -2,7 +2,7 @@
 //! between zones, and the first item a screen opens on.
 
 use crate::core::layer::Layer;
-use crate::core::util::{clampf, log};
+use crate::core::util::{clampf, log, now_s};
 use crate::game::actions::mouse_move;
 use crate::game::api::{Point, Rect};
 use crate::game::mem::Obj;
@@ -28,6 +28,9 @@ pub struct Cursor {
     pub synced: bool,
     pub l_held: bool,
     pub r_held: bool,
+    /// Where a focus move left the cursor, and when: the zone there shows focused while the
+    /// cursor stays.
+    pub focus: Option<((i32, i32), f64)>,
 }
 
 /// Screens that open on their first item.
@@ -188,7 +191,22 @@ impl Layer {
         };
         (self.cursor.x, self.cursor.y) = rects[best].center();
         self.send_cursor();
+        self.mark_focus();
         self.buzz();
+    }
+
+    /// Marks the zone under the cursor as focused, for as long as the cursor stays.
+    fn mark_focus(&mut self) {
+        self.cursor.focus = Some(((self.cursor.last_x, self.cursor.last_y), now_s()));
+    }
+
+    /// The zone a focus move left the cursor on while it stays there, and the seconds since.
+    pub fn focused_zone(&self, now: f64) -> Option<(usize, f64)> {
+        let (at, since) = self.cursor.focus?;
+        if at != (self.cursor.last_x, self.cursor.last_y) {
+            return None;
+        }
+        Some((self.zone_under_cursor()?, now - since))
     }
 
     /// The first item of a screen among the zones: a dialog's first choice, the map's beacon
@@ -245,6 +263,7 @@ impl Layer {
         };
         (self.cursor.x, self.cursor.y) = self.zones.list[first].rect.center();
         self.send_cursor();
+        self.mark_focus();
         self.focus.waiting = 0;
     }
 }
@@ -310,6 +329,7 @@ fn index(i: Option<usize>) -> i64 {
 mod tests {
     use super::*;
     use crate::game::fake::with_game;
+    use crate::game::zones::Zone;
 
     const AIM: Aim = Aim { cones: [30.0, 60.0], side_weight: 2.0 };
 
@@ -343,6 +363,23 @@ mod tests {
         let rects = [rect(50, 0)];
         assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, -1.0), AIM), None);
         assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, 0.0), AIM), None);
+    }
+
+    #[test]
+    fn a_focus_move_frames_its_zone_while_the_cursor_stays() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let zone = |x| Zone { rect: Rect { x, y: 100, w: 40, h: 40 }, id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![zone(100), zone(200)];
+            (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+            l.send_cursor();
+            assert_eq!(l.focused_zone(now_s()), None, "no focus move yet");
+            l.focus_move(1.0, 0.0);
+            assert_eq!(l.focused_zone(now_s()).map(|(i, _)| i), Some(1));
+            (l.cursor.x, l.cursor.y) = (300.0, 300.0);
+            l.send_cursor();
+            assert_eq!(l.focused_zone(now_s()), None, "the cursor moved on");
+        });
     }
 
     #[test]

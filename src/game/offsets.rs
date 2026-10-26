@@ -229,6 +229,9 @@ pub const CREW_ANIM: usize = 192;
 pub const CREW_ROOM: usize = 156;
 pub const CREW_SHIP: usize = 396;
 pub const PLAYER_SHIP_ID: i32 = 0;
+/// CrewMember's position on the ship it is on, from the ship's origin.
+pub const CREW_X: usize = 12;
+pub const CREW_Y: usize = 16;
 pub const CREW_DEAD: usize = 544;
 pub const CREW_BLUEPRINT: usize = 576;
 pub const CREWBP_NAME: usize = 120;

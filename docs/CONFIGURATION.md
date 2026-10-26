@@ -64,7 +64,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `overlay` | 1 | switch | the mode badge in the top right corner |
+| `overlay` | 1 | switch | the badge in the top right corner, the brackets of the focused zone and the markers over selected crew |
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
 | `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |

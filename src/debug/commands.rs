@@ -103,6 +103,7 @@ impl Layer {
                 (self.cursor.x, self.cursor.y) = (x as f32, y as f32);
                 self.send_cursor();
             }
+            ("focus", &[dx, dy]) => self.focus_move(dx as f32, dy as f32),
             ("click", _) => self.click_tap(MouseButton::Left),
             ("rclick", _) => self.click_tap(MouseButton::Right),
             ("touch", &[x, y, ..]) => {

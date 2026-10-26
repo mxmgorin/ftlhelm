@@ -5,7 +5,7 @@ use super::draw::*;
 use super::text;
 use crate::config::layout::{key_name, truncate_label, Action, Binding, Builtin, SIL_BUTTONS};
 use crate::core::layer::Layer;
-use crate::core::util::clampf;
+use crate::core::util::{clampf, now_s};
 use crate::game::offsets::*;
 use crate::game::state;
 
@@ -59,6 +59,23 @@ fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
 const INPUT_TITLES: [&str; SIL_BUTTONS] =
     ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
 const PAUSED_TITLE: &str = "Paused";
+const CREW_TITLE: &str = "Crew";
+/// A focused zone's corner brackets, in frame pixels: their arms take a share of the zone's
+/// shorter side within bounds, and they slide in from further out as the focus lands.
+const FOCUS_ARM_SHARE: f32 = 0.25;
+const FOCUS_ARM_MIN: f32 = 6.0;
+const FOCUS_ARM_MAX: f32 = 14.0;
+const FOCUS_THICK: f32 = 2.0;
+const FOCUS_GAP: f32 = 1.0;
+const FOCUS_SLIDE: f32 = 6.0;
+const FOCUS_SETTLE_S: f64 = 0.12;
+/// The marker over a selected crew member, in frame pixels above its position; it bobs
+/// CREW_MARK_BOB_PX up and down once every CREW_MARK_BOB_S.
+const CREW_MARK_W: f32 = 12.0;
+const CREW_MARK_H: f32 = 7.0;
+const CREW_MARK_RISE: f32 = 24.0;
+const CREW_MARK_BOB_PX: f32 = 2.0;
+const CREW_MARK_BOB_S: f64 = 1.0;
 
 /// What the game's own hotkeys do, as the help names them.
 #[rustfmt::skip]
@@ -89,6 +106,21 @@ fn builtin_title(b: Builtin) -> &'static str {
     }
 }
 
+/// The badge's crew part on the ship view: the selected crew member's name, or how many are
+/// selected.
+fn crew_part() -> Option<String> {
+    let count = state::selected_count();
+    if count == 0 || !state::ship_view() {
+        return None;
+    }
+    if count > 1 {
+        return Some(format!("{count} {CREW_TITLE}"));
+    }
+    let member = state::first_selected_crew()?;
+    let name = truncate_label(&state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME)));
+    Some(format!("{CREW_TITLE}: {name}"))
+}
+
 /// The top of a line of text centred between `top` and `bottom`.
 fn band_text_top(top: f32, bottom: f32) -> f32 {
     (top + bottom - WHEEL_FONT_H) / 2.0
@@ -105,6 +137,9 @@ impl Layer {
     pub fn draw_overlay(&self) -> bool {
         if self.wheel.open.is_some() {
             self.draw_wheel();
+        } else if !self.help_shown && self.cfg.overlay {
+            self.draw_crew_marks();
+            self.draw_focus();
         }
         self.draw_touch();
         if self.cursor.synced && self.cfg.overlay && state::gui().is_some() {
@@ -121,6 +156,42 @@ impl Layer {
             self.draw_help();
         }
         self.wheel.open.is_none() && !self.help_shown
+    }
+
+    /// Frames the zone a focus move left the cursor on with corner brackets.
+    fn draw_focus(&self) {
+        let now = now_s();
+        let Some((i, age)) = self.focused_zone(now) else {
+            return;
+        };
+        let r = self.zones.list[i].rect;
+        let (w, h) = (r.w as f32, r.h as f32);
+        let k = self.mark_scale();
+        let arm = clampf(w.min(h) * FOCUS_ARM_SHARE, FOCUS_ARM_MIN, FOCUS_ARM_MAX) * k;
+        let settle = (age / FOCUS_SETTLE_S).min(1.0) as f32;
+        let out = (FOCUS_GAP + FOCUS_THICK + FOCUS_SLIDE * (1.0 - settle)) * k;
+        let (x, y) = (r.x as f32 - out, r.y as f32 - out);
+        draw_brackets(x, y, w + 2.0 * out, h + 2.0 * out, arm, FOCUS_THICK * k, PLATE_EDGE_COLOR);
+    }
+
+    /// Marks each selected crew member on the ship view with a triangle over it.
+    fn draw_crew_marks(&self) {
+        let (Some(gui), Some(selected)) = (state::gui(), state::selected_crew()) else {
+            return;
+        };
+        if !state::ship_view() {
+            return;
+        }
+        let k = self.mark_scale();
+        let phase = (now_s() / CREW_MARK_BOB_S).fract() as f32 * std::f32::consts::TAU;
+        let bob = CREW_MARK_BOB_PX * k * phase.sin();
+        for (_, member) in selected.vec_objs().filter(|(_, m)| !state::crew_dead(*m)) {
+            let player = member.i32(CREW_SHIP) == PLAYER_SHIP_ID;
+            let origin = if player { state::player_origin(gui) } else { state::enemy_origin(gui) };
+            let x = origin.x as f32 + member.f32(CREW_X);
+            let tip = origin.y as f32 + member.f32(CREW_Y) - CREW_MARK_RISE + bob;
+            draw_down_marker(x, tip, CREW_MARK_W * k, CREW_MARK_H * k, CREW_SELECTED_COLOR);
+        }
     }
 
     /// Draws what lies over the game's pointer and tooltip: the notice.
@@ -277,6 +348,7 @@ impl Layer {
                 .unwrap_or_default();
             parts.push(if weapon.is_empty() { "Target".to_string() } else { format!("Target: {weapon}") });
         }
+        parts.extend(crew_part());
         let modes =
             [(self.bind.precision, "Doors"), (self.actions.fast_forward, "Fast"), (self.bind.dpad_mouse, "Mouse")];
         parts.extend(modes.iter().filter(|(on, _)| *on).map(|(_, name)| name.to_string()));
@@ -309,6 +381,21 @@ mod tests {
         assert!(l.cfg.help_at_start);
         l.show_help(false);
         assert!(!l.help_shown && !l.cfg.help_at_start);
+    }
+
+    #[test]
+    fn the_badge_names_the_selected_crew_on_the_ship_view() {
+        with_game(|g| {
+            let l = Layer::default();
+            let ann = g.crew("Ann", "human", PLAYER_SHIP_ID, false);
+            let bob = g.crew("Bob", "human", PLAYER_SHIP_ID, false);
+            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(ann)]);
+            assert_eq!(l.badge_text(), "", "not on the ship view");
+            g.player_manager();
+            assert_eq!(l.badge_text(), "CREW: ANN");
+            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(ann), Some(bob)]);
+            assert_eq!(l.badge_text(), "2 CREW");
+        });
     }
 
     #[test]

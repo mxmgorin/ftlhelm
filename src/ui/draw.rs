@@ -27,6 +27,8 @@ pub const RING_LIT_COLOR: GlColor = GlColor::new(0.52, 0.91, 0.93, 0.7);
 pub const RING_UNLIT_COLOR: GlColor = GlColor::new(0.52, 0.91, 0.93, 0.2);
 pub const RING_TRACK_COLOR: GlColor = GlColor::new(0.05, 0.16, 0.13, 0.6);
 pub const RING_READY_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 0.85);
+/// The green of the game's frame around a selected crew member's box.
+pub const CREW_SELECTED_COLOR: GlColor = GlColor::new(0.47, 1.0, 0.47, 1.0);
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
@@ -117,6 +119,44 @@ fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color:
         if !pie.is_null() {
             (a.render_primitive)(pie);
             (a.destroy_primitive)(pie);
+        }
+    }
+}
+
+/// Corner brackets `thick` wide and `arm` long on the corners of `x, y, w, h`, each over a dark
+/// edge one line wider.
+pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color: GlColor) {
+    let (right, bottom) = (x + w, y + h);
+    let bars = [
+        (x, y, arm, thick),
+        (x, y, thick, arm),
+        (right - arm, y, arm, thick),
+        (right - thick, y, thick, arm),
+        (x, bottom - thick, arm, thick),
+        (x, bottom - arm, thick, arm),
+        (right - arm, bottom - thick, arm, thick),
+        (right - thick, bottom - arm, thick, arm),
+    ];
+    for (bx, by, bw, bh) in bars {
+        let e = OVERLAY_LINE;
+        draw_rect(bx - e, by - e, bw + 2.0 * e, bh + 2.0 * e, PLATE_BEVEL_COLOR);
+    }
+    for (bx, by, bw, bh) in bars {
+        draw_rect(bx, by, bw, bh, color);
+    }
+}
+
+/// A triangle pointing down, `w` wide and `h` tall, its tip at (`cx`, `tip`), over a dark edge
+/// one line wider; out of one-line rows like a disc.
+pub fn draw_down_marker(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {
+    for (grow, shade) in [(OVERLAY_LINE, PLATE_BEVEL_COLOR), (0.0, color)] {
+        let (w, h) = (w + 2.0 * grow, h + 2.0 * grow);
+        let top = tip + grow - h;
+        let mut row = 0.0;
+        while row < h {
+            let half = w / 2.0 * (1.0 - row / h);
+            draw_rect(cx - half, top + row, 2.0 * half, OVERLAY_LINE, shade);
+            row += OVERLAY_LINE;
         }
     }
 }

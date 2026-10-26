@@ -457,6 +457,12 @@ impl Layer {
         }
     }
 
+    /// Frame pixels per screen pixel, at least 1: drawn this many times its size, a mark keeps
+    /// at least its size on a screen that shows the frame smaller.
+    pub fn mark_scale(&self) -> f32 {
+        self.frame_per_window().max(1.0)
+    }
+
     /// Starts the peek's hold when its button goes down, ends it when it comes up.
     pub fn zoom_peek(&mut self, down: bool) {
         self.zoom.peek_from = down.then(now_s);

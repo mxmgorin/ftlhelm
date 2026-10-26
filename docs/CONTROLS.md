@@ -15,7 +15,8 @@ active one has none down. When the active pad disconnects, the ship view pauses 
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick
-moves it once per push past `flick_threshold`.
+moves it once per push past `flick_threshold`. The zone the cursor lands on shows corner
+brackets until the cursor moves on.
 
 | Screen | Zones |
 | --- | --- |
@@ -28,7 +29,7 @@ moves it once per push past `flick_threshold`.
 With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item.
 
 Y selects the next crew member; A on a room orders the selected crew there; B clears the
-selection. With `crew_follow`, the cursor moves to the room of a newly selected member.
+selection. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member.
 
 ## Doors
 
@@ -42,9 +43,9 @@ L3 or R3, or the Mouse plate of the settings wheel, switches the D-pad and both 
 between zones and mouse mode. In mouse mode they move the cursor freely, at `cursor_speed`,
 with `cursor_deadzone` and `cursor_curve` for the sticks.
 
-The badge in the top right corner names the active modes: Mouse, Doors, Fast (fast
-forward), Target with the armed weapon, and Paused on a zoomed ship view. `overlay = 0`
-hides it.
+The badge in the top right corner names the selected crew member, or counts several, and the
+active modes: Mouse, Doors, Fast (fast forward), Target with the armed weapon, and Paused on
+a zoomed ship view. `overlay = 0` hides it, the zone brackets and the crew markers.
 
 ## Touch
 
@@ -114,3 +115,6 @@ The view rests on the frame's edges while the cursor stays clear of the view's e
 Text sizes apply to event boxes and tooltips: 1 to 2 times the game's own, or auto. Auto
 enlarges them on screens smaller than 1280x720, less at higher zoom levels. The controls
 table and notices take the same size, as far as the frame holds them.
+
+On a screen that shows the frame smaller than 1280x720, the zone brackets and crew markers
+keep their size.
