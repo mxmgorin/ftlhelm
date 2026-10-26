@@ -1,4 +1,6 @@
-# ftlhelm
+<p align="center">
+  <img src="docs/images/ftlhelm-banner.png" alt="ftlhelm, controller support for FTL: Faster Than Light" width="640">
+</p>
 
 <div align="center">
   <a href="https://github.com/mxmgorin/ftlhelm/releases/latest"><img src="https://img.shields.io/github/v/release/mxmgorin/ftlhelm?style=flat-square&labelColor=16171a&color=3fb8a0&cacheSeconds=180&label=release" alt="Latest release"></a>
@@ -12,7 +14,7 @@
   <a href="https://github.com/mxmgorin/ftlhelm/issues">Issues</a>
 </p>
 
-Controller support for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux: play it with a gamepad, without changing the game files.
+ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, written in Rust. It loads when the game launches and maps controller inputs to the game's existing mouse and keyboard controls. Features include D-pad navigation between zones, radial wheels for weapons, crew and systems, and zoom and larger text for small screens. The game files remain untouched.
 
 <p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
 
