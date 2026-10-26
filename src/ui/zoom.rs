@@ -175,25 +175,40 @@ pub fn resolved_level(level: f32) -> f32 {
     screen_size().map_or(ZOOM_MIN, |screen| resolve(level, screen))
 }
 
-/// The level after `level` among `levels`, back to ZOOM_MIN past the top.
-fn cycle(levels: &[f32], level: f32) -> f32 {
-    let next = step(levels, level, true);
-    if same_level(next, level) {
-        ZOOM_MIN
+/// The `zoom` setting a step up or down from `setting` among `levels`, from `shown`, the
+/// level it takes; a step below the whole frame is auto.
+fn step_setting(levels: &[f32], setting: f32, shown: f32, up: bool) -> f32 {
+    if !up && setting != ZOOM_AUTO && same_level(shown, ZOOM_MIN) {
+        ZOOM_AUTO
+    } else {
+        step(levels, shown, up)
+    }
+}
+
+/// The `zoom` setting after `setting` in the cycle, from `shown`, the level it takes: auto,
+/// the whole frame, each of `levels` up, auto.
+fn cycle_setting(levels: &[f32], setting: f32, shown: f32) -> f32 {
+    if setting == ZOOM_AUTO {
+        return ZOOM_MIN;
+    }
+    let next = step(levels, shown, true);
+    if same_level(next, shown) {
+        ZOOM_AUTO
     } else {
         next
     }
 }
 
-/// The zoom plate's pips at `level` on the current screen: the levels above the whole
-/// frame, and how many of them `level` reaches.
-pub fn level_pips(level: f32) -> (i32, i32) {
+/// The zoom plate's pips for the `zoom` setting on the current screen: one per level, the
+/// whole frame included, and how many the setting reaches; none for auto.
+pub fn setting_pips(setting: f32) -> (i32, i32) {
     let Some(screen) = screen_size() else {
         return (0, 0);
     };
     let all = levels(screen);
+    let level = resolve(setting, screen);
     let reached = all.iter().filter(|&&l| l <= level || same_level(l, level)).count();
-    ((all.len() - 1) as i32, reached.saturating_sub(1) as i32)
+    (all.len() as i32, if setting == ZOOM_AUTO { 0 } else { reached as i32 })
 }
 
 /// The centre along one axis for a view of `size` over `frame` that holds `lo..hi` inside
@@ -364,22 +379,25 @@ impl Zoom {
 }
 
 impl Layer {
-    /// Steps the ship view's level up or down through the screen's levels.
+    /// Steps the ship view's level up or down through the screen's levels from the level
+    /// shown; a step below the whole frame is auto.
     pub fn zoom_step(&mut self, up: bool) {
         let Some(screen) = screen_size() else {
             return;
         };
-        self.zoom.level = step(&levels(screen), resolve(self.zoom.level, screen), up);
+        let setting = self.zoom.level;
+        self.zoom.level = step_setting(&levels(screen), setting, resolve(setting, screen), up);
         log!("zoom {:.2}", self.zoom.level);
     }
 
-    /// Moves the ship view to the next of the screen's levels, back to the whole frame past
-    /// the top.
+    /// Moves the ship view to the next in the cycle: auto, the whole frame, each of the
+    /// screen's levels up, auto.
     pub fn zoom_cycle(&mut self) {
         let Some(screen) = screen_size() else {
             return;
         };
-        self.zoom.level = cycle(&levels(screen), resolve(self.zoom.level, screen));
+        let setting = self.zoom.level;
+        self.zoom.level = cycle_setting(&levels(screen), setting, resolve(setting, screen));
         log!("zoom {:.2}", self.zoom.level);
     }
 
@@ -486,11 +504,22 @@ mod tests {
     }
 
     #[test]
-    fn a_cycle_wraps_to_the_whole_frame() {
+    fn settings_step_from_what_auto_shows_and_back_to_auto_below_the_whole_frame() {
+        let (l, auto) = (levels(SMALL), auto_level(SMALL));
+        assert_eq!(step_setting(&l, ZOOM_AUTO, auto, true), step(&l, auto, true));
+        assert_eq!(step_setting(&l, ZOOM_AUTO, auto, false), ZOOM_MIN);
+        assert_eq!(step_setting(&l, ZOOM_MIN, ZOOM_MIN, false), ZOOM_AUTO);
+        assert_eq!(step_setting(&l, ZOOM_AUTO, ZOOM_MIN, false), ZOOM_MIN);
+        assert_eq!(step_setting(&l, ZOOM_MAX, ZOOM_MAX, true), ZOOM_MAX);
+    }
+
+    #[test]
+    fn a_cycle_runs_from_auto_through_the_levels_back_to_auto() {
         let l = levels(SMALL);
-        assert_eq!(cycle(&l, ZOOM_MIN), l[1]);
-        assert_eq!(cycle(&l, l[2]), l[3]);
-        assert_eq!(cycle(&l, ZOOM_MAX), ZOOM_MIN);
+        assert_eq!(cycle_setting(&l, ZOOM_AUTO, auto_level(SMALL)), ZOOM_MIN);
+        assert_eq!(cycle_setting(&l, ZOOM_MIN, ZOOM_MIN), l[1]);
+        assert_eq!(cycle_setting(&l, l[2], l[2]), l[3]);
+        assert_eq!(cycle_setting(&l, ZOOM_MAX, ZOOM_MAX), ZOOM_AUTO);
     }
 
     #[test]

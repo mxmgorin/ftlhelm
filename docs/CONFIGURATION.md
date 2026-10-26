@@ -120,7 +120,7 @@ state.
 | `fast_forward` | run fast while held |
 | `dpad_mode` | switch between zones and mouse mode |
 | `help` | show the controls table; any button but the D-pad closes it |
-| `zoom` | the next zoom level, back to the whole frame after the last |
+| `zoom` | the next zoom level, back to auto after the last |
 | `text_size` | the next text size, back to auto after the largest |
 
 ## Wheels

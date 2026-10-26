@@ -73,8 +73,11 @@ pub fn size_index(setting: f32) -> i32 {
 }
 
 /// The `text_scale` setting a step up or down from `setting`, auto stepping from `shown`,
-/// the scale it draws at; within UNSCALED..=TEXT_SCALE_MAX.
+/// the scale it draws at; within UNSCALED..=TEXT_SCALE_MAX, or auto a step below UNSCALED.
 pub fn step_setting(setting: f32, shown: f32, up: bool) -> f32 {
+    if !up && setting != TEXT_SCALE_AUTO && setting < UNSCALED + STEP_SLACK {
+        return TEXT_SCALE_AUTO;
+    }
     let from = if setting == TEXT_SCALE_AUTO { shown } else { setting };
     let at = (from - UNSCALED) / TEXT_SCALE_STEP;
     let n = if up { (at + STEP_SLACK).floor() + 1.0 } else { (at - STEP_SLACK).ceil() - 1.0 };
@@ -284,10 +287,11 @@ mod tests {
     static SCALE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn sizes_step_from_what_auto_shows_and_cycle_back_to_auto() {
+    fn sizes_step_from_what_auto_shows_and_back_to_auto_below_the_smallest() {
         assert_eq!(step_setting(TEXT_SCALE_AUTO, 1.75, true), TEXT_SCALE_MAX);
         assert_eq!(step_setting(TEXT_SCALE_AUTO, 1.31, false), 1.25);
-        assert_eq!(step_setting(UNSCALED, UNSCALED, false), UNSCALED);
+        assert_eq!(step_setting(UNSCALED, UNSCALED, false), TEXT_SCALE_AUTO);
+        assert_eq!(step_setting(TEXT_SCALE_AUTO, UNSCALED, false), UNSCALED);
         assert_eq!(step_setting(TEXT_SCALE_MAX, TEXT_SCALE_MAX, true), TEXT_SCALE_MAX);
         let mut s = TEXT_SCALE_AUTO;
         let mut seen = Vec::new();

@@ -538,8 +538,8 @@ impl Layer {
         }
     }
 
-    /// Fills the settings plates' state: lit while on, pips for the level or the switch, and
-    /// the value as the badge.
+    /// Fills the settings plates' state: lit while on or set by hand, pips for the setting or
+    /// the switch, and the value as the badge.
     fn show_settings(&mut self) {
         let cursor = self.bind.dpad_mouse;
         let (zoom, text_scale) = (self.zoom.level, self.cfg.text_scale);
@@ -555,11 +555,11 @@ impl Layer {
                 }
                 Builtin::Zoom => {
                     let level = zoom::resolved_level(zoom);
-                    pl.powered = level > ZOOM_MIN;
-                    (pl.pips, pl.pips_on) = zoom::level_pips(level);
-                    pl.badge = if zoom == ZOOM_AUTO {
+                    pl.powered = zoom != ZOOM_AUTO;
+                    (pl.pips, pl.pips_on) = zoom::setting_pips(zoom);
+                    pl.badge = if !pl.powered {
                         format!("{AUTO_BADGE} {}", times(level))
-                    } else if pl.powered {
+                    } else if level > ZOOM_MIN {
                         times(level)
                     } else {
                         ZOOM_OFF_BADGE.to_string()
@@ -885,14 +885,16 @@ mod tests {
             let p = plates(&mut l, layout);
             let shown = |p: &Plate| (p.powered, p.pips, p.pips_on, p.badge.clone());
             assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, MOUSE_ON_BADGE.to_string()));
-            // The stand-in screen has three levels above the whole frame; 2 is the second.
-            assert_eq!(shown(&p[2]), (true, 3, 2, "2x".to_string()));
+            // The stand-in screen has the whole frame and three levels above it; 2 is the third.
+            assert_eq!(shown(&p[2]), (true, 4, 3, "2x".to_string()));
             assert_eq!(shown(&p[6]), (true, TEXT_SIZES, 3, "1.5x".to_string()));
             assert_eq!(shown(&p[4]), (false, 0, 0, String::new()));
             l.wheel.sel = Some(2);
             l.adjust_plate(-1);
             l.adjust_plate(-1);
-            assert_eq!(shown(&l.wheel.plates[2]), (false, 3, 0, ZOOM_OFF_BADGE.to_string()));
+            assert_eq!(shown(&l.wheel.plates[2]), (true, 4, 1, ZOOM_OFF_BADGE.to_string()));
+            l.adjust_plate(-1);
+            assert_eq!(shown(&l.wheel.plates[2]), (false, 4, 0, format!("{AUTO_BADGE} 1.33x")));
             l.wheel.sel = Some(6);
             l.adjust_plate(1);
             assert_eq!(l.cfg.text_scale, 1.75);

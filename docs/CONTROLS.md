@@ -68,8 +68,8 @@ wheels over menus, screens and the map too.
 | Plate | A | D-pad up, down |
 | --- | --- | --- |
 | Mouse | switch the D-pad and sticks between zones and mouse mode | |
-| Zoom | next zoom level, back to the whole frame after the last | zoom in, out |
-| Text | next text size, back to auto after the largest | larger, smaller text |
+| Zoom | next zoom level, back to auto after the last | zoom in, out; auto below the whole frame |
+| Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
 | Help | the controls table | |
 
 Zoom and text size are kept between runs, see [Configuration](CONFIGURATION.md#settings).
