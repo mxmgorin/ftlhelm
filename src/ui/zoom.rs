@@ -11,6 +11,7 @@
 //! view's inner part, resting on a frame edge where that does. A pan moves the goal by hand
 //! and holds it until the focus moves; a peek shows the whole frame while it lasts. While
 //! zoomed, a window over the ship view is shown whole, as large as the screen allows.
+//! A frame shown smaller than it is drawn is area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -20,6 +21,7 @@ use crate::core::util::{clampf, log, now_s};
 use crate::game::api::{api, Rect};
 use crate::game::offsets::{GAME_H, GAME_W};
 use crate::game::state;
+use crate::ui::shrink;
 use crate::ui::wheel::wheel_area;
 
 /// The `zoom` setting that zooms one level in where the screen shrinks the frame.
@@ -256,11 +258,13 @@ fn publish(blit: Option<Blit>) {
 pub fn blit_frame(frame_w: f32, frame_h: f32, smooth: bool, blit: impl FnOnce(bool)) {
     BLITS.fetch_add(1, Ordering::Relaxed);
     let shown = *SHOWN.lock().unwrap_or_else(|e| e.into_inner());
+    let a = api();
     let Some(Blit { view, viewport: [x, y, w, h] }) = shown else {
-        return blit(smooth);
+        // SAFETY: the engine's viewport getters; the game has set the frame's viewport.
+        let (vw, vh) = unsafe { ((a.viewport_width)() as f32, (a.viewport_height)() as f32) };
+        return blit_at(frame_w, frame_h, (frame_w / vw, frame_h / vh), smooth, blit);
     };
     let (sx, sy) = (frame_w / view.w, frame_h / view.h);
-    let a = api();
     // SAFETY: the renderer's viewport and matrix stack inside the game's frame blit; the
     // game sets its viewport anew each frame.
     unsafe {
@@ -270,9 +274,19 @@ pub fn blit_frame(frame_w: f32, frame_h: f32, smooth: bool, blit: impl FnOnce(bo
         (a.scale)(sx, sy, 1.0);
     }
     // A whole number of screen pixels per frame pixel stays sharp unfiltered.
-    blit(view.k.fract() != 0.0);
+    blit_at(frame_w, frame_h, (view.w / w as f32, view.h / h as f32), view.k.fract() != 0.0, blit);
     // SAFETY: pops the matrix pushed above.
     unsafe { (a.pop_matrix)() };
+}
+
+/// Blits the frame at `span` frame pixels per screen pixel per axis: area-averaged where
+/// the screen shrinks it, else filtered as `smooth` asks.
+fn blit_at(frame_w: f32, frame_h: f32, span: (f32, f32), smooth: bool, blit: impl FnOnce(bool)) {
+    if span.0 > 1.0 || span.1 > 1.0 {
+        shrink::blit(frame_w, frame_h, span, || blit(true));
+    } else {
+        blit(smooth);
+    }
 }
 
 /// What the view shows.

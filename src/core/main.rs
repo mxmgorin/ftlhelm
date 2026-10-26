@@ -6,7 +6,7 @@
 //! - ChoiceBox::OnRender, WindowFrame::Draw and ChoiceBox::MouseMove draw and hit-test
 //!   event boxes scaled;
 //! - MouseControl::MeasureTooltip and ResourceControl::GetFontData scale tooltip fonts;
-//! - CSurface::GL_BlitFrameBuffer shows the zoomed view;
+//! - CSurface::GL_BlitFrameBuffer shows the zoomed view and averages a shrunk frame;
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
 use std::ffi::{c_int, c_void};

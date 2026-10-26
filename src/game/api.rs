@@ -1,7 +1,7 @@
 //! The game's types as its functions take them, and the entry points, globals and
 //! joystick API resolved from the executable's symbol table.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 pub type Ptr = *mut c_void;
@@ -73,6 +73,20 @@ impl FontData {
             line_height: (self.line_height * k).round(),
         }
     }
+}
+
+/// The engine's ShaderSourceCallback: a primitive's type, attribute counts and render
+/// state; returns a shader source on the engine's heap.
+pub type ShaderSource =
+    unsafe extern "C" fn(c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int) -> *mut c_char;
+/// The engine's ShaderKeyCallback: the same arguments; returns the shader table key.
+pub type ShaderKey =
+    unsafe extern "C" fn(c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int, c_int) -> c_uint;
+
+/// The head of the engine's ShaderInfo: one shader table entry.
+#[repr(C)]
+pub struct ShaderInfo {
+    pub program: c_uint,
 }
 
 macro_rules! game_api {
@@ -163,6 +177,17 @@ game_api! {
     display_height: unsafe extern "C" fn() -> c_int = "graphics_display_height",
     set_viewport: unsafe extern "C" fn(c_int, c_int, c_int, c_int) = "_ZN8CSurface14GL_SetViewPortEiiii",
     blit_frame: usize = "_ZN8CSurface18GL_BlitFrameBufferEPiffb",
+    viewport_width: unsafe extern "C" fn() -> c_int = "graphics_viewport_width",
+    viewport_height: unsafe extern "C" fn() -> c_int = "graphics_viewport_height",
+    default_vertex_source: usize = "generate_vertex_shader_source",
+    default_fragment_source: ShaderSource = "generate_fragment_shader_source",
+    default_shader_key: ShaderKey = "generate_shader_key",
+    set_shader_generator: unsafe extern "C" fn(usize, ShaderSource, ShaderKey, c_int, c_int) -> c_int = "graphics_set_shader_generator",
+    add_shader_uniform: unsafe extern "C" fn(*const c_char) -> c_int = "graphics_add_shader_uniform",
+    set_shader_uniform_float: unsafe extern "C" fn(c_int, f32) = "graphics_set_shader_uniform_float",
+    set_shader_uniform_vec2: unsafe extern "C" fn(c_int, *const [f32; 2]) = "graphics_set_shader_uniform_vec2",
+    shader_lookup: unsafe extern "C" fn(c_uint, *mut c_int) -> *const ShaderInfo = "shader_table_lookup",
+    mem_alloc: unsafe extern "C" fn(i64, c_int, c_int) -> *mut c_void = "mem_alloc",
 }
 
 static API: OnceLock<Api> = OnceLock::new();
