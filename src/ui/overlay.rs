@@ -106,6 +106,7 @@ impl Layer {
         if self.wheel.open.is_some() {
             self.draw_wheel();
         }
+        self.draw_touch();
         if self.cursor.synced && self.cfg.overlay && state::gui().is_some() {
             let text = self.badge_text();
             if !text.is_empty() {

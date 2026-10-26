@@ -11,8 +11,9 @@ use crate::game::actions::{key_down, key_up, shift_count, MouseButton};
 use crate::game::api::api;
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::zones::ZoneKind;
+use crate::game::zones::{hud_boxes, ZoneKind};
 use crate::input::bindings::Source;
+use crate::input::touch::TouchPhase;
 use crate::ui::draw::{text_width, WHEEL_FONT};
 
 const CMD_ENV: &str = "FTLHELM_CMD";
@@ -75,6 +76,9 @@ impl Layer {
                 log!("  {} {} at {},{} {}x{}", t.kind.name(), t.id, r.x, r.y, r.w, r.h);
             }
         }
+        for r in hud_boxes() {
+            log!("  hud box at {},{} {}x{}", r.x, r.y, r.w, r.h);
+        }
     }
 
     fn dump_state(&self) {
@@ -101,6 +105,13 @@ impl Layer {
             }
             ("click", _) => self.click_tap(MouseButton::Left),
             ("rclick", _) => self.click_tap(MouseButton::Right),
+            ("touch", &[x, y, ..]) => {
+                let id = nums.get(2).copied().unwrap_or(0);
+                match line.split_whitespace().nth(1).and_then(TouchPhase::from_name) {
+                    Some(phase) => self.queue_touch(phase, id, x, y),
+                    None => log!("unknown command: {line}"),
+                }
+            }
             ("key", &[code]) => {
                 key_down(code);
                 key_up(code);

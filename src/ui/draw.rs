@@ -1,7 +1,8 @@
 //! Drawing over the game's renderer: text through its fonts on its own std::string, panels,
-//! discs, game images by path, and the shared palette.
+//! discs, ring timers, game images by path, and the shared palette.
 
 use std::collections::HashMap;
+use std::ffi::c_int;
 
 use crate::core::util::log;
 use crate::game::api::{api, GlColor, Ptr};
@@ -21,6 +22,20 @@ pub const PLATE_EDGE_COLOR: GlColor = GlColor::new(0.63, 0.9, 0.76, 0.95);
 const PLATE_BEVEL_COLOR: GlColor = GlColor::new(0.0, 0.05, 0.05, 0.9);
 pub const TEXT_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
 pub const TEXT_DISABLED_COLOR: GlColor = GlColor::new(0.42, 0.46, 0.45, 1.0);
+/// The game's lock timer around a system icon, faded: cyan segments on a dark teal disc.
+pub const RING_LIT_COLOR: GlColor = GlColor::new(0.52, 0.91, 0.93, 0.7);
+pub const RING_UNLIT_COLOR: GlColor = GlColor::new(0.52, 0.91, 0.93, 0.2);
+pub const RING_TRACK_COLOR: GlColor = GlColor::new(0.05, 0.16, 0.13, 0.6);
+pub const RING_READY_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 0.85);
+
+/// A ring timer has as many segments as the game's, each a share of a turn less a gap.
+pub const RING_SEGMENTS: usize = 12;
+const TURN_DEG: f32 = 360.0;
+const RING_GAP_DEG: f32 = 5.0;
+/// The first segment starts straight up; angles run clockwise from the right.
+const RING_START_DEG: f32 = -90.0;
+/// The track shows this far past each side of the segments.
+const RING_TRACK_PAD: f32 = 2.0;
 
 pub fn draw_text_left(font: i32, x: f32, y: f32, text: &str) {
     let s = GameString::new(text);
@@ -90,6 +105,39 @@ pub fn draw_disc(cx: f32, cy: f32, r: f32, color: GlColor) {
         let half = r * (1.0 - t * t).max(0.0).sqrt();
         draw_rect(cx - half, cy + y, 2.0 * half, DISC_SCANLINE, color);
         y += DISC_SCANLINE;
+    }
+}
+
+/// An arc `width` wide inside radius `r`, from `from` to `to` degrees.
+fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color: GlColor) {
+    let a = api();
+    // SAFETY: the renderer's pie primitive, rendered once and freed.
+    unsafe {
+        let pie = (a.pie_partial)(cx.round() as c_int, cy.round() as c_int, r, from, to, width, color);
+        if !pie.is_null() {
+            (a.render_primitive)(pie);
+            (a.destroy_primitive)(pie);
+        }
+    }
+}
+
+/// `color` with its alpha scaled by `opacity`.
+fn faded(color: GlColor, opacity: f32) -> GlColor {
+    GlColor { a: color.a * opacity, ..color }
+}
+
+/// A ring timer in the game's style, `width` wide inside radius `r`: RING_SEGMENTS segments
+/// clockwise from the top over a dark track, the first `lit` in `color`; all of it at
+/// `opacity`.
+pub fn draw_ring_timer(cx: f32, cy: f32, r: f32, width: f32, lit: usize, color: GlColor, opacity: f32) {
+    let whole = (RING_START_DEG, RING_START_DEG + TURN_DEG);
+    let track = faded(RING_TRACK_COLOR, opacity);
+    draw_arc(cx, cy, r + RING_TRACK_PAD, width + 2.0 * RING_TRACK_PAD, whole, track);
+    let step = TURN_DEG / RING_SEGMENTS as f32;
+    for i in 0..RING_SEGMENTS {
+        let from = RING_START_DEG + i as f32 * step + RING_GAP_DEG / 2.0;
+        let shade = faded(if i < lit { color } else { RING_UNLIT_COLOR }, opacity);
+        draw_arc(cx, cy, r, width, (from, from + step - RING_GAP_DEG), shade);
     }
 }
 

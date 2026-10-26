@@ -163,6 +163,12 @@ pub const BUTTON_RENDER_OFF: usize = 34;
 pub const BUTTON_ACTIVE: usize = 72;
 
 pub const SYSCTRL_BOXES: usize = 16;
+/// SystemControl's position; its boxes' locations are relative to it.
+pub const SYSCTRL_POSITION: usize = 60;
+pub const SYSBOX_LOCATION: usize = 8;
+/// A system box takes clicks strictly between these offsets from its location, on both axes.
+pub const SYSBOX_CLICK_FROM: i32 = 21;
+pub const SYSBOX_CLICK_TO: i32 = 42;
 pub const SYSBOX_SYSTEM: usize = 144;
 pub const SYSTEM_TYPE: usize = 64;
 /// ShipSystem::powerState is a pair: the power in use, then the capacity.
@@ -182,6 +188,11 @@ pub const ARMAMENT_LOCATION: usize = 56;
 pub const WEAPON_CONTROL_SIZE: usize = 1024;
 pub const DRONE_CONTROL_SIZE: usize = 880;
 pub const ARMAMENTBOX_ITEM: usize = 496;
+/// An armament box takes clicks strictly inside this span from its hit point; the point is
+/// relative to its bar.
+pub const ARMAMENTBOX_HIT: usize = 152;
+pub const ARMAMENTBOX_HIT_W: i32 = 95;
+pub const ARMAMENTBOX_HIT_H: i32 = 39;
 pub const WEAPON_BLUEPRINT: usize = 32;
 pub const WEAPON_POWERED: usize = 242;
 pub const WEAPON_POWER: usize = 244;
@@ -224,6 +235,8 @@ pub const CREWBP_NAME: usize = 120;
 pub const CREWBP_RACE: usize = 8;
 pub const CRYSTAL_RACE: &str = "crystal";
 pub const CREW_SELECTED: usize = 8;
+/// CrewControl's crew under the pointer, or in the selection box while one is drawn.
+pub const CREW_POTENTIAL: usize = 32;
 /// Crew hotkeys run F1 up to this many.
 pub const CREW_HOTKEYS: usize = 8;
 
@@ -252,6 +265,12 @@ pub const DOOR_Y: usize = 596;
 pub const MOUSE_AIMING: usize = 16;
 pub const MOUSE_TELEPORTING: usize = 20;
 pub const MOUSE_MIND: usize = 24;
+/// Set while an OnLoop finds something that takes clicks under the pointer; cleared at its start.
+pub const MOUSE_VALID: usize = 29;
+/// The plain pointer's textures, over something that takes clicks and not; the other pointers
+/// come from elsewhere.
+pub const MOUSE_VALID_POINTER: usize = 40;
+pub const MOUSE_INVALID_POINTER: usize = 48;
 pub const MOUSE_HACKING: usize = 312;
 
 /// CFPS::FPSControl's speed level, unused by the game itself.

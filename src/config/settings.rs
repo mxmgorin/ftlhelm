@@ -51,6 +51,12 @@ const CONE_DEG_MAX: f32 = 89.0;
 /// Zone search: sideways distance counts this many times the forward distance.
 const FOCUS_SIDE_WEIGHT: f32 = 2.0;
 const FOCUS_SIDE_WEIGHT_MAX: f32 = 10.0;
+const TOUCH_LONG_PRESS_S: f32 = 0.5;
+/// Window pixels a finger may drift and still tap.
+const TOUCH_SLOP: f32 = 12.0;
+/// Window pixels a touch on nothing reaches for the nearest target.
+const TOUCH_SNAP: f32 = 32.0;
+const TOUCH_PX_MAX: f32 = 100.0;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -91,6 +97,14 @@ pub struct Settings {
     pub frame_filter: bool,
     /// The unsharp mask's amount over the area-averaged frame.
     pub sharpen: f32,
+    /// Touches act as the mouse.
+    pub touch: bool,
+    /// Seconds a finger stays down for its lift to right-click.
+    pub touch_long_press: f32,
+    /// Window pixels a finger may drift and still tap; past them, it drags.
+    pub touch_slop: f32,
+    /// Window pixels a touch on nothing reaches for the nearest target; 0: none.
+    pub touch_snap: f32,
 }
 
 impl Default for Settings {
@@ -123,6 +137,10 @@ impl Default for Settings {
             help_at_start: true,
             frame_filter: true,
             sharpen: SHARPEN_DEFAULT,
+            touch: true,
+            touch_long_press: TOUCH_LONG_PRESS_S,
+            touch_slop: TOUCH_SLOP,
+            touch_snap: TOUCH_SNAP,
         }
     }
 }
@@ -163,6 +181,10 @@ const OPTIONS: &[(&str, Field)] = &[
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
     ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
     ("sharpen", Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
+    ("touch", Field::Bool(|c| &mut c.touch)),
+    ("touch_long_press", Field::Float(|c| &mut c.touch_long_press, HOLD_S_MIN, HOLD_S_MAX)),
+    ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
+    ("touch_snap", Field::Float(|c| &mut c.touch_snap, 0.0, TOUCH_PX_MAX)),
 ];
 
 impl Settings {

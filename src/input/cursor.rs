@@ -66,20 +66,56 @@ fn first_screen() -> FirstScreen {
     }
 }
 
+/// The game's map from logical positions to window pixels, per axis: window =
+/// (logical + offset) / scale + bar.
+struct WindowMap {
+    scale: [f32; 2],
+    offset: [i32; 2],
+    bar: [i32; 2],
+}
+
+/// The game's current WindowMap; None before the game has a CApp.
+fn window_map() -> Option<WindowMap> {
+    let app = state::app()?;
+    let l = layout();
+    let scale = |off| {
+        let m = app.f32(off);
+        if m <= 0.0 {
+            1.0
+        } else {
+            m
+        }
+    };
+    Some(WindowMap {
+        scale: [scale(l.capp_mouse_modifier_x), scale(l.capp_mouse_modifier_y)],
+        offset: [app.i32(l.capp_modifier_x), app.i32(l.capp_modifier_y)],
+        bar: [app.i32(l.capp_x_bar), app.i32(l.capp_y_bar)],
+    })
+}
+
 impl Layer {
     /// Maps a logical position to the window pixels the mouse handlers take.
     pub fn to_window(&self, gx: f32, gy: f32) -> (i32, i32) {
-        let Some(app) = state::app() else {
+        let Some(m) = window_map() else {
             return (gx as i32, gy as i32);
         };
-        let l = layout();
-        let mx = app.f32(l.capp_mouse_modifier_x);
-        let my = app.f32(l.capp_mouse_modifier_y);
-        let mx = if mx <= 0.0 { 1.0 } else { mx };
-        let my = if my <= 0.0 { 1.0 } else { my };
-        let wx = ((gx + app.i32(l.capp_modifier_x) as f32) / mx).round() as i32 + app.i32(l.capp_x_bar);
-        let wy = ((gy + app.i32(l.capp_modifier_y) as f32) / my).round() as i32 + app.i32(l.capp_y_bar);
-        (wx, wy)
+        let axis = |g: f32, k: usize| ((g + m.offset[k] as f32) / m.scale[k]).round() as i32 + m.bar[k];
+        (axis(gx, 0), axis(gy, 1))
+    }
+
+    /// Logical pixels per window pixel through the game's transform.
+    pub fn window_scale(&self) -> f32 {
+        window_map().map_or(1.0, |m| m.scale[0])
+    }
+
+    /// Maps window pixels to the logical position the game's transform gives them; the
+    /// inverse of to_window.
+    pub fn logical_at(&self, wx: i32, wy: i32) -> (f32, f32) {
+        let Some(m) = window_map() else {
+            return (wx as f32, wy as f32);
+        };
+        let axis = |w: i32, k: usize| (w - m.bar[k]) as f32 * m.scale[k] - m.offset[k] as f32;
+        (axis(wx, 0), axis(wy, 1))
     }
 
     /// Adopts the game's cursor when something else moved it.
@@ -89,11 +125,15 @@ impl Layer {
         if c.synced && p == c.last_set {
             return;
         }
+        let moved_elsewhere = c.synced;
         (c.x, c.y) = (p.x as f32, p.y as f32);
         (c.last_x, c.last_y) = (p.x, p.y);
         c.last_set = p;
         c.synced = true;
         (self.cursor.last_wx, self.cursor.last_wy) = self.to_window(self.cursor.x, self.cursor.y);
+        if moved_elsewhere {
+            self.show_arrow();
+        }
     }
 
     /// Reports the cursor to the game when its integer position changed.
@@ -269,6 +309,7 @@ fn index(i: Option<usize>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::fake::with_game;
 
     const AIM: Aim = Aim { cones: [30.0, 60.0], side_weight: 2.0 };
 
@@ -302,6 +343,21 @@ mod tests {
         let rects = [rect(50, 0)];
         assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, -1.0), AIM), None);
         assert_eq!(pick_toward(&rects, None, (0.0, 5.0), (0.0, 0.0), AIM), None);
+    }
+
+    #[test]
+    fn window_pixels_map_back_to_the_logical_position() {
+        with_game(|g| {
+            let l = layout();
+            g.app.set(l.capp_mouse_modifier_x, 2.0f32);
+            g.app.set(l.capp_mouse_modifier_y, 2.0f32);
+            g.app.set(l.capp_modifier_y, -40i32);
+            g.app.set(l.capp_y_bar, 60i32);
+            let layer = Layer::default();
+            let (wx, wy) = layer.to_window(640.0, 360.0);
+            assert_eq!((wx, wy), (320, 220));
+            assert_eq!(layer.logical_at(wx, wy), (640.0, 360.0));
+        });
     }
 
     #[test]

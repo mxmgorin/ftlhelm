@@ -71,6 +71,15 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |
 | `sharpen` | 0.5 | 0 to 1 | sharpening of that averaged frame; 0: none |
 
+### Touch
+
+| Key | Default | Range | Effect |
+| --- | --- | --- | --- |
+| `touch` | 1 | switch | a touchscreen acts as the mouse, see [Touch](CONTROLS.md#touch); 0: touches do nothing |
+| `touch_long_press` | 0.5 | 0.05 to 2 | seconds a finger stays down for a right click on release |
+| `touch_slop` | 12 | 0 to 100 | screen pixels a finger may move and still tap; past them, it drags |
+| `touch_snap` | 32 | 0 to 100 | screen pixels a touch beside every target reaches for the nearest one; 0: none |
+
 ## Bindings
 
 ### States

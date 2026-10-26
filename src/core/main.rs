@@ -1,7 +1,10 @@
 //! Load-time setup and the hooks:
 //! - CApp::OnLoop runs the layer once a frame, and installs the crash report on the first;
-//! - MouseControl::OnRender draws the overlay around the game's pointer;
+//! - MouseControl::OnRender draws the overlay around the game's pointer, and
+//!   CSurface::GL_BlitPixelImage leaves out the plain pointer while touch hides it;
 //! - CEvent::GetShiftState adds the layer's Shift;
+//! - CApp::OnTouchDown, OnTouchMove, OnTouchUp and OnTouchCancel queue touches, and the
+//!   engine looks for a touchscreen among all input devices;
 //! - GenericButton::MouseMove records the buttons the game hit-tests;
 //! - ChoiceBox::OnRender, WindowFrame::Draw and ChoiceBox::MouseMove draw and hit-test
 //!   event boxes scaled;
@@ -14,16 +17,20 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::crash::{self, Phase};
-use super::hook::{accept_buttons_only_pads, build_id, hook, mapped_executable, redirect_step_cap, resolve_symbols};
+use super::hook::{
+    accept_buttons_only_pads, build_id, hook, mapped_executable, query_all_touch_devices, redirect_step_cap,
+    resolve_symbols,
+};
 use super::layer::with_layer;
 use super::util::{line_buffer_stdout, log, now_s, open_log_file};
 use crate::config::layout::DEFAULT_LAYOUT;
 use crate::game::actions::shift_held;
-use crate::game::api::{self, api, Api, FontData, Point, Ptr, SYMBOLS};
+use crate::game::api::{self, api, Api, FontData, GlColor, Point, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
-use crate::game::offsets::{build_by_id, install_layout};
+use crate::game::offsets::{build_by_id, install_layout, MOUSE_INVALID_POINTER, MOUSE_VALID_POINTER};
 use crate::game::zones::record_button;
 use crate::game::{sound, state};
+use crate::input::touch::{self, TouchPhase};
 use crate::ui::{shrink, text, zoom};
 
 const DEBUG_ENV: &str = "FTLHELM_DEBUG";
@@ -52,6 +59,11 @@ const BLIT_FRAME_PROLOGUE: [u8; 5] = [0x41, 0x54, 0x41, 0x89, 0xf4];
 const GET_SHIFT_PROLOGUE: [u8; 9] = [0x48, 0x83, 0xec, 0x08, 0xbf, 0x4b, 0x00, 0x00, 0x00];
 /// mov 0x10(%rdi),%eax; movzbl 0x49(%rdi),%r8d
 const BUTTON_MOVE_PROLOGUE: [u8; 8] = [0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47, 0x49];
+/// push %r12; push %rbp; mov %rdi,%rbp
+const BLIT_PIXEL_PROLOGUE: [u8; 6] = [0x41, 0x54, 0x55, 0x48, 0x89, 0xfd];
+/// repz ret, then the padding nop's first bytes: the empty handler is shorter than a jump.
+/// The copy returns before the cut nop, and its entry is never called.
+const TOUCH_STUB_PROLOGUE: [u8; 5] = [0xf3, 0xc3, 0x66, 0x66, 0x66];
 
 /// Entries that run the hooked functions' original code.
 static ONLOOP_ORIG: AtomicUsize = AtomicUsize::new(0);
@@ -64,6 +76,9 @@ static MEASURE_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CHOICE_MOUSE_MOVE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static FRAME_DRAW_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BLIT_FRAME_ORIG: AtomicUsize = AtomicUsize::new(0);
+static BLIT_PIXEL_ORIG: AtomicUsize = AtomicUsize::new(0);
+/// The plain pointer's textures while the game draws its pointer with them hidden, else 0.
+static HIDDEN_POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 
 /// The original of a hooked `extern "C"` function of type F.
 /// # Safety
@@ -82,6 +97,9 @@ extern "C" fn onloop_hook(app: Ptr) {
         if frame.count == 1 {
             log!("first OnLoop");
             sound::report();
+            if l.touch.hooked {
+                touch::report();
+            }
             crash::install(api().onloop);
         }
         l.poll_files(t);
@@ -94,6 +112,7 @@ extern "C" fn onloop_hook(app: Ptr) {
             l.focus_first_on_open();
         }
         l.poll_commands();
+        l.apply_touch(t);
         let pad = l.poll_pad(frame.dt);
         l.apply_pad(pad, t, frame.dt);
         l.update_zoom(frame.dt);
@@ -113,15 +132,23 @@ extern "C" fn onloop_hook(app: Ptr) {
 }
 
 extern "C" fn mouse_render_hook(this: Ptr) {
-    let draw_pointer = with_layer(|l| {
+    let (draw_pointer, hide_arrow) = with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
-        l.draw_overlay()
+        (l.draw_overlay(), l.arrow_hidden())
     })
-    .unwrap_or(true);
+    .unwrap_or((true, false));
     if draw_pointer {
+        // SAFETY: the game passes its MouseControl as `this`.
+        let mouse = unsafe { Obj::from_ptr(this as *const c_void) }.filter(|_| hide_arrow);
+        for (slot, off) in HIDDEN_POINTERS.iter().zip([MOUSE_VALID_POINTER, MOUSE_INVALID_POINTER]) {
+            slot.store(mouse.map_or(0, |m| m.get::<usize>(off)), Ordering::Relaxed);
+        }
         let _tooltip = text::TooltipScope::enter();
         // SAFETY: the original MouseControl::OnRender on its own object.
         unsafe { orig::<extern "C" fn(Ptr)>(&MOUSE_RENDER_ORIG)(this) };
+        for slot in &HIDDEN_POINTERS {
+            slot.store(0, Ordering::Relaxed);
+        }
     }
     with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
@@ -158,6 +185,18 @@ extern "C" fn measure_tooltip_hook(this: Ptr, width: c_int) -> Point {
     text::measure_tooltip(|| unsafe { orig::<extern "C" fn(Ptr, c_int) -> Point>(&MEASURE_TOOLTIP_ORIG)(this, width) })
 }
 
+extern "C" fn blit_pixel_hook(tex: Ptr, x: f32, y: f32, w: f32, h: f32, turn: f32, color: GlColor, mirror: bool) {
+    let hidden = !tex.is_null() && HIDDEN_POINTERS.iter().any(|p| p.load(Ordering::Relaxed) == tex as usize);
+    if !hidden {
+        // SAFETY: the original CSurface::GL_BlitPixelImage with its own arguments.
+        unsafe {
+            orig::<extern "C" fn(Ptr, f32, f32, f32, f32, f32, GlColor, bool)>(&BLIT_PIXEL_ORIG)(
+                tex, x, y, w, h, turn, color, mirror,
+            )
+        };
+    }
+}
+
 extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
     zoom::blit_frame(w, h, smooth, |smooth| {
         // SAFETY: the original CSurface::GL_BlitFrameBuffer with its own frame buffer and size.
@@ -168,6 +207,22 @@ extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
 extern "C" fn get_shift_hook() -> bool {
     // SAFETY: the original CEvent::GetShiftState.
     shift_held() || unsafe { orig::<extern "C" fn() -> bool>(&GET_SHIFT_ORIG)() }
+}
+
+extern "C" fn touch_down_hook(_app: Ptr, id: c_int, x: c_int, y: c_int) {
+    with_layer(|l| l.queue_touch(TouchPhase::Down, id, x, y));
+}
+
+extern "C" fn touch_move_hook(_app: Ptr, id: c_int, x: c_int, y: c_int, _x0: c_int, _y0: c_int) {
+    with_layer(|l| l.queue_touch(TouchPhase::Move, id, x, y));
+}
+
+extern "C" fn touch_up_hook(_app: Ptr, id: c_int, x: c_int, y: c_int, _x0: c_int, _y0: c_int) {
+    with_layer(|l| l.queue_touch(TouchPhase::Up, id, x, y));
+}
+
+extern "C" fn touch_cancel_hook(_app: Ptr, id: c_int, x: c_int, y: c_int, _x0: c_int, _y0: c_int) {
+    with_layer(|l| l.queue_touch(TouchPhase::Cancel, id, x, y));
 }
 
 extern "C" fn button_move_hook(this: Ptr, x: i32, y: i32, silent: bool) {
@@ -258,6 +313,15 @@ pub extern "C" fn init() {
         &BUTTON_MOVE_PROLOGUE,
         &BUTTON_MOVE_ORIG,
     );
+    let touch_hooks = [
+        ("CApp::OnTouchDown", a.touch_down, touch_down_hook as *const () as usize),
+        ("CApp::OnTouchMove", a.touch_move, touch_move_hook as *const () as usize),
+        ("CApp::OnTouchUp", a.touch_up, touch_up_hook as *const () as usize),
+        ("CApp::OnTouchCancel", a.touch_cancel, touch_cancel_hook as *const () as usize),
+    ];
+    let touch = touch_hooks.map(|(name, func, repl)| hook(name, func, repl, &TOUCH_STUB_PROLOGUE).is_some());
+    let touch = touch.iter().all(|&on| on);
+    let touch_scan = touch && query_all_touch_devices(a.graphics_init, a.xi_query_device);
     // The pointer hook goes in first: a box drawn scaled must also hit-test scaled.
     let event_text = install(
         "ChoiceBox::MouseMove",
@@ -301,17 +365,28 @@ pub extern "C" fn init() {
         &BLIT_FRAME_PROLOGUE,
         &BLIT_FRAME_ORIG,
     );
+    let touch_pointer = touch
+        && install(
+            "CSurface::GL_BlitPixelImage",
+            a.blit_pixel,
+            blit_pixel_hook as *const () as usize,
+            &BLIT_PIXEL_PROLOGUE,
+            &BLIT_PIXEL_ORIG,
+        );
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
-        "active on {}: overlay {}, shift {}, buttons {}, event text {}, tooltip text {}, zoom {}, \
-         step cap {}, pad scan {}, sound recovery {}",
+        "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, touch pointer {}, \
+         event text {}, tooltip text {}, zoom {}, step cap {}, pad scan {}, sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
         on(buttons),
+        on(touch),
+        on(touch_scan),
+        on(touch_pointer),
         on(event_text),
         on(tooltip_text),
         on(zoom),
@@ -321,6 +396,7 @@ pub extern "C" fn init() {
     );
     with_layer(|l| {
         l.debug = debug;
+        l.touch.hooked = touch;
         l.actions.step_cap = step_cap;
         // SAFETY: the float redirect_step_cap placed, holding the game's cap.
         l.actions.step_cap_normal = step_cap.map_or(0.0, |c| unsafe { (c as *const f32).read() });

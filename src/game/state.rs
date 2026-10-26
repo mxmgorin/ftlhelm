@@ -96,6 +96,12 @@ pub fn first_selected_crew() -> Option<Obj> {
     selected_crew()?.vec_obj(0)
 }
 
+/// Whether a crew member is under the pointer, as the game resolved it a frame after the
+/// pointer moved.
+pub fn crew_under_pointer() -> bool {
+    gui().is_some_and(|g| g.at(GUI_CREW_CONTROL + CREW_POTENTIAL).ptr_count() > 0)
+}
+
 pub fn crew_is_selected(member: Obj) -> bool {
     selected_crew().is_some_and(|v| v.vec_objs().any(|(_, m)| m == member))
 }
@@ -207,6 +213,11 @@ pub fn drone_control() -> Option<Obj> {
 pub fn aiming() -> bool {
     let m = mouse();
     [MOUSE_AIMING, MOUSE_TELEPORTING, MOUSE_MIND, MOUSE_HACKING].into_iter().any(|off| m.i32(off) != 0)
+}
+
+/// Whether the game found something that takes clicks under the pointer at its last OnLoop.
+pub fn pointer_valid() -> bool {
+    mouse().flag(MOUSE_VALID)
 }
 
 /// Where the enemy ship's room rectangles start on screen.

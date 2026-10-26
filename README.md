@@ -14,7 +14,7 @@
   <a href="https://github.com/mxmgorin/ftlhelm/issues">Issues</a>
 </p>
 
-ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, written in Rust. It loads when the game launches and maps controller inputs to the game's existing mouse and keyboard controls. Features include D-pad navigation between zones, radial wheels for weapons, crew and systems, and zoom and larger text for small screens. The game files remain untouched.
+ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, written in Rust. It loads when the game launches and maps controller and touchscreen inputs to the game's existing mouse and keyboard controls. Features include D-pad navigation between zones, radial wheels for weapons, crew and systems, and zoom and larger text for small screens. The game files remain untouched.
 
 <p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
 
@@ -28,6 +28,7 @@ ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/
   - **Text size**: event boxes and tooltips 1 to 2 times the game's own
 - **Fast forward** while a button is held
 - **Mouse mode**: the D-pad and sticks move the game's cursor freely
+- **Touch**: tap to click, hold and release to right-click, drag to select; a touch just beside a button, room or system icon lands on it
 - **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
 
 <p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"></p>
@@ -66,6 +67,12 @@ Download [`ftlhelm-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlhelm/rel
 2. In **Properties > Controller**, set Steam Input to **Disabled** for FTL.
 3. In **Properties > Compatibility**, leave **Force the use of a specific Steam Play compatibility tool** off.
 
+### Steam Deck
+
+As for Steam, except step 2: in **Properties > Controller**, leave Steam Input on with the **Gamepad** template.
+
+For touch in Game Mode, open FTL's controller layout (**Controller Settings > Edit Layout > Action Sets**), choose the gear of the action set, **Add Always-On command**, and set it to the System command **Touchscreen Native Support**. Desktop Mode needs no setting.
+
 ### GOG
 
     ~/ftlhelm/ftlhelm-linux-x86_64/ftlhelm.sh "/path/to/the GOG install/start.sh"
@@ -81,7 +88,7 @@ If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
 
-- **[Controls](docs/CONTROLS.md)**: zones, doors, mouse mode, wheels, zoom, text size
+- **[Controls](docs/CONTROLS.md)**: zones, doors, mouse mode, wheels, zoom, text size, touch
 - **[Configuration](docs/CONFIGURATION.md)**: settings, bindings, wheels, environment variables
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: the log and what its lines mean
 - **[Building](docs/BUILDING.md)**: build commands, CI, test channel

@@ -46,6 +46,24 @@ The badge in the top right corner names the active modes: Mouse, Doors, Fast (fa
 forward), Target with the armed weapon, and Paused on a zoomed ship view. `overlay = 0`
 hides it.
 
+## Touch
+
+A touchscreen acts as the mouse, one finger at a time; a touch lands where the screen
+shows it, zoomed or not. A touch on nothing the game takes moves to the nearest room,
+button, beacon, choice, slot, system icon or weapon box within `touch_snap`.
+
+| Touch | Effect |
+| --- | --- |
+| tap | click; with crew selected, a room orders them there unless a crew member is under the finger |
+| hold for `touch_long_press`, release | right click; a ring around the finger fills while it is held and turns white once the hold is long enough |
+| drag | drag with the left button: a selection box, an item, a slider; also after a hold |
+
+After a touch the pointer arrow hides, until the mouse or a pad moves the pointer; tooltips
+and the targeting pointers stay. A touch's click leaves a small ring that fades.
+
+A tap closes the controls table. With a wheel open, a tap on a plate acts on it; a tap
+elsewhere closes the wheel.
+
 ## Wheels
 
 Holding B, X, Y, L1 or R1 opens a wheel around the cursor on the ship view; a Select tap

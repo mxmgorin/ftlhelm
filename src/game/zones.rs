@@ -119,6 +119,39 @@ pub fn record_button(button: Obj) {
     }
 }
 
+/// The pixels strictly inside the `w` by `h` span from `at`, as the game's hit tests take them.
+fn open_rect(at: Point, w: i32, h: i32) -> Rect {
+    Rect { x: at.x + 1, y: at.y + 1, w: w - 1, h: h - 1 }
+}
+
+/// The ship view's HUD boxes that take clicks and are not zones: the system icons and the
+/// armament boxes holding an item.
+pub fn hud_boxes() -> Vec<Rect> {
+    let Some(gui) = state::gui() else {
+        return Vec::new();
+    };
+    let control = gui.at(GUI_SYS_CONTROL);
+    let origin = control.point(SYSCTRL_POSITION);
+    let side = SYSBOX_CLICK_TO - SYSBOX_CLICK_FROM;
+    let mut boxes: Vec<Rect> = control
+        .at(SYSCTRL_BOXES)
+        .vec_objs()
+        .map(|(_, b)| {
+            let at = b.point(SYSBOX_LOCATION);
+            let from = Point { x: origin.x + at.x + SYSBOX_CLICK_FROM, y: origin.y + at.y + SYSBOX_CLICK_FROM };
+            open_rect(from, side, side)
+        })
+        .collect();
+    for bar in [state::weapon_control(), state::drone_control()].into_iter().flatten() {
+        let at = bar.point(ARMAMENT_LOCATION);
+        for (_, b) in bar.at(ARMAMENT_BOXES).vec_objs().filter(|(_, b)| b.obj(ARMAMENTBOX_ITEM).is_some()) {
+            let hit = b.point(ARMAMENTBOX_HIT);
+            boxes.push(open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H));
+        }
+    }
+    boxes
+}
+
 /// Bounding box centre of a ship's rooms on screen.
 pub fn ship_center(ship: Obj, origin: Point) -> Option<(f32, f32)> {
     let (mut x0, mut y0, mut x1, mut y1) = (GAME_W, GAME_H, 0, 0);
@@ -502,6 +535,27 @@ mod tests {
                     (ZoneKind::Button, 1, rect(600, 300)),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn the_hud_boxes_are_the_system_icons_and_the_filled_armament_boxes() {
+        with_game(|g| {
+            let control = g.gui.at(GUI_SYS_CONTROL);
+            control.set(SYSCTRL_POSITION, Point { x: 10, y: 600 });
+            let sys_box = g.arena.alloc(SYSBOX_SYSTEM + size_of::<usize>());
+            sys_box.set(SYSBOX_LOCATION, Point { x: 20, y: 30 });
+            g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
+            let item = g.arena.alloc(size_of::<usize>());
+            let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+            filled.set(ARMAMENTBOX_HIT, Point { x: 5, y: 6 });
+            filled.set(ARMAMENTBOX_ITEM, item.addr());
+            let empty = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(filled), Some(empty)]);
+            let icon = Rect { x: 52, y: 652, w: 20, h: 20 };
+            assert_eq!(hud_boxes(), [icon, Rect { x: 306, y: 647, w: 94, h: 38 }]);
         });
     }
 

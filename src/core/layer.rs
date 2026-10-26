@@ -11,6 +11,7 @@ use crate::game::zones::Zones;
 use crate::input::bindings::Bindings;
 use crate::input::cursor::{Cursor, FirstFocus};
 use crate::input::pad::PadState;
+use crate::input::touch::Touch;
 use crate::ui::draw::{Images, WHEEL_FONT};
 use crate::ui::overlay::Notice;
 use crate::ui::wheel::WheelUi;
@@ -29,6 +30,7 @@ pub struct Layer {
     pub zones: Zones,
     pub actions: Actions,
     pub pad: PadState,
+    pub touch: Touch,
     pub wheel: WheelUi,
     pub zoom: Zoom,
     pub images: Images,
@@ -53,6 +55,7 @@ impl Default for Layer {
             zones: Zones::default(),
             actions: Actions::default(),
             pad: PadState::default(),
+            touch: Touch::default(),
             wheel: WheelUi::default(),
             zoom: Zoom::default(),
             images: Images::default(),

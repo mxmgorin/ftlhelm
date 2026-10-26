@@ -663,6 +663,25 @@ impl Layer {
         }
     }
 
+    /// Acts on the plate of the open wheel at frame point (`x`, `y`); closes the wheel when
+    /// no plate is there.
+    pub fn touch_wheel(&mut self, x: f32, y: f32) {
+        let origin = wheel_origin(self.cursor.x, self.cursor.y);
+        let half = WHEEL_TILE / 2.0;
+        let slot = (0..WHEEL_SLOTS).find(|&i| {
+            let (cx, cy) = plate_center(origin, i);
+            (x - cx).abs() <= half && (y - cy).abs() <= half
+        });
+        match slot {
+            Some(slot) if self.wheel.pickable(slot) => {
+                self.wheel.sel = Some(slot);
+                self.act_on_plate();
+            }
+            Some(_) => {}
+            None => self.close_wheel(),
+        }
+    }
+
     /// Adds power to the selected item of a power or systems wheel, or takes it away for a
     /// negative dir; on the crew wheel, adds the member to the selection or drops them; on
     /// the settings wheel, steps the selected setting.

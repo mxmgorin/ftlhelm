@@ -1,6 +1,7 @@
 //! Symbol resolution from the executable's .symtab, PLT slot redirection, and code patches
 //! through a trampoline page mapped within rel32 reach of the executable: inline hooks, the
-//! step cap of CFPS::OnLoop, and the widened pad test of the engine's joystick scan.
+//! step cap of CFPS::OnLoop, and the widened pad test of the engine's joystick scan. The
+//! engine's touchscreen query is patched in place.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -72,6 +73,15 @@ const TESTB_LEN: usize = 7;
 const JE_LEN: usize = 6;
 const JNZ_REL8: u8 = 0x75;
 const JNZ_LEN: usize = 2;
+
+/// sys_graphics_init looks for a touchscreen with "mov $XIAllMasterDevices,%esi;
+/// mov display(%rip),%rdi; call *p_XIQueryDevice(%rip)" within this many bytes of its start.
+const TOUCH_QUERY_SCAN: usize = 0x1400;
+const MOV_ESI_IMM32: u8 = 0xbe;
+const MOV_RDI_RIP: [u8; 3] = [0x48, 0x8b, 0x3d];
+const CALL_RIP: [u8; 2] = [0xff, 0x15];
+const XI_ALL_DEVICES: u32 = 0;
+const XI_ALL_MASTER_DEVICES: u32 = 1;
 
 /// The trampoline page and how much of it is taken, as addresses.
 static TRAMPOLINES: Mutex<(usize, usize)> = Mutex::new((0, 0));
@@ -514,6 +524,44 @@ pub fn accept_buttons_only_pads(scan: usize) -> bool {
     true
 }
 
+/// Makes sys_graphics_init look for a touchscreen among all input devices: a master device
+/// carries the classes of the device used last. `query` is its XIQueryDevice pointer's
+/// address; returns false with the reason logged when the query is not found.
+pub fn query_all_touch_devices(graphics_init: usize, query: usize) -> bool {
+    let imm_len = std::mem::size_of::<u32>();
+    let (mov_esi_len, mov_rdi_len) = (1 + imm_len, MOV_RDI_RIP.len() + std::mem::size_of::<i32>());
+    let call_at = mov_esi_len + mov_rdi_len;
+    let site_len = call_at + CALL_RIP.len() + std::mem::size_of::<i32>();
+    // SAFETY: the scan stays within sys_graphics_init's code and the function after it.
+    let code = unsafe { std::slice::from_raw_parts(graphics_init as *const u8, TOUCH_QUERY_SCAN) };
+    let mut sites = (0..=TOUCH_QUERY_SCAN - site_len).filter(|&i| {
+        let call = i + call_at;
+        let target = (graphics_init + i + site_len) as i64 + le_u32(code, call + CALL_RIP.len()) as i32 as i64;
+        code[i] == MOV_ESI_IMM32
+            && le_u32(code, i + 1) == XI_ALL_MASTER_DEVICES
+            && code[i + mov_esi_len..i + mov_esi_len + MOV_RDI_RIP.len()] == MOV_RDI_RIP
+            && code[call..call + CALL_RIP.len()] == CALL_RIP
+            && target == query as i64
+    });
+    let Some(site) = sites.next() else {
+        log!("touch scan: query not found");
+        return false;
+    };
+    if sites.next().is_some() {
+        log!("touch scan: query not unique");
+        return false;
+    }
+    let imm = graphics_init + site + 1;
+    if !protect(imm, imm_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
+        log!("touch scan: code not writable");
+        return false;
+    }
+    // SAFETY: the immediate's bytes were just made writable; the display is not open yet.
+    unsafe { (imm as *mut u32).write_unaligned(XI_ALL_DEVICES) };
+    protect(imm, imm_len, libc::PROT_READ | libc::PROT_EXEC);
+    true
+}
+
 /// Points CFPS::OnLoop's step cap load at a float in the trampoline page, so the fast
 /// speed can raise the cap; returns that float's address, or None with the reason logged.
 pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
@@ -777,6 +825,44 @@ mod tests {
     fn call(addr: usize) -> i32 {
         // SAFETY: addr holds code of an extern "C" fn() -> i32.
         unsafe { std::mem::transmute::<usize, extern "C" fn() -> i32>(addr)() }
+    }
+
+    #[test]
+    fn the_touchscreen_query_asks_for_all_devices() {
+        // SAFETY: sysconf has no preconditions.
+        let len = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        let pages = TOUCH_QUERY_SCAN.div_ceil(len) + 1;
+        // SAFETY: an anonymous private mapping touches nothing else.
+        let page = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                pages * len,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                -1,
+                0,
+            )
+        };
+        assert_ne!(page, libc::MAP_FAILED);
+        let func = page as usize;
+        let query = func + pages * len - std::mem::size_of::<usize>();
+        let site = 0x40;
+        let mut code = vec![MOV_ESI_IMM32];
+        code.extend_from_slice(&XI_ALL_MASTER_DEVICES.to_le_bytes());
+        code.extend_from_slice(&MOV_RDI_RIP);
+        code.extend_from_slice(&0i32.to_le_bytes());
+        code.extend_from_slice(&CALL_RIP);
+        let next = func + site + code.len() + std::mem::size_of::<i32>();
+        code.extend_from_slice(&((query - next) as i32).to_le_bytes());
+        // SAFETY: the mapping is writable and holds the site.
+        unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), (func + site) as *mut u8, code.len()) };
+        assert!(!query_all_touch_devices(func, query + 1), "another pointer's call is no match");
+        assert!(query_all_touch_devices(func, query));
+        // SAFETY: the immediate lies in the mapping.
+        assert_eq!(unsafe { ((func + site + 1) as *const u32).read_unaligned() }, XI_ALL_DEVICES);
+        assert!(!query_all_touch_devices(func, query), "patched once");
+        // SAFETY: unmaps the mapping made above.
+        unsafe { libc::munmap(page, pages * len) };
     }
 
     #[test]

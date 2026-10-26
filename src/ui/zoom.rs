@@ -101,6 +101,13 @@ impl Blit {
         let (x, y) = (((sw - w) / 2.0).round(), ((sh - h) / 2.0).round());
         Blit { view, viewport: [x as i32, y as i32, w as i32, h as i32] }
     }
+
+    /// The frame point shown at screen pixel (`sx`, `sy`).
+    fn to_frame(self, sx: f32, sy: f32) -> (f32, f32) {
+        let [x, y, w, h] = self.viewport.map(|v| v as f32);
+        let v = self.view;
+        (v.x + (sx - x) * v.w / w, v.y + (sy - y) * v.h / h)
+    }
 }
 
 fn same_level(a: f32, b: f32) -> bool {
@@ -432,6 +439,24 @@ impl Layer {
         true
     }
 
+    /// The frame point the screen shows at window pixel (`wx`, `wy`): through the zoomed
+    /// view, else through the game's own transform; on the frame's edge for a point past it.
+    pub fn frame_at(&self, wx: i32, wy: i32) -> (f32, f32) {
+        let (x, y) = match (self.zoom.view, screen_size()) {
+            (Some(view), Some(screen)) => Blit::new(view, screen).to_frame(wx as f32, wy as f32),
+            _ => self.logical_at(wx, wy),
+        };
+        (clampf(x, 0.0, (GAME_W - 1) as f32), clampf(y, 0.0, (GAME_H - 1) as f32))
+    }
+
+    /// Frame pixels per window pixel as the screen shows the frame, zoomed or not.
+    pub fn frame_per_window(&self) -> f32 {
+        match (self.zoom.view, screen_size()) {
+            (Some(view), Some(_)) => 1.0 / view.k,
+            _ => self.window_scale(),
+        }
+    }
+
     /// Starts the peek's hold when its button goes down, ends it when it comes up.
     pub fn zoom_peek(&mut self, down: bool) {
         self.zoom.peek_from = down.then(now_s);
@@ -560,6 +585,17 @@ mod tests {
         // Both edges hold it: the nearer one.
         assert_eq!(at(700.0, 960.0, 600.0), frame - 480.0);
         assert_eq!(follow_axis(500.0, 100.0, 0.0, 400.0, frame), 200.0);
+    }
+
+    #[test]
+    fn a_screen_pixel_maps_back_to_the_frame_point_the_view_shows_there() {
+        for (screen, level) in [(SMALL, 2.0), (SQUARE, 1.2), (WIDE, 1.5)] {
+            let b = Blit::new(View::at(screen, level, (900.0, 500.0)), screen);
+            let [x, y, w, h] = b.viewport.map(|v| v as f32);
+            assert_eq!(b.to_frame(x, y), (b.view.x, b.view.y));
+            let (rx, by) = b.to_frame(x + w, y + h);
+            assert!((rx - b.view.right()).abs() < 0.01 && (by - b.view.y - b.view.h).abs() < 0.01);
+        }
     }
 
     #[test]

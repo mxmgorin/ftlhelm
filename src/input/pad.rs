@@ -46,6 +46,11 @@ pub struct PadFrame {
     pub dpad: [i32; 2],
 }
 
+/// Whether a pad frame holds any input: a button, the D-pad, or a stick past `deadzone`.
+fn any_input(p: &PadFrame, deadzone: f32) -> bool {
+    p.down.iter().any(|&d| d) || p.dpad != [0, 0] || p.stick.iter().any(|s| s[0].hypot(s[1]) > deadzone)
+}
+
 pub struct PadState {
     sdl: Option<SdlMap>,
     /// The mapping resolved for one pad, keyed by SIL pad and input device.
@@ -375,6 +380,9 @@ impl Layer {
     /// Applies one frame of pad state: pointer sources move the cursor or flick between
     /// zones, sticks point an open wheel, everything else goes through the layout.
     pub fn apply_pad(&mut self, mut p: PadFrame, t: f64, dt: f32) {
+        if any_input(&p, self.cfg.cursor_deadzone) {
+            self.show_arrow();
+        }
         let mode = self.pointer_modes(&mut p);
         let in_wheel = self.wheel.open.is_some();
         if in_wheel {
