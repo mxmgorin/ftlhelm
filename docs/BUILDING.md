@@ -7,7 +7,7 @@ crate dependency is `libc`.
 | --- | --- |
 | `make` | `ftlhelm.so` (through `cargo build --release`) and `ftlhelm_probe` |
 | `make OUT=path.so` | the library at another path |
-| `make dist` | `dist/ftlhelm-linux-x86_64.tar.gz`: `ftlhelm.so`, `ftlhelm.ini`, `ftlhelm.sh`, `LICENSE`, `NOTICE` |
+| `make dist` | `dist/ftlhelm-linux-x86_64.tar.gz`: `ftlhelm.so`, `ftlhelm.ini`, `ftlhelm.sh`, `LICENSE`, `NOTICE`, `TRADEMARKS.md` |
 | `make test` | unit tests |
 | `make lint` | rustfmt check, clippy with warnings as errors |
 | `make clean` | removes the build output |

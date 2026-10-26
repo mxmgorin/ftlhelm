@@ -25,6 +25,18 @@ Additional terms under section 7 of the GNU General Public License
    different from the original version, and the origin of this material must
    not be misrepresented.
 
+3. Trademarks (section 7e). This license grants no rights under trademark law
+   to the name "ftlhelm" or the ftlhelm logo and icon. TRADEMARKS.md states
+   the permitted uses.
+
+
+Logo and icon
+
+The ftlhelm logo and icon are not licensed under the GPL: Copyright (C) 2026
+Maxim Gorin, all rights reserved. They are the files src/ui/icon64.txt and
+docs/images/ftlhelm-banner.png and any image made from them, including the
+mark the program draws. TRADEMARKS.md states the permitted uses.
+
 
 FTL: Faster Than Light
 

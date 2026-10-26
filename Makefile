@@ -21,7 +21,7 @@ $(PROBE): tools/probe.c
 dist: $(OUT)
 	rm -rf dist/$(DIST)
 	mkdir -p dist/$(DIST)
-	cp $(OUT) config/ftlhelm.ini tools/ftlhelm.sh LICENSE NOTICE dist/$(DIST)/
+	cp $(OUT) config/ftlhelm.ini tools/ftlhelm.sh LICENSE NOTICE TRADEMARKS.md dist/$(DIST)/
 	tar -C dist -czf dist/$(DIST).tar.gz $(DIST)
 
 test:

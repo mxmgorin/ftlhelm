@@ -98,7 +98,7 @@ If you find the project useful, here is how you can help:
 
 Copyright (C) 2026 Maxim Gorin. ftlhelm is free software under the
 [GNU General Public License v3.0 or later](LICENSE), with the additional terms in
-[NOTICE](NOTICE).
+[NOTICE](NOTICE). The name, logo and icon: [TRADEMARKS.md](TRADEMARKS.md).
 
 ftlhelm is an unofficial mod, not affiliated with or endorsed by Subset Games.
 FTL: Faster Than Light is a trademark of Subset Games.
