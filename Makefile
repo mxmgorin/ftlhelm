@@ -3,6 +3,8 @@ OUT ?= ftlhelm.so
 PROBE ?= ftlhelm_probe
 # The archive a Linux player unpacks: the library, its layout and the launch wrapper.
 DIST := ftlhelm-linux-x86_64
+# The library's directory in the archive, apart from the files ftlhelm writes.
+DIST_LIB := $(DIST)/lib
 LIB := target/release/libftlhelm.so
 # Shared libraries box64 provides to an x86_64 preload; any other NEEDED entry fails to load.
 ALLOWED_NEEDED := libc.so.6 libm.so.6 ld-linux-x86-64.so.2
@@ -20,8 +22,9 @@ $(PROBE): tools/probe.c
 
 dist: $(OUT)
 	rm -rf dist/$(DIST)
-	mkdir -p dist/$(DIST)
-	cp $(OUT) config/ftlhelm.ini tools/ftlhelm.sh LICENSE NOTICE TRADEMARKS.md dist/$(DIST)/
+	mkdir -p dist/$(DIST_LIB)
+	cp $(OUT) dist/$(DIST_LIB)/
+	cp config/ftlhelm.ini tools/ftlhelm.sh LICENSE NOTICE TRADEMARKS.md dist/$(DIST)/
 	tar -C dist -czf dist/$(DIST).tar.gz $(DIST)
 
 test:

@@ -7,7 +7,8 @@
 # Keeps the preloads already set (the Steam overlay) after ftlhelm.so. FTLHELM_LAYOUT and
 # FTLHELM_LOG, when already set, name another layout and log.
 here=$(dirname "$(readlink -f "$0")")
-export LD_PRELOAD="$here/ftlhelm.so${LD_PRELOAD:+:$LD_PRELOAD}"
+# The library sits in lib/: the Steam Runtime container mounts a preload's directory read-only.
+export LD_PRELOAD="$here/lib/ftlhelm.so${LD_PRELOAD:+:$LD_PRELOAD}"
 export FTLHELM_LAYOUT="${FTLHELM_LAYOUT:-$here/ftlhelm.ini}"
 export FTLHELM_LOG="${FTLHELM_LOG:-$here/ftlhelm.log}"
 exec "$@"
