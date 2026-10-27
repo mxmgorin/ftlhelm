@@ -35,29 +35,35 @@ const PIP_H: f32 = 5.0;
 const PIP_GAP: f32 = 2.0;
 const PIP_MAX_W: f32 = 9.0;
 const CORNER_ICON: f32 = 22.0;
-const CORNER_INSET: f32 = 2.0;
+/// The corner icon's box keeps this far in from the plate's edges, clear of its cut corner.
+const CORNER_INSET: f32 = 5.0;
 const WHEEL_MARGIN: f32 = 8.0;
 /// Lines of the wheel's middle: title, then the pick's name and detail.
 const WHEEL_LINE: f32 = 22.0;
 const WHEEL_TEXT_PAD: f32 = 6.0;
 /// The disc under the plates reaches this far past them.
 const WHEEL_DISC_PAD: f32 = 14.0;
-/// The selected plate grows by this much on each side, inside a solid frame this thick.
+/// The selected plate grows by this much on each side.
 const SELECTED_GROW: f32 = 4.0;
-const SELECTED_FRAME: f32 = 3.0;
+/// Plates: a pale band and cyan glow, the pick's yellow and wider, a disabled one's grey and
+/// unlit.
+const PLATE_FRAME: FrameStyle = FrameStyle { band: 2, ..BOX_FRAME };
+const PLATE_PICK_FRAME: FrameStyle =
+    FrameStyle { band_color: BUTTON_SELECTED_COLOR, glow: Some(BUTTON_SELECTED_COLOR), ..BOX_FRAME };
+const PLATE_DISABLED_FRAME: FrameStyle =
+    FrameStyle { band_color: PLATE_DISABLED_EDGE_COLOR, glow: None, ..PLATE_FRAME };
 
-const PLATE_SELECTED_COLOR: GlColor = GlColor::new(0.42, 0.38, 0.1, 0.95);
+const PLATE_SELECTED_COLOR: GlColor = GlColor::new(0.42, 0.38, 0.1, 1.0);
 pub const PLATE_SELECTED_EDGE_COLOR: GlColor = GlColor::new(0.96, 0.84, 0.28, 1.0);
 const MIDDLE_COLOR: GlColor = GlColor::new(0.0, 0.03, 0.03, 0.6);
 const DISC_COLOR: GlColor = GlColor::new(0.02, 0.06, 0.06, 0.5);
-const PLATE_DISABLED_COLOR: GlColor = GlColor::new(0.05, 0.07, 0.07, 0.6);
-const PLATE_EMPTY_EDGE_COLOR: GlColor = GlColor::new(0.5, 0.56, 0.54, 0.7);
+const PLATE_DISABLED_COLOR: GlColor = GlColor::new(0.05, 0.07, 0.07, 0.96);
 const CORNER_COLOR: GlColor = GlColor::new(0.0, 0.03, 0.03, 0.8);
 const WELL_COLOR: GlColor = GlColor::new(0.7, 0.76, 0.72, 1.0);
 const WELL_POWERED_COLOR: GlColor = GlColor::new(0.55, 0.88, 0.55, 1.0);
 /// Wheel plates: the pick solid, the rest see-through.
-const PLATE_IDLE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.75);
-const PLATE_POWERED_COLOR: GlColor = GlColor::new(0.12, 0.36, 0.2, 0.8);
+const PLATE_IDLE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.975);
+const PLATE_POWERED_COLOR: GlColor = GlColor::new(0.12, 0.36, 0.2, 0.98);
 const PLATE_DISABLED_EDGE_COLOR: GlColor = GlColor::new(0.3, 0.34, 0.33, 0.8);
 const PIP_ON_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
 /// The label of a slot with nothing in it.
@@ -249,29 +255,21 @@ fn label_scale(plates: &[Plate], font: i32) -> f32 {
     plates.iter().filter(|p| shows_label(p)).map(|p| room / text_width(font, &p.label)).fold(1.0, f32::min)
 }
 
-/// Draws a plate, its label `label_k` times the font's size.
+/// Draws a plate, its label `label_k` times the font's size; an empty slot shows nothing.
 fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: bool) {
     let (x, y) = (cx - WHEEL_TILE / 2.0, cy - WHEEL_TILE / 2.0);
     if pl.empty || !pl.bound {
-        draw_rect_outline(x, y, WHEEL_TILE, WHEEL_TILE, PLATE_EMPTY_EDGE_COLOR);
         return;
     }
-    let (fill, edge) = if !pl.available {
-        (PLATE_DISABLED_COLOR, PLATE_DISABLED_EDGE_COLOR)
+    let (style, fill, grow) = if !pl.available {
+        (&PLATE_DISABLED_FRAME, PLATE_DISABLED_COLOR, 0.0)
     } else if selected {
-        (PLATE_SELECTED_COLOR, PLATE_SELECTED_EDGE_COLOR)
+        (&PLATE_PICK_FRAME, PLATE_SELECTED_COLOR, SELECTED_GROW)
     } else {
-        (if pl.powered { PLATE_POWERED_COLOR } else { PLATE_IDLE_COLOR }, PLATE_EDGE_COLOR)
+        (&PLATE_FRAME, if pl.powered { PLATE_POWERED_COLOR } else { PLATE_IDLE_COLOR }, 0.0)
     };
-    if selected && pl.available {
-        let frame = SELECTED_GROW + SELECTED_FRAME;
-        let side = WHEEL_TILE + 2.0 * frame;
-        draw_rect(x - frame, y - frame, side, side, PLATE_SELECTED_EDGE_COLOR);
-        let side = WHEEL_TILE + 2.0 * SELECTED_GROW;
-        draw_panel(x - SELECTED_GROW, y - SELECTED_GROW, side, side, fill, edge);
-    } else {
-        draw_panel(x, y, WHEEL_TILE, WHEEL_TILE, fill, edge);
-    }
+    let side = WHEEL_TILE + 2.0 * grow;
+    draw_frame(x - grow, y - grow, side, side, style, fill);
     let icon_cy = if pl.pips > 0 { y + TILE_PAD + TILE_ICON / 2.0 } else { cy };
     let tint = if pl.available { TEXT_COLOR } else { TEXT_DISABLED_COLOR };
     if pl.icon_well {

@@ -124,10 +124,16 @@ fn builtin_title(b: Builtin) -> &'static str {
 fn draw_pause_button(x: f32, y: f32) {
     let s = PAUSE_BUTTON_SIZE;
     let fill = if state::game_paused() { BUTTON_SELECTED_COLOR } else { BUTTON_PALE_COLOR };
-    draw_game_button(x, y, s, s, fill);
+    draw_frame(x, y, s, s, &BUTTON_FRAME, fill);
     let (cx, top) = (x + s / 2.0, y + (s - PAUSE_BAR_H) / 2.0);
     draw_rect(cx - PAUSE_BAR_GAP / 2.0 - PAUSE_BAR_W, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
     draw_rect(cx + PAUSE_BAR_GAP / 2.0, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
+}
+
+/// Draws a window frame `w` by `h` centred on (`cx`, `cy`), unscaled: its cut stays on whole
+/// pixels at any text size.
+fn draw_window(cx: f32, cy: f32, w: f32, h: f32) {
+    draw_frame(cx - w / 2.0, cy - h / 2.0, w, h, &WINDOW_FRAME, PLATE_COLOR);
 }
 
 /// The badge's crew part on the ship view: the selected crew member's name, or how many are
@@ -177,7 +183,7 @@ impl Layer {
                 let (right, top) = self.top_right();
                 let right = pause.filter(|_| !self.corner_shown()).map_or(right, |(x, _)| x);
                 let (x, y) = (right - BADGE_MARGIN - w, top + BADGE_MARGIN);
-                draw_panel(x, y, w, BADGE_H, PLATE_COLOR, PLATE_EDGE_COLOR);
+                draw_frame(x, y, w, BADGE_H, &BOX_FRAME, PLATE_COLOR);
                 draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
             }
         }
@@ -321,9 +327,10 @@ impl Layer {
         let h = HELP_LINE * (rows.len() + 2) as f32 + 2.0 * HELP_PAD;
         let (frame_w, frame_h) = (GAME_W as f32, GAME_H as f32);
         let k = panel_scale(text::scale(), HELP_W, h, (frame_w, frame_h));
-        with_scale(frame_w / 2.0, frame_h / 2.0, k, || {
+        let (cx, cy) = (frame_w / 2.0, frame_h / 2.0);
+        draw_window(cx, cy, HELP_W * k, h * k);
+        with_scale(cx, cy, k, || {
             let (x, y) = (-HELP_W / 2.0, -h / 2.0);
-            draw_panel(x, y, HELP_W, h, PLATE_COLOR, PLATE_EDGE_COLOR);
             let mut line_y = y + HELP_PAD + HELP_LINE;
             let rule_y = line_y - HELP_RULE_GAP;
             let header_y = band_text_top(y, rule_y);
@@ -382,8 +389,9 @@ impl Layer {
         let (x, y, area_w, area_h) =
             self.zoom.view.map_or((0.0, 0.0, GAME_W as f32, GAME_H as f32), |v| (v.x, v.y, v.w, v.h));
         let k = panel_scale(text::scale(), w, h, (area_w, area_h));
-        with_scale(x + area_w / 2.0, y + area_h / 2.0, k, || {
-            draw_panel(-w / 2.0, -h / 2.0, w, h, PLATE_COLOR, PLATE_EDGE_COLOR);
+        let (cx, cy) = (x + area_w / 2.0, y + area_h / 2.0);
+        draw_window(cx, cy, w * k, h * k);
+        with_scale(cx, cy, k, || {
             for (i, line) in lines.iter().enumerate() {
                 draw_text_center(HELP_FONT, 0.0, -h / 2.0 + HELP_PAD + i as f32 * HELP_LINE + TEXT_DY, line);
             }
