@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/ftlhelm-banner.png" alt="ftlhelm, controller support for FTL: Faster Than Light" width="640">
+  <img src="docs/images/ftlhelm-banner.png" alt="ftlhelm, gamepad and touch for FTL: Faster Than Light" width="640">
 </p>
 
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/mxmgorin/ftlhelm/issues">Issues</a>
 </p>
 
-ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, written in Rust. It loads when the game launches and maps controller and touchscreen inputs to the game's existing mouse and keyboard controls. Features include D-pad navigation between zones, radial wheels for weapons, crew and systems, and zoom and larger text for small screens. The game files remain untouched.
+ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
 <p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
 
@@ -26,10 +26,14 @@ ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/
   - **Zoom**: the ship view magnified around the cursor; the map, ship and store screens enlarged to fit
   - **Frame filter**: smoother, sharper picture
   - **Text size**: event boxes and tooltips 1 to 2 times the game's own
-  - **Pointer** up to twice its size
+  - **Pointer size**: the mouse arrow drawn up to twice as large
 - **Fast forward** while a button is held
 - **Mouse mode**: the D-pad and sticks move the game's cursor freely
-- **Touch**: tap to click, hold and release to right-click, swipe up or down on a system icon to set its power, drag to select, tap with two fingers or the pause button to pause; a touch just beside a button, room or system icon lands on it
+- **Touch**: the touchscreen works as the mouse
+  - **Tap** to click, **hold** to right-click, **drag** to select
+  - **Swipe** up or down on a system icon or weapon box to set its power
+  - **Two-finger tap** or the on-screen button to pause
+  - **Near misses** land on the closest button, room or icon
 - **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
 
 <p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"></p>
@@ -50,8 +54,6 @@ ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/
 | L3, R3 | mouse mode on, off | |
 | Start | pause | whole frame while zoomed |
 | Select | settings wheel | game menu |
-
-Tap **Select** in the game for the settings wheel: mouse mode, zoom, text size and the controls table.
 
 ## Install
 
