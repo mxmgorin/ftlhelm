@@ -84,11 +84,13 @@ const FOCUS_SLIDE: f32 = 6.0;
 const FOCUS_SETTLE_S: f64 = 0.12;
 /// The marker over a selected crew member, in frame pixels above its position; it bobs
 /// CREW_MARK_BOB_PX up and down once every CREW_MARK_BOB_S.
-const CREW_MARK_W: f32 = 12.0;
-const CREW_MARK_H: f32 = 7.0;
+const CREW_MARK_W: f32 = 16.0;
+const CREW_MARK_H: f32 = 9.0;
 const CREW_MARK_RISE: f32 = 24.0;
 const CREW_MARK_BOB_PX: f32 = 2.0;
 const CREW_MARK_BOB_S: f64 = 1.0;
+/// The most times its size the crew marker is drawn.
+const CREW_MARK_SCALE_MAX: f32 = 1.5;
 
 /// What the game's own hotkeys do, as the help names them.
 #[rustfmt::skip]
@@ -249,7 +251,7 @@ impl Layer {
         if !state::ship_view() {
             return;
         }
-        let k = self.mark_scale();
+        let k = self.mark_scale().min(CREW_MARK_SCALE_MAX);
         let phase = (now_s() / CREW_MARK_BOB_S).fract() as f32 * std::f32::consts::TAU;
         let bob = CREW_MARK_BOB_PX * k * phase.sin();
         for (_, member) in selected.vec_objs().filter(|(_, m)| !state::crew_dead(*m)) {

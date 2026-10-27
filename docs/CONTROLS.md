@@ -121,4 +121,5 @@ enlarges them on screens smaller than 1280x720, less at higher zoom levels. The 
 table and notices take the same size, as far as the frame holds them.
 
 On a screen that shows the frame smaller than 1280x720, the pointer is drawn larger, up to
-twice its size, and the zone brackets and crew markers keep their size.
+twice its size, the crew markers up to one and a half times, and the zone brackets keep
+their size.
