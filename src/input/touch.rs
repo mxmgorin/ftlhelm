@@ -37,6 +37,9 @@ const SNAP_INSET: f32 = 2.0;
 const PAIR_JOIN_S: f64 = 0.2;
 /// Frames the game takes to flag what lies under a moved pointer.
 const PROBE_FRAMES: u32 = 2;
+/// Seconds after a touch event within which a mouse move is its echo: a compositor putting
+/// its own pointer back over the window, not a mouse in use.
+const TOUCH_ECHO_S: f64 = 0.25;
 /// The ring timer around a finger held toward a right click, in window pixels: wider than a
 /// fingertip.
 const HOLD_RING_R: f32 = 52.0;
@@ -379,6 +382,8 @@ pub struct Touch {
     in_use: bool,
     /// A touch event came this run.
     seen: bool,
+    /// When the last touch event came.
+    last_event: Option<f64>,
 }
 
 /// Logs whether the engine found a touchscreen and so takes touches as touches.
@@ -399,9 +404,16 @@ impl Layer {
             self.touch.seen = true;
             log!("touch: first event");
         }
+        let t = now_s();
+        self.touch.last_event = Some(t);
         if phase != TouchPhase::Move || self.touch.queued.len() < MAX_QUEUED_EVENTS {
-            self.touch.queued.push(TouchEvent { phase, id, x, y, t: now_s() });
+            self.touch.queued.push(TouchEvent { phase, id, x, y, t });
         }
+    }
+
+    /// Whether a mouse move now is a touch's echo: a touch event came within TOUCH_ECHO_S.
+    pub fn touch_echo(&self) -> bool {
+        self.touch.last_event.is_some_and(|t| now_s() - t < TOUCH_ECHO_S)
     }
 
     fn touch_limits(&self) -> Limits {
@@ -1050,9 +1062,28 @@ mod tests {
             l.apply_pad(p, now_s(), DT as f32);
             assert!(!l.touch_in_use(), "a stick moved");
             tap(&mut l, 120, 110);
+            l.touch.last_event = Some(now_s() - TOUCH_ECHO_S);
             g.mouse.set(0, Point { x: 300, y: 200 });
             l.sync_cursor();
             assert!(!l.touch_in_use(), "the mouse moved");
+        });
+    }
+
+    #[test]
+    fn a_mouse_move_right_after_a_touch_is_its_echo_and_goes_back() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            l.sync_cursor();
+            tap(&mut l, 120, 110);
+            calls();
+            g.mouse.set(0, Point { x: 640, y: 360 });
+            l.sync_cursor();
+            assert!(l.touch_in_use());
+            assert_eq!((l.cursor.last_x, l.cursor.last_y), (120, 110));
+            let (wx, wy) = (l.cursor.last_wx, l.cursor.last_wy);
+            assert_eq!(calls(), [Call::MouseMove(wx, wy)], "the game's mouse goes back to the touch");
+            l.sync_cursor();
+            assert!(calls().is_empty(), "the echo is handled once");
         });
     }
 

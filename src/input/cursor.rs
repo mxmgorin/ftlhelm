@@ -127,10 +127,19 @@ impl Layer {
     /// Adopts the game's cursor when something else moved it.
     pub fn sync_cursor(&mut self) {
         let p = state::mouse_point();
-        let c = &mut self.cursor;
-        if c.synced && p == c.last_set {
+        if self.cursor.synced && p == self.cursor.last_set {
             return;
         }
+        if self.cursor.synced && self.touch_echo() {
+            if self.debug {
+                log!("touch: mouse echo at {},{} put back", p.x, p.y);
+            }
+            let c = &mut self.cursor;
+            mouse_move(c.last_wx, c.last_wy, 0, 0, c.l_held, c.r_held);
+            c.last_set = state::mouse_point();
+            return;
+        }
+        let c = &mut self.cursor;
         let moved_elsewhere = c.synced;
         (c.x, c.y) = (p.x as f32, p.y as f32);
         (c.last_x, c.last_y) = (p.x, p.y);
@@ -138,6 +147,9 @@ impl Layer {
         c.synced = true;
         (self.cursor.last_wx, self.cursor.last_wy) = self.to_window(self.cursor.x, self.cursor.y);
         if moved_elsewhere {
+            if self.debug && self.touch_in_use() {
+                log!("touch: left for the mouse at {},{}", p.x, p.y);
+            }
             self.leave_touch();
         }
     }
