@@ -253,6 +253,14 @@ pub fn crew_at(index: usize) -> Option<Obj> {
     player_manager()?.at(SHIPMANAGER_CREW).vec_obj(index)
 }
 
+/// The player's crew with the indices of their boxes, which the crew hotkeys follow.
+pub fn boxed_crew() -> Vec<(usize, Obj)> {
+    let Some(gui) = gui() else {
+        return Vec::new();
+    };
+    gui.at(GUI_CREW_CONTROL + CREW_BOXES).vec_objs().filter_map(|(i, b)| Some((i, b.obj(CREWBOX_CREW)?))).collect()
+}
+
 pub fn crew_dead(member: Obj) -> bool {
     member.flag(CREW_DEAD)
 }

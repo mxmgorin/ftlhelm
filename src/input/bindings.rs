@@ -155,6 +155,8 @@ impl Layer {
                 } else if self.wheel.open.is_some() && source != Source::Plate {
                     self.bind.context_done[slot] = None;
                     self.act_on_plate();
+                } else if !state::aiming() && self.pick_room_crew() {
+                    self.bind.context_done[slot] = None;
                 } else {
                     // Crew selected over a room: the game orders them there on the right button.
                     let room = self

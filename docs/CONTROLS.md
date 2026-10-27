@@ -29,7 +29,8 @@ brackets until the cursor moves on.
 With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item.
 
 Y selects the next crew member; A on a room orders the selected crew there; B clears the
-selection. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member.
+selection. With no crew selected in another room, A on a room with crew selects its members
+one at a time, then all of them. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member.
 
 ## Doors
 

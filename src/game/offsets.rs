@@ -240,6 +240,9 @@ pub const CRYSTAL_RACE: &str = "crystal";
 pub const CREW_SELECTED: usize = 8;
 /// CrewControl's crew under the pointer, or in the selection box while one is drawn.
 pub const CREW_POTENTIAL: usize = 32;
+/// CrewControl's crew boxes, in the order of the crew hotkeys.
+pub const CREW_BOXES: usize = 96;
+pub const CREWBOX_CREW: usize = 32;
 /// Crew hotkeys run F1 up to this many.
 pub const CREW_HOTKEYS: usize = 8;
 

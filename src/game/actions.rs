@@ -4,6 +4,7 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::api::api;
+use super::mem::Obj;
 use super::offsets::*;
 use super::state;
 use super::zones::{ship_center, ZoneKind};
@@ -174,6 +175,44 @@ impl Layer {
         }
     }
 
+    /// Steps the selection through the crew of the room under the cursor unless crew is
+    /// selected elsewhere; returns whether it did.
+    pub fn pick_room_crew(&mut self) -> bool {
+        let Some(zone) = self.zone_under_cursor().map(|i| self.zones.list[i]) else {
+            return false;
+        };
+        let on_player = match zone.kind {
+            ZoneKind::Room => true,
+            ZoneKind::EnemyRoom => false,
+            _ => return false,
+        };
+        let crew: Vec<(usize, Obj)> = state::boxed_crew()
+            .into_iter()
+            .filter(|&(i, m)| {
+                i < CREW_HOTKEYS
+                    && !state::crew_dead(m)
+                    && m.i32(CREW_ROOM) == zone.id
+                    && (m.i32(CREW_SHIP) == PLAYER_SHIP_ID) == on_player
+            })
+            .collect();
+        let in_room = |m: Obj| crew.iter().position(|&(_, c)| c == m);
+        let selected: Option<Vec<usize>> =
+            state::selected_crew().map_or(Some(Vec::new()), |v| v.vec_objs().map(|(_, m)| in_room(m)).collect());
+        let Some(selected) = selected.filter(|_| !crew.is_empty()) else {
+            return false;
+        };
+        let key = |p: usize| KEY_F1 + crew[p].0 as i32;
+        let pick = next_room_pick(crew.len(), &selected);
+        match pick {
+            RoomPick::One(p) => tap_key(key(p), false),
+            RoomPick::All => (0..crew.len()).for_each(|p| tap_key(key(p), p > 0)),
+        }
+        if self.debug {
+            log!("room {} crew pick {pick:?}", zone.id);
+        }
+        true
+    }
+
     fn click_at(&mut self, gx: f32, gy: f32) {
         if self.actions.queued.len() < MAX_QUEUED_CLICKS {
             self.actions.queued.push((gx, gy));
@@ -249,6 +288,26 @@ impl Layer {
     }
 }
 
+/// A step of the crew selection in one room.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RoomPick {
+    /// The room's crew member at this position, alone.
+    One(usize),
+    All,
+}
+
+/// The step after `selected`, positions among a room's `count` crew: each member alone in
+/// turn, then all of them, then the first again.
+fn next_room_pick(count: usize, selected: &[usize]) -> RoomPick {
+    match selected {
+        [] => RoomPick::One(0),
+        [p] if p + 1 < count => RoomPick::One(p + 1),
+        [_] if count == 1 => RoomPick::One(0),
+        s if s.len() == count => RoomPick::One(0),
+        _ => RoomPick::All,
+    }
+}
+
 /// Selects the living crew member after the first selected one, wrapping.
 pub fn select_next_crew() {
     let count = (0..CREW_HOTKEYS).take_while(|&i| state::crew_at(i).is_some()).count();
@@ -300,8 +359,9 @@ pub fn tab_step(dir: i32) {
 mod tests {
     use super::*;
     use crate::game::api::{Point, Rect};
-    use crate::game::fake::with_game;
+    use crate::game::fake::{calls, with_game, Call, Game};
     use crate::game::zones::Zone;
+    use std::mem::size_of;
 
     const ORIGIN: Point = Point { x: 100, y: 50 };
     const ROOM: i32 = 4;
@@ -349,6 +409,69 @@ mod tests {
             (l.cursor.last_x, l.cursor.last_y) = (50, 50);
             l.room_doors();
             assert!(l.actions.queued.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_room_pick_takes_each_member_alone_then_all() {
+        use RoomPick::*;
+        assert_eq!(next_room_pick(1, &[]), One(0));
+        assert_eq!(next_room_pick(1, &[0]), One(0));
+        assert_eq!(next_room_pick(2, &[0]), One(1));
+        assert_eq!(next_room_pick(2, &[1]), All);
+        assert_eq!(next_room_pick(2, &[0, 1]), One(0));
+        assert_eq!(next_room_pick(3, &[2, 0]), All, "a part of the room");
+    }
+
+    /// A living player crew member in `room` and the crew box holding it.
+    fn boxed_member(g: &mut Game, room: i32) -> (Obj, Obj) {
+        let member = g.crew("Crew", "human", PLAYER_SHIP_ID, false);
+        member.set(CREW_ROOM, room);
+        let crew_box = g.arena.alloc(CREWBOX_CREW + size_of::<usize>());
+        crew_box.set(CREWBOX_CREW, member.addr());
+        (member, crew_box)
+    }
+
+    fn select(g: &mut Game, crew: &[Obj]) {
+        let items: Vec<_> = crew.iter().copied().map(Some).collect();
+        g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &items);
+    }
+
+    #[test]
+    fn a_room_pick_selects_by_hotkey_unless_crew_is_selected_elsewhere() {
+        with_game(|g| {
+            let (away, away_box) = boxed_member(g, ROOM + 1);
+            let (first, first_box) = boxed_member(g, ROOM);
+            let (second, second_box) = boxed_member(g, ROOM);
+            g.arena.ptr_vector(
+                g.gui,
+                GUI_CREW_CONTROL + CREW_BOXES,
+                &[Some(away_box), Some(first_box), Some(second_box)],
+            );
+            let mut l = Layer::default();
+            let zone = |id: i32| Zone { rect: Rect { x: 0, y: 0, w: 100, h: 100 }, id, kind: ZoneKind::Room };
+            l.zones.list = vec![zone(ROOM)];
+            (l.cursor.last_x, l.cursor.last_y) = (50, 50);
+            let (f_first, f_second) = (KEY_F1 + 1, KEY_F1 + 2);
+            assert!(l.pick_room_crew());
+            assert_eq!(calls(), [Call::KeyDown(f_first), Call::KeyUp(f_first)]);
+            select(g, &[first]);
+            assert!(l.pick_room_crew());
+            assert_eq!(calls(), [Call::KeyDown(f_second), Call::KeyUp(f_second)]);
+            select(g, &[second]);
+            assert!(l.pick_room_crew());
+            #[rustfmt::skip]
+            let all = [
+                Call::KeyDown(f_first), Call::KeyUp(f_first),
+                Call::KeyDown(KEY_LSHIFT), Call::KeyDown(f_second), Call::KeyUp(f_second), Call::KeyUp(KEY_LSHIFT),
+            ];
+            assert_eq!(calls(), all);
+            select(g, &[away]);
+            assert!(!l.pick_room_crew(), "the selection is ordered here instead");
+            select(g, &[]);
+            l.zones.list = vec![zone(ROOM + 2)];
+            assert!(!l.pick_room_crew(), "no crew in the room");
+            assert_eq!(calls(), []);
         });
     }
 }

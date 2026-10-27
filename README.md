@@ -43,7 +43,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 | Button | Tap | Hold |
 | --- | --- | --- |
 | D-pad, sticks | the next zone that way | |
-| A | click | drag |
+| A | click; select the room's crew | drag |
 | B | cancel, back | abilities wheel |
 | X | arm the next weapon | weapons wheel |
 | Y | next crew member | crew wheel |
