@@ -88,7 +88,7 @@ const TURN_DEG: f32 = 360.0;
 /// The renderer's pies put a point every PIE_STEP_DEG from the start while short of the end,
 /// none at the end itself.
 const PIE_STEP_DEG: f32 = 10.0;
-const RING_GAP_DEG: f32 = 5.0;
+const RING_GAP_DEG: f32 = 10.0;
 /// The first segment starts straight up; angles run clockwise from the right.
 const RING_START_DEG: f32 = -90.0;
 /// The track shows this far past each side of the segments.
@@ -159,25 +159,23 @@ pub fn draw_round_frame(cx: f32, cy: f32, r: f32, band: f32, fill: GlColor) {
 
 /// A ring `width` wide inside radius `r`.
 fn draw_circle(cx: f32, cy: f32, r: f32, width: f32, color: GlColor) {
-    draw_arc(cx, cy, r, width, whole_turn(0.0), color);
-}
-
-/// A whole turn from `start`, its end past the last point so the pie closes.
-fn whole_turn(start: f32) -> (f32, f32) {
-    (start, start + TURN_DEG + PIE_STEP_DEG / 2.0)
+    draw_arc(cx, cy, r, width, (0.0, TURN_DEG), color);
 }
 
 /// A filled disc: a pie as wide as its radius.
 pub fn draw_disc(cx: f32, cy: f32, r: f32, color: GlColor) {
-    draw_arc(cx, cy, r, r, whole_turn(0.0), color);
+    draw_arc(cx, cy, r, r, (0.0, TURN_DEG), color);
 }
 
 /// An arc `width` wide inside radius `r`, from `from` to `to` degrees.
+/// The span must be whole PIE_STEP_DEG steps: the renderer's pies draw no part of a step.
 fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color: GlColor) {
+    // Half a step past the end, so the pie puts its last point on it.
+    let end = to + PIE_STEP_DEG / 2.0;
     let a = api();
     // SAFETY: the renderer's pie primitive, rendered once and freed.
     unsafe {
-        let pie = (a.pie_partial)(cx.round() as c_int, cy.round() as c_int, r, from, to, width, color);
+        let pie = (a.pie_partial)(cx.round() as c_int, cy.round() as c_int, r, from, end, width, color);
         if !pie.is_null() {
             (a.render_primitive)(pie);
             (a.destroy_primitive)(pie);
@@ -360,7 +358,7 @@ fn faded(color: GlColor, opacity: f32) -> GlColor {
 /// clockwise from the top over a dark track, the first `lit` in `color`; all of it at
 /// `opacity`.
 pub fn draw_ring_timer(cx: f32, cy: f32, r: f32, width: f32, lit: usize, color: GlColor, opacity: f32) {
-    let whole = whole_turn(RING_START_DEG);
+    let whole = (RING_START_DEG, RING_START_DEG + TURN_DEG);
     let track = faded(RING_TRACK_COLOR, opacity);
     draw_arc(cx, cy, r + RING_TRACK_PAD, width + 2.0 * RING_TRACK_PAD, whole, track);
     let step = TURN_DEG / RING_SEGMENTS as f32;
@@ -453,6 +451,12 @@ mod tests {
                 assert!((run(y) - t as f32 * SQRT_2).abs() < 1.0, "cut {cut}, band {t}, row {y}: {}", run(y));
             }
         }
+    }
+
+    #[test]
+    fn ring_segments_span_whole_pie_steps() {
+        let span = TURN_DEG / RING_SEGMENTS as f32 - RING_GAP_DEG;
+        assert!(span > 0.0 && (span / PIE_STEP_DEG).fract() == 0.0, "{span}");
     }
 
     #[test]
