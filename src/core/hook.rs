@@ -536,12 +536,12 @@ pub fn query_all_touch_devices(graphics_init: usize, query: usize) -> bool {
     let code = unsafe { std::slice::from_raw_parts(graphics_init as *const u8, TOUCH_QUERY_SCAN) };
     let mut sites = (0..=TOUCH_QUERY_SCAN - site_len).filter(|&i| {
         let call = i + call_at;
-        let target = (graphics_init + i + site_len) as i64 + le_u32(code, call + CALL_RIP.len()) as i32 as i64;
+        let target = || (graphics_init + i + site_len) as i64 + le_u32(code, call + CALL_RIP.len()) as i32 as i64;
         code[i] == MOV_ESI_IMM32
             && le_u32(code, i + 1) == XI_ALL_MASTER_DEVICES
             && code[i + mov_esi_len..i + mov_esi_len + MOV_RDI_RIP.len()] == MOV_RDI_RIP
             && code[call..call + CALL_RIP.len()] == CALL_RIP
-            && target == query as i64
+            && target() == query as i64
     });
     let Some(site) = sites.next() else {
         log!("touch scan: query not found");

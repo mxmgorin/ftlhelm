@@ -9,7 +9,7 @@ use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
-use crate::game::actions::{tap_key, MouseButton};
+use crate::game::actions::{tap_key, toggle_pause, MouseButton};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
@@ -593,7 +593,7 @@ impl Layer {
             return;
         };
         if self.wheel.paused && state::game_paused() {
-            tap_key(KEY_SPACE, false);
+            toggle_pause();
         }
         self.wheel.paused = false;
         self.wheel.sel = None;
@@ -618,7 +618,7 @@ impl Layer {
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
         if self.cfg.autopause_wheel && state::ship_view() && !state::game_paused() {
-            tap_key(KEY_SPACE, false);
+            toggle_pause();
             self.wheel.paused = true;
         }
         if self.debug {

@@ -88,6 +88,11 @@ pub fn tap_key(code: i32, shift: bool) {
     }
 }
 
+/// Toggles the game's pause, as its pause key does.
+pub fn toggle_pause() {
+    tap_key(KEY_SPACE, false);
+}
+
 pub fn mouse_move(wx: i32, wy: i32, dx: i32, dy: i32, left: bool, right: bool) {
     // SAFETY: the game's mouse handler on its CApp.
     unsafe { (api().mouse_move)(state::app_ptr(), wx, wy, dx, dy, left, false, right) }

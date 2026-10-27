@@ -5,13 +5,12 @@ use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLO
 use crate::config::settings::FLICK_OFF;
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::actions::{mouse_move, request_exit, tap_key};
+use crate::game::actions::{mouse_move, request_exit, toggle_pause};
 use crate::game::api::api;
 use crate::game::mem::Obj;
 use crate::game::offsets::{
-    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, EVDEV_NAME, EVDEV_NAME_LEN, KEY_SPACE, SILJOY_EVENT_DEV,
-    SILJOY_KEYMAP_HIGH, SILJOY_KEYMAP_LOW, SILJOY_NUM_BUTTONS, SILJOY_PRODUCT, SILJOY_SIZE, SILJOY_VENDOR,
-    SIL_TABLE_LEN,
+    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, EVDEV_NAME, EVDEV_NAME_LEN, SILJOY_EVENT_DEV, SILJOY_KEYMAP_HIGH,
+    SILJOY_KEYMAP_LOW, SILJOY_NUM_BUTTONS, SILJOY_PRODUCT, SILJOY_SIZE, SILJOY_VENDOR, SIL_TABLE_LEN,
 };
 use crate::game::state;
 use crate::game::zones::ship_center;
@@ -296,7 +295,7 @@ impl Layer {
         }
         if change.lost {
             if state::ship_view() && !state::game_paused() {
-                tap_key(KEY_SPACE, false);
+                toggle_pause();
                 log!("pad lost: paused");
             }
             self.notice = Some(Notice::until_press(PAD_LOST_NOTICE));
@@ -528,7 +527,7 @@ impl Layer {
                 }
             }
             if self.cfg.autopause_aim && !state::game_paused() {
-                tap_key(KEY_SPACE, false);
+                toggle_pause();
             }
         }
         if now_crew.is_some() && now_crew != self.pad.prev_crew && self.cfg.crew_follow {
@@ -557,6 +556,7 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::game::fake::{calls, set_pad, set_pads, with_game, Call, FakePad};
+    use crate::game::offsets::KEY_SPACE;
 
     /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
     const RAW_OFFSET: i32 = 100;

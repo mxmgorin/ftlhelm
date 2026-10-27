@@ -20,9 +20,8 @@ use std::collections::VecDeque;
 
 use crate::core::layer::Layer;
 use crate::core::util::{log, now_s};
-use crate::game::actions::{tap_key, MouseButton};
+use crate::game::actions::{toggle_pause, MouseButton};
 use crate::game::api::{api, Rect};
-use crate::game::offsets::KEY_SPACE;
 use crate::game::state;
 use crate::game::zones::{hud_boxes, ZoneKind};
 use crate::ui::draw::{draw_ring_timer, RING_LIT_COLOR, RING_READY_COLOR, RING_SEGMENTS};
@@ -401,7 +400,7 @@ impl Layer {
             return;
         }
         for act in self.touch.gestures.frame(now, limits) {
-            self.apply_act(act);
+            self.apply_act(act, now);
         }
     }
 
@@ -465,7 +464,7 @@ impl Layer {
         } else if self.wheel.open.is_some() {
             self.touch_wheel(x, y);
         } else if self.pause_button_hit((x, y)) {
-            tap_key(KEY_SPACE, false);
+            toggle_pause();
         } else {
             return false;
         }
@@ -475,7 +474,7 @@ impl Layer {
         true
     }
 
-    fn apply_act(&mut self, act: Act) {
+    fn apply_act(&mut self, act: Act, now: f64) {
         if self.debug && act != Act::Tap {
             log!("touch: {act:?}");
         }
@@ -493,22 +492,22 @@ impl Layer {
                     log!("touch: Tap, {button:?} button");
                 }
                 self.click_tap(button);
-                self.mark_click(false);
+                self.mark_click(false, now);
             }
             Act::Hold => self.buzz(),
             Act::LongPress => {
                 self.click_tap(MouseButton::Right);
-                self.mark_click(true);
+                self.mark_click(true, now);
             }
             Act::Press => self.click(MouseButton::Left, true),
             Act::Release => self.click(MouseButton::Left, false),
-            Act::Pause => tap_key(KEY_SPACE, false),
+            Act::Pause => toggle_pause(),
         }
     }
 
-    /// Leaves a mark where the pointer is, for a touch's click.
-    fn mark_click(&mut self, right: bool) {
-        self.touch.mark = Some(Mark { at: (self.cursor.x, self.cursor.y), since: now_s(), right });
+    /// Leaves a mark where the pointer is at `now`, for a touch's click.
+    fn mark_click(&mut self, right: bool, now: f64) {
+        self.touch.mark = Some(Mark { at: (self.cursor.x, self.cursor.y), since: now, right });
     }
 
     /// The button a tap clicks: the right one, which orders the selected crew, over a room
@@ -532,7 +531,7 @@ mod tests {
     use crate::game::api::Point;
     use crate::game::fake::{calls, with_game, Call};
     use crate::game::offsets::{
-        CREW_POTENTIAL, CREW_SELECTED, GAME_H, GAME_W, GUI_CREW_CONTROL, MOUSE_VALID, PLAYER_SHIP_ID,
+        CREW_POTENTIAL, CREW_SELECTED, GAME_H, GAME_W, GUI_CREW_CONTROL, KEY_SPACE, MOUSE_VALID, PLAYER_SHIP_ID,
     };
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;

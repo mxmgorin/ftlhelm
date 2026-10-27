@@ -4,7 +4,7 @@
 use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, MouseButton};
+use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, toggle_pause, MouseButton};
 use crate::game::api::api;
 use crate::game::offsets::*;
 use crate::game::state;
@@ -199,7 +199,7 @@ impl Layer {
             Builtin::RoomDoors if down => self.room_doors(),
             Builtin::Pause => {
                 if down {
-                    tap_key(KEY_SPACE, false);
+                    toggle_pause();
                 }
                 self.zoom_peek(down);
             }
@@ -208,7 +208,7 @@ impl Layer {
             Builtin::TextSize if down => self.text_size_cycle(),
             Builtin::FastForward => {
                 if down && state::game_paused() {
-                    tap_key(KEY_SPACE, false);
+                    toggle_pause();
                 }
                 self.set_fast(down);
             }

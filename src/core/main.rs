@@ -88,8 +88,7 @@ static POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 static POINTER_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// How many times its size the plain pointer is drawn, as f32 bits.
 static POINTER_SCALE: AtomicU32 = AtomicU32::new(0);
-/// The tooltip hook moves the tooltip below a larger pointer; without it the pointer keeps its
-/// size.
+/// Whether MouseControl::RenderTooltip is hooked; the pointer grows only then.
 static POINTER_TOOLTIP: AtomicBool = AtomicBool::new(false);
 
 /// The original of a hooked `extern "C"` function of type F.

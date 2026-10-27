@@ -154,8 +154,8 @@ pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color
         (right - arm, bottom - thick, arm, thick),
         (right - thick, bottom - arm, thick, arm),
     ];
+    let e = OVERLAY_LINE;
     for (bx, by, bw, bh) in bars {
-        let e = OVERLAY_LINE;
         draw_rect(bx - e, by - e, bw + 2.0 * e, bh + 2.0 * e, PLATE_BEVEL_COLOR);
     }
     for (bx, by, bw, bh) in bars {
