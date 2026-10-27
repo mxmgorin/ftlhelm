@@ -10,7 +10,7 @@ before. Attach `ftlhelm.log` to a bug report.
 | `unknown build, inactive` | an FTL build other than Steam 1.6.13 or GOG 1.6.12 |
 | `cannot save` | `ftlhelm.ini` or its directory is not writable; zoom and text size reset on the next run |
 | `cannot write the default` | `ftlhelm.ini` is missing and its directory is not writable; the default layout runs, nothing is saved |
-| `pointer off` in the `active` line | the pointer arrow stays shown after a touch and keeps its size on a small screen |
+| `pointer off` in the `active` line | the pointer arrow stays shown after a touch and on a bracketed zone, and keeps its size on a small screen |
 | `pointer tooltip off` in the `active` line | the pointer arrow keeps its size on a small screen |
 | `zoom off` in the `active` line | the game's frame blit was not found; zoom is unavailable |
 | `pad N: NAME (VENDOR:PRODUCT)` | a pad connected |

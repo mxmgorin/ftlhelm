@@ -16,7 +16,7 @@ active one has none down. When the active pad disconnects, the ship view pauses 
 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick
 moves it once per push past `flick_threshold`. The zone the cursor lands on shows corner
-brackets until the cursor moves on.
+brackets in place of the pointer arrow until the cursor moves on.
 
 | Screen | Zones |
 | --- | --- |
@@ -30,7 +30,7 @@ With `focus_first`, a menu, a dialog or the map opens with the cursor on its fir
 
 Y selects the next crew member; A on a room orders the selected crew there; B clears the
 selection. With no crew selected in another room, A on a room with crew selects its members
-one at a time, then all of them. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member.
+one at a time, then all of them. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member and brackets it.
 
 ## Doors
 

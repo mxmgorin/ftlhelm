@@ -2,7 +2,8 @@
 //! - CApp::OnLoop runs the layer once a frame, and installs the crash report on the first;
 //! - MouseControl::OnRender draws the overlay around the game's pointer;
 //!   CSurface::GL_BlitPixelImage draws the plain pointer larger on a small screen, or not
-//!   while touch hides it, and MouseControl::RenderTooltip moves its tooltip below it;
+//!   while touch or focus brackets mark its point, and MouseControl::RenderTooltip moves
+//!   its tooltip below it;
 //! - CEvent::GetShiftState adds the layer's Shift;
 //! - CApp::OnTouchDown, OnTouchMove, OnTouchUp and OnTouchCancel queue touches, and the
 //!   engine looks for a touchscreen among all input devices;
@@ -145,7 +146,7 @@ extern "C" fn onloop_hook(app: Ptr) {
 extern "C" fn mouse_render_hook(this: Ptr) {
     let (draw_pointer, hide_arrow, scale) = with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
-        (l.draw_overlay(), l.touch_in_use(), l.pointer_scale())
+        (l.draw_overlay(), l.pointer_hidden(), l.pointer_scale())
     })
     .unwrap_or((true, false, 1.0));
     if draw_pointer {

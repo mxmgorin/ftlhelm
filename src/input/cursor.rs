@@ -217,7 +217,7 @@ impl Layer {
     }
 
     /// Marks the zone under the cursor as focused, for as long as the cursor stays.
-    fn mark_focus(&mut self) {
+    pub fn mark_focus(&mut self) {
         self.cursor.focus = Some(((self.cursor.last_x, self.cursor.last_y), now_s()));
     }
 

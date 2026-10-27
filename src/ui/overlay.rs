@@ -227,10 +227,22 @@ impl Layer {
         })
     }
 
+    /// The zone focus brackets frame while the overlay shows them, and the seconds since its
+    /// focus move.
+    fn shown_focus(&self, now: f64) -> Option<(usize, f64)> {
+        let shown = self.cfg.overlay && self.wheel.open.is_none() && !self.help_shown;
+        shown.then(|| self.focused_zone(now)).flatten()
+    }
+
+    /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point.
+    pub fn pointer_hidden(&self) -> bool {
+        self.touch_in_use() || self.shown_focus(now_s()).is_some()
+    }
+
     /// Frames the zone a focus move left the cursor on with corner brackets.
     fn draw_focus(&self) {
         let now = now_s();
-        let Some((i, age)) = self.focused_zone(now) else {
+        let Some((i, age)) = self.shown_focus(now) else {
             return;
         };
         let r = self.zones.list[i].rect;
@@ -431,7 +443,9 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::LABEL_CHARS;
+    use crate::game::api::Rect;
     use crate::game::fake::with_game;
+    use crate::game::zones::{Zone, ZoneKind};
     use crate::ui::text::TEXT_SCALE_MAX;
     use std::mem::size_of;
 
@@ -452,6 +466,26 @@ mod tests {
         assert!(l.cfg.help_at_start);
         l.show_help(false);
         assert!(!l.help_shown && !l.cfg.help_at_start);
+    }
+
+    #[test]
+    fn focus_brackets_hide_the_plain_pointer_until_the_cursor_moves() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let zone = |x| Zone { rect: Rect { x, y: 100, w: 40, h: 40 }, id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![zone(100), zone(200)];
+            (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+            l.send_cursor();
+            assert!(!l.pointer_hidden(), "no focus move yet");
+            l.focus_move(1.0, 0.0);
+            assert!(l.pointer_hidden());
+            l.cfg.overlay = false;
+            assert!(!l.pointer_hidden(), "no brackets drawn");
+            l.cfg.overlay = true;
+            (l.cursor.x, l.cursor.y) = (300.0, 300.0);
+            l.send_cursor();
+            assert!(!l.pointer_hidden(), "the cursor moved on");
+        });
     }
 
     #[test]

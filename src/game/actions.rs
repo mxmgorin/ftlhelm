@@ -170,6 +170,7 @@ impl Layer {
         };
         (self.cursor.x, self.cursor.y) = t.rect.center();
         self.send_cursor();
+        self.mark_focus();
         if self.debug {
             log!("cursor to crew room {room}");
         }
@@ -358,6 +359,7 @@ pub fn tab_step(dir: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::util::now_s;
     use crate::game::api::{Point, Rect};
     use crate::game::fake::{calls, with_game, Call, Game};
     use crate::game::zones::Zone;
@@ -435,6 +437,19 @@ mod tests {
     fn select(g: &mut Game, crew: &[Obj]) {
         let items: Vec<_> = crew.iter().copied().map(Some).collect();
         g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &items);
+    }
+
+    #[test]
+    fn the_cursor_follows_selected_crew_to_its_room_and_frames_it() {
+        with_game(|g| {
+            let (member, _) = boxed_member(g, ROOM);
+            select(g, &[member]);
+            let mut l = Layer::default();
+            l.zones.list = vec![Zone { rect: Rect { x: 0, y: 0, w: 100, h: 100 }, id: ROOM, kind: ZoneKind::Room }];
+            l.cursor_to_selected_crew();
+            assert_eq!((l.cursor.last_x, l.cursor.last_y), (50, 50));
+            assert_eq!(l.focused_zone(now_s()).map(|(i, _)| i), Some(0));
+        });
     }
 
     #[test]
