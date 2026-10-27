@@ -18,6 +18,8 @@ const HELP_COL_HOLD: f32 = 430.0;
 const HELP_RULE_H: f32 = 1.0;
 /// A rule sits this far above the top of the row it opens.
 const HELP_RULE_GAP: f32 = 2.0;
+/// The header row's strip keeps this far in from the window's edges.
+const HELP_HEADER_INSET: f32 = 6.0;
 const HELP_VERSION: &str = concat!("ftlhelm ", env!("CARGO_PKG_VERSION"));
 const URL_SCHEME: &str = "https://";
 /// A held click drags: a selection box over the ship, an item on a screen.
@@ -128,14 +130,14 @@ fn draw_pause_button(x: f32, y: f32) {
     let fill = if state::game_paused() { BUTTON_SELECTED_COLOR } else { BUTTON_PALE_COLOR };
     draw_frame(x, y, s, s, &BUTTON_FRAME, fill);
     let (cx, top) = (x + s / 2.0, y + (s - PAUSE_BAR_H) / 2.0);
-    draw_rect(cx - PAUSE_BAR_GAP / 2.0 - PAUSE_BAR_W, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
-    draw_rect(cx + PAUSE_BAR_GAP / 2.0, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
+    draw_rect(cx - PAUSE_BAR_GAP / 2.0 - PAUSE_BAR_W, top, PAUSE_BAR_W, PAUSE_BAR_H, INK_COLOR);
+    draw_rect(cx + PAUSE_BAR_GAP / 2.0, top, PAUSE_BAR_W, PAUSE_BAR_H, INK_COLOR);
 }
 
-/// Draws a window frame `w` by `h` centred on (`cx`, `cy`), unscaled: its cut stays on whole
+/// Draws a pale window `w` by `h` centred on (`cx`, `cy`), unscaled: its cut stays on whole
 /// pixels at any text size.
 fn draw_window(cx: f32, cy: f32, w: f32, h: f32) {
-    draw_frame(cx - w / 2.0, cy - h / 2.0, w, h, &WINDOW_FRAME, PLATE_COLOR);
+    draw_frame(cx - w / 2.0, cy - h / 2.0, w, h, &WINDOW_FRAME, BUTTON_PALE_COLOR);
 }
 
 /// The badge's crew part on the ship view: the selected crew member's name, or how many are
@@ -185,8 +187,10 @@ impl Layer {
                 let (right, top) = self.top_right();
                 let right = pause.filter(|_| !self.corner_shown()).map_or(right, |(x, _)| x);
                 let (x, y) = (right - BADGE_MARGIN - w, top + BADGE_MARGIN);
-                draw_frame(x, y, w, BADGE_H, &BOX_FRAME, PLATE_COLOR);
+                draw_frame(x, y, w, BADGE_H, &BOX_FRAME, BUTTON_PALE_COLOR);
+                set_color(INK_COLOR);
                 draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
+                set_color(TEXT_COLOR);
             }
         }
         if self.help_shown && self.cursor.synced {
@@ -343,15 +347,20 @@ impl Layer {
         let k = panel_scale(text::scale(), HELP_W, h, (frame_w, frame_h));
         let (cx, cy) = (frame_w / 2.0, frame_h / 2.0);
         draw_window(cx, cy, HELP_W * k, h * k);
+        let (x, y) = (-HELP_W / 2.0, -h / 2.0);
+        let header_top = y + HELP_HEADER_INSET;
+        let header_bottom = y + HELP_PAD + HELP_LINE - HELP_RULE_GAP;
+        let header_w = HELP_W - 2.0 * HELP_HEADER_INSET;
+        let (hx, hy) = (cx + (x + HELP_HEADER_INSET) * k, cy + header_top * k);
+        draw_frame(hx, hy, header_w * k, (header_bottom - header_top) * k, &HEADER_FRAME, HEADER_COLOR);
         with_scale(cx, cy, k, || {
-            let (x, y) = (-HELP_W / 2.0, -h / 2.0);
-            let mut line_y = y + HELP_PAD + HELP_LINE;
-            let rule_y = line_y - HELP_RULE_GAP;
-            let header_y = band_text_top(y, rule_y);
+            let header_y = band_text_top(header_top, header_bottom);
+            set_color(TEXT_COLOR);
             draw_text_left(HELP_FONT, x + HELP_PAD, header_y, "BUTTON");
             draw_text_left(HELP_FONT, x + HELP_COL_TAP, header_y, "TAP");
             draw_text_left(HELP_FONT, x + HELP_COL_HOLD, header_y, "HOLD");
-            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+            set_color(INK_COLOR);
+            let mut line_y = y + HELP_PAD + HELP_LINE;
             for (i, b) in rows {
                 let (tap, hold) = self.help_row(b);
                 draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, INPUT_TITLES[i]);
@@ -360,7 +369,7 @@ impl Layer {
                 line_y += HELP_LINE;
             }
             let rule_y = line_y - HELP_RULE_GAP;
-            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, PLATE_EDGE_COLOR);
+            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, INK_COLOR);
             let footer_y = band_text_top(rule_y + HELP_RULE_H, y + h);
             let url = env!("CARGO_PKG_REPOSITORY").trim_start_matches(URL_SCHEME);
             set_color(TEXT_DISABLED_COLOR);
@@ -406,9 +415,11 @@ impl Layer {
         let (cx, cy) = (x + area_w / 2.0, y + area_h / 2.0);
         draw_window(cx, cy, w * k, h * k);
         with_scale(cx, cy, k, || {
+            set_color(INK_COLOR);
             for (i, line) in lines.iter().enumerate() {
                 draw_text_center(HELP_FONT, 0.0, -h / 2.0 + HELP_PAD + i as f32 * HELP_LINE + TEXT_DY, line);
             }
+            set_color(TEXT_COLOR);
         });
     }
 

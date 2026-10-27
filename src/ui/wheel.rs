@@ -28,44 +28,35 @@ const WHEEL_RADIUS: f32 = 125.0;
 const WHEEL_TILE: f32 = 60.0;
 /// A plate holds an icon box, and under it a row of power pips when the item takes power.
 const TILE_ICON: f32 = 40.0;
-const TILE_PAD: f32 = 5.0;
-/// A plate's label keeps this far from its sides.
-const LABEL_PAD: f32 = 3.0;
 const PIP_H: f32 = 5.0;
 const PIP_GAP: f32 = 2.0;
 const PIP_MAX_W: f32 = 9.0;
 const CORNER_ICON: f32 = 22.0;
-/// The corner icon's box keeps this far in from the plate's edges, clear of its cut corner.
-const CORNER_INSET: f32 = 5.0;
+/// A plate's icon, label, pips and corner icon keep CONTENT_GAP inside its frame's slate line;
+/// over pips the icon box shrinks to keep that gap above them too.
+const CONTENT_GAP: f32 = 3.0;
+const CONTENT_INSET: f32 = (PLATE_FRAME.band + PLATE_FRAME.line) as f32 + CONTENT_GAP;
+const PIP_ICON: f32 = WHEEL_TILE - 2.0 * CONTENT_INSET - CONTENT_GAP - PIP_H;
 const WHEEL_MARGIN: f32 = 8.0;
-/// Lines of the wheel's middle: title, then the pick's name and detail.
+/// The wheel's middle, an info card: the title on its header strip, under it the pick's name
+/// and detail lines. The strip keeps CARD_PAD from the card's edges, as the last line does.
 const WHEEL_LINE: f32 = 22.0;
 const WHEEL_TEXT_PAD: f32 = 6.0;
+const CARD_PAD: f32 = 5.0;
+const HEADER_PAD: f32 = 3.0;
+const CARD_GAP: f32 = 4.0;
 /// The disc under the plates reaches this far past them.
 const WHEEL_DISC_PAD: f32 = 14.0;
 /// The selected plate grows by this much on each side.
 const SELECTED_GROW: f32 = 4.0;
-/// Plates: a pale band and cyan glow, the pick's yellow and wider, a disabled one's grey and
-/// unlit.
-const PLATE_FRAME: FrameStyle = FrameStyle { band: 2, ..BOX_FRAME };
-const PLATE_PICK_FRAME: FrameStyle =
-    FrameStyle { band_color: BUTTON_SELECTED_COLOR, glow: Some(BUTTON_SELECTED_COLOR), ..BOX_FRAME };
-const PLATE_DISABLED_FRAME: FrameStyle =
-    FrameStyle { band_color: PLATE_DISABLED_EDGE_COLOR, glow: None, ..PLATE_FRAME };
+/// Plates as the game's buttons: pale, the pick yellow and grown, a disabled one grey and
+/// unlit; a powered one's band green.
+const PLATE_FRAME: FrameStyle = FrameStyle { band: 2, ..BUTTON_FRAME };
+const PLATE_POWERED_FRAME: FrameStyle = FrameStyle { band_color: POWER_COLOR, ..PLATE_FRAME };
+const PLATE_DISABLED_FRAME: FrameStyle = FrameStyle { glow: None, ..PLATE_FRAME };
 
-const PLATE_SELECTED_COLOR: GlColor = GlColor::new(0.42, 0.38, 0.1, 1.0);
-pub const PLATE_SELECTED_EDGE_COLOR: GlColor = GlColor::new(0.96, 0.84, 0.28, 1.0);
-const MIDDLE_COLOR: GlColor = GlColor::new(0.0, 0.03, 0.03, 0.6);
 const DISC_COLOR: GlColor = GlColor::new(0.02, 0.06, 0.06, 0.5);
-const PLATE_DISABLED_COLOR: GlColor = GlColor::new(0.05, 0.07, 0.07, 0.96);
-const CORNER_COLOR: GlColor = GlColor::new(0.0, 0.03, 0.03, 0.8);
-const WELL_COLOR: GlColor = GlColor::new(0.7, 0.76, 0.72, 1.0);
-const WELL_POWERED_COLOR: GlColor = GlColor::new(0.55, 0.88, 0.55, 1.0);
-/// Wheel plates: the pick solid, the rest see-through.
-const PLATE_IDLE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.975);
-const PLATE_POWERED_COLOR: GlColor = GlColor::new(0.12, 0.36, 0.2, 0.98);
-const PLATE_DISABLED_EDGE_COLOR: GlColor = GlColor::new(0.3, 0.34, 0.33, 0.8);
-const PIP_ON_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
+const POWER_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
 const ZOOM_OFF_BADGE: &str = "Whole frame";
@@ -137,8 +128,6 @@ pub struct Plate {
     icon: Option<Ptr>,
     /// The icon's region in texture pixels, when only part of it is the icon.
     region: Option<[f32; 4]>,
-    /// Dark art that needs a light box under it, as in the game's weapon boxes.
-    icon_well: bool,
     /// How far the art sits right of the texture's centre, in texture pixels.
     icon_shift: f32,
     /// A crew member's animation, drawn as the game's portrait in place of an icon.
@@ -195,8 +184,8 @@ fn texture_size(texture: Ptr) -> (f32, f32) {
     t.map_or((0.0, 0.0), |t| (t.i32(TEXTURE_W) as f32, t.i32(TEXTURE_H) as f32))
 }
 
-/// Draws a plate's icon or portrait centred at cx,cy.
-fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, tint: GlColor) {
+/// Draws a plate's icon or portrait centred at cx,cy, an icon fitted to a `size` square.
+fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, size: f32, tint: GlColor) {
     let a = api();
     if let Some(portrait) = pl.portrait {
         // SAFETY: the renderer's matrix stack around the game's own portrait drawing.
@@ -217,14 +206,19 @@ fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, tint: GlColor) {
     if tw <= 0.0 || th <= 0.0 || sw <= 0.0 || sh <= 0.0 {
         return;
     }
-    let k = TILE_ICON / sw.max(sh);
+    let k = size / sw.max(sh);
     let (w, h) = (sw * k, sh * k);
     let (x, y) = (cx - w / 2.0 - pl.icon_shift * k, cy - h / 2.0);
     match pl.region {
-        // SAFETY: the renderer's blits on a game texture; the region goes in as fractions.
-        Some([rx, ry, rw, rh]) => unsafe {
-            (a.blit_partial)(icon, x, y, w, h, rx / tw, (rx + rw) / tw, ry / th, (ry + rh) / th, 1.0, tint, false)
-        },
+        // A face cut from a game button: its glyph lets the button's slate base show through.
+        Some([rx, ry, rw, rh]) => {
+            draw_rect(x, y, w, h, INK_COLOR);
+            // SAFETY: the renderer's blit on a game texture; the region goes in as fractions.
+            unsafe {
+                (a.blit_partial)(icon, x, y, w, h, rx / tw, (rx + rw) / tw, ry / th, (ry + rh) / th, 1.0, tint, false)
+            }
+        }
+        // SAFETY: as above.
         None => unsafe { (a.blit)(icon, x, y, w, h, 0.0, tint, false) },
     }
 }
@@ -232,14 +226,13 @@ fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, tint: GlColor) {
 /// Draws a row of power pips centred at cx with its top at y.
 fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
     let n_f = n as f32;
-    let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * TILE_PAD - (n_f - 1.0) * PIP_GAP) / n_f);
+    let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * CONTENT_INSET - (n_f - 1.0) * PIP_GAP) / n_f);
     let mut x = cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0;
     for i in 0..n {
         if i < lit {
-            draw_rect(x, y, pw, PIP_H, if available { PIP_ON_COLOR } else { TEXT_DISABLED_COLOR });
-        } else {
-            draw_rect_outline(x, y, pw, PIP_H, if available { PLATE_EDGE_COLOR } else { PLATE_DISABLED_EDGE_COLOR });
+            draw_rect(x, y, pw, PIP_H, if available { POWER_COLOR } else { TEXT_DISABLED_COLOR });
         }
+        draw_rect_outline(x, y, pw, PIP_H, INK_COLOR);
         x += pw + PIP_GAP;
     }
 }
@@ -251,7 +244,7 @@ fn shows_label(pl: &Plate) -> bool {
 
 /// The size, up to the font's own, at which every label shown in a plate fits its width.
 fn label_scale(plates: &[Plate], font: i32) -> f32 {
-    let room = WHEEL_TILE - 2.0 * LABEL_PAD;
+    let room = WHEEL_TILE - 2.0 * CONTENT_INSET;
     plates.iter().filter(|p| shows_label(p)).map(|p| room / text_width(font, &p.label)).fold(1.0, f32::min)
 }
 
@@ -261,36 +254,38 @@ fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: b
     if pl.empty || !pl.bound {
         return;
     }
-    let (style, fill, grow) = if !pl.available {
-        (&PLATE_DISABLED_FRAME, PLATE_DISABLED_COLOR, 0.0)
-    } else if selected {
-        (&PLATE_PICK_FRAME, PLATE_SELECTED_COLOR, SELECTED_GROW)
+    let style = if !pl.available {
+        &PLATE_DISABLED_FRAME
+    } else if pl.powered {
+        &PLATE_POWERED_FRAME
     } else {
-        (&PLATE_FRAME, if pl.powered { PLATE_POWERED_COLOR } else { PLATE_IDLE_COLOR }, 0.0)
+        &PLATE_FRAME
+    };
+    let (fill, grow) = if !pl.available {
+        (BUTTON_OFF_COLOR, 0.0)
+    } else if selected {
+        (BUTTON_SELECTED_COLOR, SELECTED_GROW)
+    } else {
+        (BUTTON_PALE_COLOR, 0.0)
     };
     let side = WHEEL_TILE + 2.0 * grow;
     draw_frame(x - grow, y - grow, side, side, style, fill);
-    let icon_cy = if pl.pips > 0 { y + TILE_PAD + TILE_ICON / 2.0 } else { cy };
-    let tint = if pl.available { TEXT_COLOR } else { TEXT_DISABLED_COLOR };
-    if pl.icon_well {
-        let well = if pl.powered { WELL_POWERED_COLOR } else { WELL_COLOR };
-        draw_rect(cx - TILE_ICON / 2.0, icon_cy - TILE_ICON / 2.0, TILE_ICON, TILE_ICON, well);
-    }
+    let (icon, icon_cy) = if pl.pips > 0 { (PIP_ICON, y + CONTENT_INSET + PIP_ICON / 2.0) } else { (TILE_ICON, cy) };
     if pl.icon.is_some() || pl.portrait.is_some() {
-        draw_plate_icon(pl, cx, icon_cy, tint);
+        draw_plate_icon(pl, cx, icon_cy, icon, art_tint(fill));
     } else if shows_label(pl) {
-        set_color(tint);
+        set_color(INK_COLOR);
         draw_text_scaled(font, cx, icon_cy, label_k, &pl.label);
         set_color(TEXT_COLOR);
     }
     if let Some(corner) = pl.corner_icon {
-        let (ix, iy) = (x + WHEEL_TILE - CORNER_ICON - CORNER_INSET, y + WHEEL_TILE - CORNER_ICON - CORNER_INSET);
-        draw_rect(ix, iy, CORNER_ICON, CORNER_ICON, CORNER_COLOR);
+        let (ix, iy) = (x + WHEEL_TILE - CORNER_ICON - CONTENT_INSET, y + WHEEL_TILE - CORNER_ICON - CONTENT_INSET);
+        draw_rect(ix, iy, CORNER_ICON, CORNER_ICON, INK_COLOR);
         // SAFETY: the renderer's blit on a game texture.
         unsafe { (api().blit)(corner, ix, iy, CORNER_ICON, CORNER_ICON, 0.0, TEXT_COLOR, false) };
     }
     if pl.pips > 0 {
-        draw_pips(pl.pips, pl.pips_on, cx, y + WHEEL_TILE - TILE_PAD - PIP_H, pl.available);
+        draw_pips(pl.pips, pl.pips_on, cx, y + WHEEL_TILE - CONTENT_INSET - PIP_H, pl.available);
     }
 }
 
@@ -311,11 +306,9 @@ fn crew_location(pl: &mut Plate, member: Obj) {
 fn armament_plate(images: &mut Images, pl: &mut Plate, arm: &Armament, item: Obj, bp: Obj) {
     let path = format!("{}{}{}", arm.icon_prefix, bp.string(arm.icon), ICON_SUFFIX);
     pl.icon = images.get(&path);
-    pl.icon_well = true;
     pl.icon_shift = arm.icon_shift;
     if pl.icon.is_none() {
         pl.icon = images.get(arm.icon_fallback);
-        pl.icon_well = false;
         pl.icon_shift = 0.0;
     }
     pl.region = None;
@@ -454,28 +447,26 @@ impl Layer {
             Some(p) if p.badge.is_empty() => 2,
             Some(_) => 3,
         };
-        let text_h = (lines - 1) as f32 * WHEEL_LINE + WHEEL_FONT_H;
-        let top = oy - text_h / 2.0;
-        // A shade under the text alone keeps it readable over the ship.
+        let body_h = if lines > 1 { CARD_GAP + (lines - 2) as f32 * WHEEL_LINE + WHEEL_FONT_H } else { 0.0 };
+        let header_h = WHEEL_FONT_H + 2.0 * HEADER_PAD;
+        let card_h = 2.0 * CARD_PAD + header_h + body_h;
         let mut text_w = text_width(font, &title);
         if let Some(p) = sel {
             text_w = text_w.max(text_width(font, &p.label)).max(text_width(font, &p.badge));
         }
-        draw_rect(
-            ox - text_w / 2.0 - WHEEL_TEXT_PAD,
-            top - WHEEL_TEXT_PAD,
-            text_w + 2.0 * WHEEL_TEXT_PAD,
-            text_h + 2.0 * WHEEL_TEXT_PAD,
-            MIDDLE_COLOR,
-        );
-        set_color(PLATE_EDGE_COLOR);
-        draw_text_center(font, ox, top, &title);
+        let card_w = text_w + 2.0 * (WHEEL_TEXT_PAD + CARD_PAD);
+        let (x, y) = ((ox - card_w / 2.0).round(), (oy - card_h / 2.0).round());
+        draw_frame(x, y, card_w, card_h, &BOX_FRAME, BUTTON_PALE_COLOR);
+        draw_frame(x + CARD_PAD, y + CARD_PAD, card_w - 2.0 * CARD_PAD, header_h, &HEADER_FRAME, HEADER_COLOR);
+        set_color(TEXT_COLOR);
+        draw_text_center(font, ox, y + CARD_PAD + HEADER_PAD, &title);
         if let Some(p) = sel {
-            set_color(TEXT_COLOR);
-            draw_text_center(font, ox, top + WHEEL_LINE, &p.label);
+            let top = y + CARD_PAD + header_h + CARD_GAP;
+            set_color(INK_COLOR);
+            draw_text_center(font, ox, top, &p.label);
             if !p.badge.is_empty() {
-                set_color(PLATE_SELECTED_EDGE_COLOR);
-                draw_text_center(font, ox, top + 2.0 * WHEEL_LINE, &p.badge);
+                set_color(HEADER_COLOR);
+                draw_text_center(font, ox, top + WHEEL_LINE, &p.badge);
             }
         }
         set_color(TEXT_COLOR);
@@ -829,11 +820,11 @@ mod tests {
             let plates =
                 plates(&mut l, "[wheel:power]\nkind = power\nup = 1\nup_right = 2\nright = 3\ndown = v\nleft = 5\n");
             let laser = &plates[0];
-            assert!(laser.available && laser.powered && !laser.empty && laser.icon_well);
+            assert!(laser.available && laser.powered && !laser.empty);
             assert_eq!((laser.label.as_str(), laser.pips, laser.pips_on), ("Burst Laser", 2, 2));
             assert_eq!((laser.icon, laser.icon_shift), (Some(laser_icon.ptr()), WEAPON_ICON_SHIFT));
             let ion = &plates[1];
-            assert!(ion.available && !ion.powered && !ion.icon_well);
+            assert!(ion.available && !ion.powered);
             assert_eq!((ion.label.as_str(), ion.pips, ion.pips_on), ("Heavy Ion", 1, 0));
             assert_eq!((ion.icon, ion.icon_shift), (Some(fallback.ptr()), 0.0));
             for empty in [&plates[2], &plates[6]] {

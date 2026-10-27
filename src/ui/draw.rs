@@ -20,8 +20,7 @@ pub const WHEEL_FONT: i32 = 62;
 /// The height of a WHEEL_FONT line.
 pub const WHEEL_FONT_H: f32 = 18.0;
 
-/// The game's palette: dark teal panels, pale green frames, white text.
-pub const PLATE_COLOR: GlColor = GlColor::new(0.05, 0.11, 0.1, 0.99);
+/// Marks over the game: pale green on a dark edge.
 pub const PLATE_EDGE_COLOR: GlColor = GlColor::new(0.63, 0.9, 0.76, 0.95);
 const PLATE_BEVEL_COLOR: GlColor = GlColor::new(0.0, 0.05, 0.05, 0.9);
 pub const TEXT_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
@@ -33,12 +32,15 @@ pub const RING_TRACK_COLOR: GlColor = GlColor::new(0.05, 0.16, 0.13, 0.6);
 pub const RING_READY_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 0.85);
 /// The green of the game's frame around a selected crew member's box.
 pub const CREW_SELECTED_COLOR: GlColor = GlColor::new(0.47, 1.0, 0.47, 1.0);
-/// The game's frames: a cyan glow fading out past a pale band, on a button a slate line inside
-/// it, then the fill, pale or yellow while selected; all with cut corners.
+/// The game's buttons, labels and panels: pale, yellow while selected, grey while off, with
+/// slate lines and text; a cyan glow fading out past a pale band; all with cut corners.
 pub const BUTTON_PALE_COLOR: GlColor = GlColor::new(0.92, 0.96, 0.9, 1.0);
-pub const BUTTON_LINE_COLOR: GlColor = GlColor::new(0.21, 0.29, 0.35, 1.0);
+pub const INK_COLOR: GlColor = GlColor::new(0.21, 0.29, 0.35, 1.0);
 pub const BUTTON_SELECTED_COLOR: GlColor = GlColor::new(1.0, 0.9, 0.37, 1.0);
+pub const BUTTON_OFF_COLOR: GlColor = GlColor::new(0.64, 0.67, 0.63, 1.0);
 pub const FRAME_GLOW_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.99, 1.0);
+/// The header strip of the game's info cards, under white text.
+pub const HEADER_COLOR: GlColor = GlColor::new(0.49, 0.41, 0.4, 1.0);
 /// The glow's alpha per pixel out from the band.
 const FRAME_GLOW: [f32; 7] = [0.345, 0.259, 0.184, 0.122, 0.075, 0.039, 0.012];
 /// Rows of cut a frame's layer loses per pixel inward: a band stays as thick across its cut
@@ -65,6 +67,8 @@ pub const BUTTON_FRAME: FrameStyle =
 pub const BOX_FRAME: FrameStyle = FrameStyle { line: 0, ..BUTTON_FRAME };
 /// The game's event window.
 pub const WINDOW_FRAME: FrameStyle = FrameStyle { cut: 12, band: 4, ..BOX_FRAME };
+/// The header strip of an info card.
+pub const HEADER_FRAME: FrameStyle = FrameStyle { cut: 4, band: 0, band_color: HEADER_COLOR, line: 0, glow: None };
 
 /// A cut rect at the origin, less the cut rect `hole` = (inset, cut) inside it when given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -296,14 +300,22 @@ pub fn draw_frame(x: f32, y: f32, w: f32, h: f32, style: &FrameStyle, fill: GlCo
             layer(-(i as i32) - 1, Some(1), GlColor { a: glow.a * alpha, ..glow });
         }
     }
-    layer(0, Some(style.band), style.band_color);
+    if style.band > 0 {
+        layer(0, Some(style.band), style.band_color);
+    }
     if style.line > 0 {
-        layer(style.band, Some(style.line), BUTTON_LINE_COLOR);
+        layer(style.band, Some(style.line), INK_COLOR);
     }
     layer(style.band + style.line, None, fill);
     // The game's draws leave the engine's fixed colour white, which untinted text relies on.
     // SAFETY: the engine's colour state, set from a colour alive for the call.
     unsafe { (api().set_fixed_color)(&WHITE) };
+}
+
+/// The tint that turns the pale of the game's button art into `fill`.
+pub fn art_tint(fill: GlColor) -> GlColor {
+    let p = BUTTON_PALE_COLOR;
+    GlColor::new((fill.r / p.r).min(1.0), (fill.g / p.g).min(1.0), (fill.b / p.b).min(1.0), 1.0)
 }
 
 /// `color` with its alpha scaled by `opacity`.
