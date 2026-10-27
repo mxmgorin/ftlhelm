@@ -188,6 +188,7 @@ game_api! {
     set_viewport: unsafe extern "C" fn(c_int, c_int, c_int, c_int) = "_ZN8CSurface14GL_SetViewPortEiiii",
     blit_frame: usize = "_ZN8CSurface18GL_BlitFrameBufferEPiffb",
     blit_pixel: usize = "_ZN8CSurface17GL_BlitPixelImageEP10GL_Texturefffff8GL_Colorb",
+    render_tooltip: usize = "_ZN12MouseControl13RenderTooltipE5Pointb",
     viewport_width: unsafe extern "C" fn() -> c_int = "graphics_viewport_width",
     viewport_height: unsafe extern "C" fn() -> c_int = "graphics_viewport_height",
     default_vertex_source: usize = "generate_vertex_shader_source",

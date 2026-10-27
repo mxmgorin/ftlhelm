@@ -116,5 +116,5 @@ Text sizes apply to event boxes and tooltips: 1 to 2 times the game's own, or au
 enlarges them on screens smaller than 1280x720, less at higher zoom levels. The controls
 table and notices take the same size, as far as the frame holds them.
 
-On a screen that shows the frame smaller than 1280x720, the zone brackets and crew markers
-keep their size.
+On a screen that shows the frame smaller than 1280x720, the pointer is drawn larger, up to
+twice its size, and the zone brackets and crew markers keep their size.

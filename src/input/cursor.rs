@@ -10,6 +10,9 @@ use crate::game::offsets::*;
 use crate::game::state;
 use crate::game::zones::ZoneKind;
 
+/// The most times its size the game's pointer is drawn.
+const POINTER_SCALE_MAX: f32 = 2.0;
+
 /// Frames a newly opened screen gets to show its items before the focus gives up; a
 /// dialog's choices wait for the jump animation.
 const FIRST_FOCUS_FRAMES: i32 = 300;
@@ -193,6 +196,12 @@ impl Layer {
         self.send_cursor();
         self.mark_focus();
         self.buzz();
+    }
+
+    /// How many times its size the game's pointer is drawn: as large on screen as on a whole
+    /// frame shown at its size, up to POINTER_SCALE_MAX.
+    pub fn pointer_scale(&self) -> f32 {
+        self.mark_scale().min(POINTER_SCALE_MAX)
     }
 
     /// Marks the zone under the cursor as focused, for as long as the cursor stays.

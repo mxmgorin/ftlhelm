@@ -1,7 +1,8 @@
 //! Load-time setup and the hooks:
 //! - CApp::OnLoop runs the layer once a frame, and installs the crash report on the first;
-//! - MouseControl::OnRender draws the overlay around the game's pointer, and
-//!   CSurface::GL_BlitPixelImage leaves out the plain pointer while touch hides it;
+//! - MouseControl::OnRender draws the overlay around the game's pointer;
+//!   CSurface::GL_BlitPixelImage draws the plain pointer larger on a small screen, or not
+//!   while touch hides it, and MouseControl::RenderTooltip moves its tooltip below it;
 //! - CEvent::GetShiftState adds the layer's Shift;
 //! - CApp::OnTouchDown, OnTouchMove, OnTouchUp and OnTouchCancel queue touches, and the
 //!   engine looks for a touchscreen among all input devices;
@@ -14,7 +15,7 @@
 
 use std::ffi::{c_int, c_void};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use super::crash::{self, Phase};
 use super::hook::{
@@ -61,6 +62,10 @@ const GET_SHIFT_PROLOGUE: [u8; 9] = [0x48, 0x83, 0xec, 0x08, 0xbf, 0x4b, 0x00, 0
 const BUTTON_MOVE_PROLOGUE: [u8; 8] = [0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47, 0x49];
 /// push %r12; push %rbp; mov %rdi,%rbp
 const BLIT_PIXEL_PROLOGUE: [u8; 6] = [0x41, 0x54, 0x55, 0x48, 0x89, 0xfd];
+/// push %r15; mov %rsi,%r15
+const RENDER_TOOLTIP_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xf7];
+/// The game puts the pointer's tooltip this far below the pointer's tip.
+const POINTER_TOOLTIP_DROP: i32 = 22;
 /// repz ret, then the padding nop's first bytes: the empty handler is shorter than a jump.
 /// The copy returns before the cut nop, and its entry is never called.
 const TOUCH_STUB_PROLOGUE: [u8; 5] = [0xf3, 0xc3, 0x66, 0x66, 0x66];
@@ -77,8 +82,15 @@ static CHOICE_MOUSE_MOVE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static FRAME_DRAW_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BLIT_FRAME_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BLIT_PIXEL_ORIG: AtomicUsize = AtomicUsize::new(0);
-/// The plain pointer's textures while the game draws its pointer with them hidden, else 0.
-static HIDDEN_POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+static RENDER_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
+/// The plain pointer's textures while the game draws its pointer, else 0.
+static POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+static POINTER_HIDDEN: AtomicBool = AtomicBool::new(false);
+/// How many times its size the plain pointer is drawn, as f32 bits.
+static POINTER_SCALE: AtomicU32 = AtomicU32::new(0);
+/// The tooltip hook moves the tooltip below a larger pointer; without it the pointer keeps its
+/// size.
+static POINTER_TOOLTIP: AtomicBool = AtomicBool::new(false);
 
 /// The original of a hooked `extern "C"` function of type F.
 /// # Safety
@@ -132,21 +144,24 @@ extern "C" fn onloop_hook(app: Ptr) {
 }
 
 extern "C" fn mouse_render_hook(this: Ptr) {
-    let (draw_pointer, hide_arrow) = with_layer(|l| {
+    let (draw_pointer, hide_arrow, scale) = with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
-        (l.draw_overlay(), l.arrow_hidden())
+        (l.draw_overlay(), l.arrow_hidden(), l.pointer_scale())
     })
-    .unwrap_or((true, false));
+    .unwrap_or((true, false, 1.0));
     if draw_pointer {
         // SAFETY: the game passes its MouseControl as `this`.
-        let mouse = unsafe { Obj::from_ptr(this as *const c_void) }.filter(|_| hide_arrow);
-        for (slot, off) in HIDDEN_POINTERS.iter().zip([MOUSE_VALID_POINTER, MOUSE_INVALID_POINTER]) {
+        let mouse = unsafe { Obj::from_ptr(this as *const c_void) };
+        for (slot, off) in POINTERS.iter().zip([MOUSE_VALID_POINTER, MOUSE_INVALID_POINTER]) {
             slot.store(mouse.map_or(0, |m| m.get::<usize>(off)), Ordering::Relaxed);
         }
+        POINTER_HIDDEN.store(hide_arrow, Ordering::Relaxed);
+        let scale = if POINTER_TOOLTIP.load(Ordering::Relaxed) { scale } else { 1.0 };
+        POINTER_SCALE.store(scale.to_bits(), Ordering::Relaxed);
         let _tooltip = text::TooltipScope::enter();
         // SAFETY: the original MouseControl::OnRender on its own object.
         unsafe { orig::<extern "C" fn(Ptr)>(&MOUSE_RENDER_ORIG)(this) };
-        for slot in &HIDDEN_POINTERS {
+        for slot in &POINTERS {
             slot.store(0, Ordering::Relaxed);
         }
     }
@@ -186,15 +201,39 @@ extern "C" fn measure_tooltip_hook(this: Ptr, width: c_int) -> Point {
 }
 
 extern "C" fn blit_pixel_hook(tex: Ptr, x: f32, y: f32, w: f32, h: f32, turn: f32, color: GlColor, mirror: bool) {
-    let hidden = !tex.is_null() && HIDDEN_POINTERS.iter().any(|p| p.load(Ordering::Relaxed) == tex as usize);
-    if !hidden {
-        // SAFETY: the original CSurface::GL_BlitPixelImage with its own arguments.
-        unsafe {
-            orig::<extern "C" fn(Ptr, f32, f32, f32, f32, f32, GlColor, bool)>(&BLIT_PIXEL_ORIG)(
-                tex, x, y, w, h, turn, color, mirror,
-            )
-        };
+    let pointer = !tex.is_null() && POINTERS.iter().any(|p| p.load(Ordering::Relaxed) == tex as usize);
+    if pointer && POINTER_HIDDEN.load(Ordering::Relaxed) {
+        return;
     }
+    // The plain pointer's tip is its image's corner, so it stays put as the image grows.
+    let k = if pointer { f32::from_bits(POINTER_SCALE.load(Ordering::Relaxed)) } else { 1.0 };
+    // SAFETY: the original CSurface::GL_BlitPixelImage with its own arguments.
+    unsafe {
+        orig::<extern "C" fn(Ptr, f32, f32, f32, f32, f32, GlColor, bool)>(&BLIT_PIXEL_ORIG)(
+            tex,
+            x,
+            y,
+            w * k,
+            h * k,
+            turn,
+            color,
+            mirror,
+        )
+    };
+}
+
+extern "C" fn render_tooltip_hook(this: Ptr, at: Point, fixed: bool) {
+    let k = f32::from_bits(POINTER_SCALE.load(Ordering::Relaxed));
+    let drawn = POINTERS[0].load(Ordering::Relaxed) != 0 && !POINTER_HIDDEN.load(Ordering::Relaxed);
+    let tip = state::mouse_point();
+    let below_tip = at == Point { x: tip.x, y: tip.y + POINTER_TOOLTIP_DROP };
+    let at = if drawn && below_tip && k > 1.0 {
+        Point { y: tip.y + (POINTER_TOOLTIP_DROP as f32 * k).round() as i32, ..at }
+    } else {
+        at
+    };
+    // SAFETY: the original MouseControl::RenderTooltip on its own object.
+    unsafe { orig::<extern "C" fn(Ptr, Point, bool)>(&RENDER_TOOLTIP_ORIG)(this, at, fixed) };
 }
 
 extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
@@ -365,28 +404,38 @@ pub extern "C" fn init() {
         &BLIT_FRAME_PROLOGUE,
         &BLIT_FRAME_ORIG,
     );
-    let touch_pointer = touch
+    let pointer = install(
+        "CSurface::GL_BlitPixelImage",
+        a.blit_pixel,
+        blit_pixel_hook as *const () as usize,
+        &BLIT_PIXEL_PROLOGUE,
+        &BLIT_PIXEL_ORIG,
+    );
+    let pointer_tooltip = pointer
         && install(
-            "CSurface::GL_BlitPixelImage",
-            a.blit_pixel,
-            blit_pixel_hook as *const () as usize,
-            &BLIT_PIXEL_PROLOGUE,
-            &BLIT_PIXEL_ORIG,
+            "MouseControl::RenderTooltip",
+            a.render_tooltip,
+            render_tooltip_hook as *const () as usize,
+            &RENDER_TOOLTIP_PROLOGUE,
+            &RENDER_TOOLTIP_ORIG,
         );
+    POINTER_TOOLTIP.store(pointer_tooltip, Ordering::Relaxed);
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
-        "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, touch pointer {}, \
-         event text {}, tooltip text {}, zoom {}, step cap {}, pad scan {}, sound recovery {}",
+        "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \
+         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, step cap {}, pad scan {}, \
+         sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
         on(buttons),
         on(touch),
         on(touch_scan),
-        on(touch_pointer),
+        on(pointer),
+        on(pointer_tooltip),
         on(event_text),
         on(tooltip_text),
         on(zoom),
