@@ -76,8 +76,9 @@ impl Layer {
                 log!("  {} {} at {},{} {}x{}", t.kind.name(), t.id, r.x, r.y, r.w, r.h);
             }
         }
-        for r in hud_boxes() {
-            log!("  hud box at {},{} {}x{}", r.x, r.y, r.w, r.h);
+        for b in hud_boxes() {
+            let r = b.rect;
+            log!("  hud box at {},{} {}x{} powered {:?}", r.x, r.y, r.w, r.h, b.powered);
         }
     }
 

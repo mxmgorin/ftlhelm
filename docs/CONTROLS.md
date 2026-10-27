@@ -57,6 +57,7 @@ button, beacon, choice, slot, system icon or weapon box within `touch_snap`.
 | --- | --- |
 | tap | click; with crew selected, a room orders them there unless a crew member is under the finger |
 | hold for `touch_long_press`, release | right click; a ring around the finger fills while it is held and turns white once the hold is long enough |
+| move up or down from a system icon or a weapon box | a bar of power added or removed per `touch_step`; the power follows the finger back; a weapon or drone only switches on or off |
 | drag | drag with the left button: a selection box, an item, a slider; also after a hold |
 | tap with two fingers | pause or resume |
 

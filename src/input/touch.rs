@@ -6,9 +6,11 @@
 //! where the finger landed, a finger held past the long press right-clicks there when it
 //! lifts, and a finger moved past the slop drags with the left button from there; a finger
 //! that goes down takes over, unless it joins the first for a two-finger tap, which pauses
-//! the game as the pause button does. Events arrive in window pixels, where the slop is
-//! measured; a gesture acts at the frame point the screen shows under the finger, through the
-//! zoomed view.
+//! the game as the pause button does. A finger moved up or down from a system icon or an
+//! armament box steps its power instead, a bar per step: up adds, down removes; an armament
+//! box's item only switches on or off. Events arrive
+//! in window pixels, where the slop and the step are measured; a gesture acts at the frame
+//! point the screen shows under the finger, through the zoomed view.
 //!
 //! The game resolves what lies under the pointer a frame after a move, so a press waits for
 //! the frame after the move before it. A finger that lands on nothing the game takes moves,
@@ -23,7 +25,7 @@ use crate::core::util::{log, now_s};
 use crate::game::actions::{toggle_pause, MouseButton};
 use crate::game::api::{api, Rect};
 use crate::game::state;
-use crate::game::zones::{hud_boxes, ZoneKind};
+use crate::game::zones::{hud_boxes, HudBox, ZoneKind};
 use crate::ui::draw::{draw_ring_timer, RING_LIT_COLOR, RING_READY_COLOR, RING_SEGMENTS};
 
 /// Events kept for the next frame; past this many, further moves are dropped.
@@ -101,6 +103,8 @@ pub enum Act {
     Release,
     /// The game's pause, on or off.
     Pause,
+    /// A bar of power added (1) or removed (-1) where the pointer is.
+    Step(i32),
 }
 
 /// The settings the gestures take.
@@ -110,6 +114,28 @@ pub struct Limits {
     pub long_press: f64,
     /// Window pixels a finger may drift and still tap.
     pub slop: f32,
+    /// Window pixels a finger on a power box travels per bar; 0: it drags instead.
+    pub step: f32,
+}
+
+/// What a finger landed on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Landing {
+    /// Anything else.
+    Open,
+    /// The overlay took the touch.
+    Overlay,
+    /// A system icon or an armament box: an up or down move steps its power.
+    Power(PowerBox),
+}
+
+/// A box an up or down move steps the power of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerBox {
+    /// A system icon: its power runs in bars.
+    Bars,
+    /// An armament box: its item is on or off, one bar either way from where the finger landed.
+    Switch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +146,8 @@ enum Stage {
     Held,
     /// Moved past the slop; the left button is down.
     Drag,
+    /// Moved up or down past the slop from a power box: the bars stepped so far, up positive.
+    Swipe { stepped: i32 },
     /// Joined by a second finger: a pause if both lift before the long press, within the slop.
     Pair {
         /// The second finger and where it went down, in window pixels.
@@ -141,6 +169,8 @@ struct Finger {
     /// The frame point it acts on.
     at: (f32, f32),
     stage: Stage,
+    /// The power box it landed on.
+    power: Option<PowerBox>,
 }
 
 /// One finger's gestures, and the acts waiting for their frame.
@@ -154,6 +184,18 @@ impl Gestures {
     /// Whether `id` is the finger down or its partner.
     fn follows(&self, id: i32) -> bool {
         self.finger.is_some_and(|f| f.id == id || matches!(f.stage, Stage::Pair { partner, .. } if partner == id))
+    }
+
+    /// Forgets a power box the pointer did not reach: the steps waiting are dropped, a swipe
+    /// does nothing more, and a finger yet to move moves as from anywhere else.
+    pub fn unpower(&mut self) {
+        self.due.retain(|a| !matches!(a, Act::Step(_)));
+        if let Some(f) = self.finger.as_mut() {
+            f.power = None;
+            if matches!(f.stage, Stage::Swipe { .. }) {
+                f.stage = Stage::Spent;
+            }
+        }
     }
 
     /// Whether the finger down left the point it landed on: a drag, or a pair.
@@ -185,11 +227,11 @@ impl Gestures {
         }
     }
 
-    /// Takes one event acting at frame point `at`; `taken`, for a down, means the overlay
-    /// took the touch.
-    pub fn event(&mut self, ev: &TouchEvent, (x, y): (f32, f32), taken: bool, limits: Limits) {
+    /// Takes one event acting at frame point `at`; `landing` tells what a down landed on.
+    pub fn event(&mut self, ev: &TouchEvent, (x, y): (f32, f32), landing: Landing, limits: Limits) {
         match ev.phase {
             TouchPhase::Down => {
+                let taken = landing == Landing::Overlay;
                 let joins = |f: &Finger| f.stage == Stage::Pending && f.id != ev.id && ev.t - f.since <= PAIR_JOIN_S;
                 if let Some(f) = self.finger.as_mut().filter(|f| !taken && joins(f)) {
                     f.stage = Stage::Pair { partner: ev.id, start: (ev.x, ev.y), lifted: None };
@@ -198,8 +240,12 @@ impl Gestures {
                 // The newest finger takes over, so a lost up leaves no finger behind.
                 self.lift();
                 let stage = if taken { Stage::Spent } else { Stage::Pending };
+                let power = match landing {
+                    Landing::Power(power) => Some(power),
+                    Landing::Open | Landing::Overlay => None,
+                };
                 let (start, since) = ((ev.x, ev.y), ev.t);
-                self.finger = Some(Finger { id: ev.id, start, since, at: (x, y), stage });
+                self.finger = Some(Finger { id: ev.id, start, since, at: (x, y), stage, power });
                 if !taken {
                     self.due.push_back(Act::Move(x, y));
                 }
@@ -217,11 +263,23 @@ impl Gestures {
                 match f.stage {
                     Stage::Pair { .. } if drift > limits.slop => f.stage = Stage::Spent,
                     Stage::Pending | Stage::Held if drift > limits.slop => {
-                        f.stage = Stage::Drag;
-                        self.due.extend([Act::Press, Act::Move(x, y)]);
+                        let upright = (ev.y - start.1).abs() >= (ev.x - start.0).abs();
+                        if f.power.is_some() && limits.step > 0.0 && upright {
+                            f.stage = Stage::Swipe { stepped: 0 };
+                        } else {
+                            f.stage = Stage::Drag;
+                            self.due.extend([Act::Press, Act::Move(x, y)]);
+                        }
                     }
                     Stage::Drag => self.due.push_back(Act::Move(x, y)),
                     _ => {}
+                }
+                if let Stage::Swipe { stepped } = f.stage {
+                    let steps = ((start.1 - ev.y) as f32 / limits.step).trunc() as i32;
+                    let steps = if f.power == Some(PowerBox::Switch) { steps.clamp(-1, 1) } else { steps };
+                    let dir = (steps - stepped).signum();
+                    self.due.extend(std::iter::repeat_n(Act::Step(dir), (steps - stepped).unsigned_abs() as usize));
+                    f.stage = Stage::Swipe { stepped: steps };
                 }
             }
             TouchPhase::Up => {
@@ -239,7 +297,7 @@ impl Gestures {
                     Stage::Pending if ev.t - f.since < limits.long_press => self.due.push_back(Act::Tap),
                     Stage::Pending | Stage::Held => self.due.push_back(Act::LongPress),
                     Stage::Drag => self.due.extend([Act::Move(x, y), Act::Release]),
-                    Stage::Pair { .. } | Stage::Spent => {}
+                    Stage::Swipe { .. } | Stage::Pair { .. } | Stage::Spent => {}
                 }
             }
             TouchPhase::Cancel => self.lift(),
@@ -260,7 +318,7 @@ impl Gestures {
         while let Some(&act) = self.due.front() {
             match act {
                 Act::Move(..) => moved = true,
-                Act::Tap | Act::LongPress | Act::Press if moved => break,
+                Act::Tap | Act::LongPress | Act::Press | Act::Step(_) if moved => break,
                 _ => {}
             }
             out.push(act);
@@ -347,7 +405,7 @@ impl Layer {
     }
 
     fn touch_limits(&self) -> Limits {
-        Limits { long_press: self.cfg.touch_long_press as f64, slop: self.cfg.touch_slop }
+        Limits { long_press: self.cfg.touch_long_press as f64, slop: self.cfg.touch_slop, step: self.cfg.touch_step }
     }
 
     /// Runs the queued touch events through the gestures and applies the acts due at `now`.
@@ -366,7 +424,9 @@ impl Layer {
             if self.debug {
                 log!("touch: {}", if taken { "the game takes the point" } else { "to the nearest target" });
             }
-            if !taken {
+            if taken {
+                self.touch.gestures.unpower();
+            } else {
                 self.touch.gestures.retarget(p.target);
             }
         }
@@ -382,13 +442,23 @@ impl Layer {
             if self.debug {
                 log!("touch {} {} at {},{}: frame {:.0},{:.0}", ev.phase.name(), ev.id, ev.x, ev.y, at.0, at.1);
             }
-            let taken = ev.phase == TouchPhase::Down && self.overlay_takes_touch(at);
+            let mut landing = Landing::Open;
             if ev.phase == TouchPhase::Down {
+                let taken = self.overlay_takes_touch(at);
                 self.touch.in_use |= !taken;
-                let target = if taken { at } else { self.snap_touch(at) };
+                let hud = if state::ship_view() { hud_boxes() } else { Vec::new() };
+                let target = if taken { at } else { self.snap_touch(at, &hud) };
                 self.touch.probe = (target != at).then_some(Probe { landed: at, target, settle: None });
+                let under = hud.iter().find(|b| b.rect.contains(target.0.floor() as i32, target.1.floor() as i32));
+                landing = match (taken, under) {
+                    (true, _) => Landing::Overlay,
+                    (false, Some(b)) => {
+                        Landing::Power(if b.powered.is_some() { PowerBox::Switch } else { PowerBox::Bars })
+                    }
+                    (false, None) => Landing::Open,
+                };
             }
-            self.touch.gestures.event(&ev, at, taken, limits);
+            self.touch.gestures.event(&ev, at, landing, limits);
             if self.touch.gestures.moved_on() {
                 self.touch.probe = None;
             }
@@ -410,16 +480,13 @@ impl Layer {
     }
 
     /// The point a finger landing at frame point `at` would move to: the nearest target within
-    /// `touch_snap`, the zones and on the ship view the HUD's boxes.
-    fn snap_touch(&self, at: (f32, f32)) -> (f32, f32) {
+    /// `touch_snap`, the zones and the HUD boxes `hud`.
+    fn snap_touch(&self, at: (f32, f32), hud: &[HudBox]) -> (f32, f32) {
         let reach = self.cfg.touch_snap * self.frame_per_window();
         if reach <= 0.0 {
             return at;
         }
-        let mut targets: Vec<Rect> = self.zones.list.iter().map(|z| z.rect).collect();
-        if state::ship_view() {
-            targets.extend(hud_boxes());
-        }
+        let targets: Vec<Rect> = self.zones.list.iter().map(|z| z.rect).chain(hud.iter().map(|b| b.rect)).collect();
         snap(&targets, at, reach)
     }
 
@@ -502,7 +569,21 @@ impl Layer {
             Act::Press => self.click(MouseButton::Left, true),
             Act::Release => self.click(MouseButton::Left, false),
             Act::Pause => toggle_pause(),
+            Act::Step(dir) => self.step_power(dir, now),
         }
+    }
+
+    /// Adds a bar of power to the box under the pointer for a positive `dir`, else takes one
+    /// away, by a left or right click; none on an armament box it would not switch, whose
+    /// powered item a left click arms.
+    fn step_power(&mut self, dir: i32, now: f64) {
+        let (x, y) = (self.cursor.last_x, self.cursor.last_y);
+        let powered = hud_boxes().into_iter().find(|b| b.rect.contains(x, y)).and_then(|b| b.powered);
+        if powered == Some(dir > 0) {
+            return;
+        }
+        self.click_tap(if dir > 0 { MouseButton::Left } else { MouseButton::Right });
+        self.mark_click(dir < 0, now);
     }
 
     /// Leaves a mark where the pointer is at `now`, for a touch's click.
@@ -531,13 +612,15 @@ mod tests {
     use crate::game::api::Point;
     use crate::game::fake::{calls, with_game, Call};
     use crate::game::offsets::{
-        CREW_POTENTIAL, CREW_SELECTED, GAME_H, GAME_W, GUI_CREW_CONTROL, KEY_SPACE, MOUSE_VALID, PLAYER_SHIP_ID,
+        ARMAMENTBOX_HIT, ARMAMENTBOX_ITEM, ARMAMENT_BOXES, COMBAT_WEAPON_CONTROL, CREW_POTENTIAL, CREW_SELECTED,
+        GAME_H, GAME_W, GUI_COMBAT_CONTROL, GUI_CREW_CONTROL, GUI_SYS_CONTROL, KEY_SPACE, MOUSE_VALID, PLAYER_SHIP_ID,
+        SYSBOX_LOCATION, SYSBOX_SYSTEM, SYSCTRL_BOXES, SYSCTRL_POSITION, WEAPON_POWERED,
     };
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;
     use crate::ui::zoom::View;
 
-    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0 };
+    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0 };
     /// A frame step at the game's frame rate.
     const DT: f64 = 1.0 / 60.0;
 
@@ -547,7 +630,7 @@ mod tests {
 
     /// Feeds `g` an event acting at its own window point.
     fn feed(g: &mut Gestures, phase: TouchPhase, id: i32, at: (i32, i32), t: f64) {
-        g.event(&ev(phase, id, at, t), (at.0 as f32, at.1 as f32), false, LIMITS);
+        g.event(&ev(phase, id, at, t), (at.0 as f32, at.1 as f32), Landing::Open, LIMITS);
     }
 
     #[test]
@@ -617,6 +700,63 @@ mod tests {
         assert!(g.frame(1.0, LIMITS).is_empty(), "a drag never long-presses");
         feed(&mut g, TouchPhase::Up, 0, (160, 210), 1.1);
         assert_eq!(g.frame(1.1, LIMITS), [Act::Move(160.0, 210.0), Act::Release]);
+    }
+
+    /// Feeds `g` a down on a system icon at `at`.
+    fn land_on_power(g: &mut Gestures, at: (i32, i32), t: f64) {
+        g.event(&ev(TouchPhase::Down, 0, at, t), (at.0 as f32, at.1 as f32), Landing::Power(PowerBox::Bars), LIMITS);
+    }
+
+    #[test]
+    fn a_finger_moved_up_or_down_from_a_power_box_steps_the_power_with_it() {
+        let mut g = Gestures::default();
+        land_on_power(&mut g, (100, 200), 0.0);
+        assert_eq!(g.frame(0.0, LIMITS), [Act::Move(100.0, 200.0)]);
+        feed(&mut g, TouchPhase::Move, 0, (100, 185), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(1)]);
+        feed(&mut g, TouchPhase::Move, 0, (103, 165), 0.2);
+        assert_eq!(g.frame(0.2, LIMITS), [Act::Step(1), Act::Step(1)]);
+        feed(&mut g, TouchPhase::Move, 0, (100, 195), 0.3);
+        assert_eq!(g.frame(0.3, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)], "back down");
+        feed(&mut g, TouchPhase::Move, 0, (100, 230), 0.4);
+        assert_eq!(g.frame(0.4, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)]);
+        assert_eq!(g.hold(0.4, LIMITS), None, "a swipe shows no ring");
+        assert!(g.frame(1.0, LIMITS).is_empty(), "a swipe never long-presses");
+        feed(&mut g, TouchPhase::Up, 0, (100, 230), 1.1);
+        assert!(g.frame(1.1, LIMITS).is_empty());
+    }
+
+    #[test]
+    fn a_switch_steps_one_bar_either_way_from_where_the_finger_landed() {
+        let mut g = Gestures::default();
+        let down = ev(TouchPhase::Down, 0, (100, 200), 0.0);
+        g.event(&down, (100.0, 200.0), Landing::Power(PowerBox::Switch), LIMITS);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (100, 160), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(1)]);
+        feed(&mut g, TouchPhase::Move, 0, (100, 230), 0.2);
+        assert_eq!(g.frame(0.2, LIMITS), [Act::Step(-1), Act::Step(-1)]);
+    }
+
+    #[test]
+    fn a_finger_moved_sideways_from_a_power_box_drags_as_one_moved_up_elsewhere_does() {
+        let mut g = Gestures::default();
+        land_on_power(&mut g, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (120, 205), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Press, Act::Move(120.0, 205.0)]);
+        feed(&mut g, TouchPhase::Up, 0, (120, 205), 0.2);
+        g.frame(0.2, LIMITS);
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 1.0);
+        g.frame(1.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (100, 170), 1.1);
+        assert_eq!(g.frame(1.1, LIMITS), [Act::Press, Act::Move(100.0, 170.0)]);
+        let no_step = Limits { step: 0.0, ..LIMITS };
+        let mut g = Gestures::default();
+        g.event(&ev(TouchPhase::Down, 0, (100, 200), 2.0), (100.0, 200.0), Landing::Power(PowerBox::Bars), no_step);
+        g.frame(2.0, no_step);
+        g.event(&ev(TouchPhase::Move, 0, (100, 170), 2.1), (100.0, 170.0), Landing::Open, no_step);
+        assert_eq!(g.frame(2.1, no_step), [Act::Press, Act::Move(100.0, 170.0)], "no step set");
     }
 
     #[test]
@@ -718,7 +858,7 @@ mod tests {
     #[test]
     fn a_touch_the_overlay_takes_does_nothing_else() {
         let mut g = Gestures::default();
-        g.event(&ev(TouchPhase::Down, 0, (100, 200), 0.0), (100.0, 200.0), true, LIMITS);
+        g.event(&ev(TouchPhase::Down, 0, (100, 200), 0.0), (100.0, 200.0), Landing::Overlay, LIMITS);
         feed(&mut g, TouchPhase::Move, 0, (200, 200), 0.1);
         assert!(g.frame(1.0, LIMITS).is_empty());
         feed(&mut g, TouchPhase::Up, 0, (200, 200), 1.1);
@@ -822,6 +962,69 @@ mod tests {
             let click =
                 |y| [Call::Button(MouseButton::Left, true, 120, y), Call::Button(MouseButton::Left, false, 120, y)];
             assert_eq!(clicks(&mut l, 2 * TAP_FRAMES), [click(102), click(110)].concat());
+        });
+    }
+
+    #[test]
+    fn a_finger_moved_down_from_a_system_icon_right_clicks_it_once_per_step() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            g.player_manager();
+            system_icon(g);
+            // The finger lands below the icon and snaps in.
+            l.queue_touch(TouchPhase::Down, 0, 60, 680);
+            l.queue_touch(TouchPhase::Move, 0, 60, 690);
+            l.queue_touch(TouchPhase::Move, 0, 60, 715);
+            l.queue_touch(TouchPhase::Up, 0, 60, 715);
+            let right = |down| Call::Button(MouseButton::Right, down, 60, 669);
+            assert_eq!(clicks(&mut l, 2 * TAP_FRAMES), [right(true), right(false), right(true), right(false)]);
+        });
+    }
+
+    /// Puts one system icon on the HUD.
+    fn system_icon(g: &mut crate::game::fake::Game) {
+        let control = g.gui.at(GUI_SYS_CONTROL);
+        control.set(SYSCTRL_POSITION, Point { x: 10, y: 600 });
+        let sys_box = g.arena.alloc(SYSBOX_SYSTEM + std::mem::size_of::<usize>());
+        sys_box.set(SYSBOX_LOCATION, Point { x: 20, y: 30 });
+        g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
+    }
+
+    #[test]
+    fn a_swipe_from_a_game_button_beside_a_system_icon_clicks_nothing() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            g.player_manager();
+            system_icon(g);
+            // The game takes the point the finger landed on, beside the icon.
+            g.mouse.set(MOUSE_VALID, true);
+            l.queue_touch(TouchPhase::Down, 0, 60, 680);
+            l.queue_touch(TouchPhase::Move, 0, 60, 715);
+            l.queue_touch(TouchPhase::Up, 0, 60, 715);
+            assert!(clicks(&mut l, 2 * TAP_FRAMES).is_empty());
+        });
+    }
+
+    #[test]
+    fn a_step_clicks_a_weapon_box_only_where_it_switches_the_weapon() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            g.player_manager();
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let item = g.arena.alloc(WEAPON_POWERED + std::mem::size_of::<u8>());
+            item.set(WEAPON_POWERED, true);
+            let armament = g.arena.alloc(ARMAMENTBOX_ITEM + std::mem::size_of::<usize>());
+            armament.set(ARMAMENTBOX_HIT, Point { x: 300, y: 640 });
+            armament.set(ARMAMENTBOX_ITEM, item.addr());
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(armament)]);
+            (l.cursor.x, l.cursor.y) = (340.0, 660.0);
+            l.send_cursor();
+            calls();
+            l.step_power(1, now_s());
+            l.step_power(-1, now_s());
+            let buttons: Vec<Call> = calls().into_iter().filter(|c| matches!(c, Call::Button(..))).collect();
+            let right = |down| Call::Button(MouseButton::Right, down, 340, 660);
+            assert_eq!(buttons, [right(true), right(false)], "powered: up arms it, so only down clicks");
         });
     }
 

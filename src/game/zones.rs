@@ -124,29 +124,42 @@ fn open_rect(at: Point, w: i32, h: i32) -> Rect {
     Rect { x: at.x + 1, y: at.y + 1, w: w - 1, h: h - 1 }
 }
 
-/// The ship view's HUD boxes that take clicks and are not zones: the system icons and the
-/// armament boxes holding an item.
-pub fn hud_boxes() -> Vec<Rect> {
+/// A HUD box that takes clicks and is no zone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HudBox {
+    pub rect: Rect,
+    /// An armament box's item powered on or not; None for a system icon, whose power runs in
+    /// bars.
+    pub powered: Option<bool>,
+}
+
+/// The ship view's HUD boxes: the system icons and the armament boxes holding an item.
+pub fn hud_boxes() -> Vec<HudBox> {
     let Some(gui) = state::gui() else {
         return Vec::new();
     };
     let control = gui.at(GUI_SYS_CONTROL);
     let origin = control.point(SYSCTRL_POSITION);
     let side = SYSBOX_CLICK_TO - SYSBOX_CLICK_FROM;
-    let mut boxes: Vec<Rect> = control
+    let mut boxes: Vec<HudBox> = control
         .at(SYSCTRL_BOXES)
         .vec_objs()
         .map(|(_, b)| {
             let at = b.point(SYSBOX_LOCATION);
             let from = Point { x: origin.x + at.x + SYSBOX_CLICK_FROM, y: origin.y + at.y + SYSBOX_CLICK_FROM };
-            open_rect(from, side, side)
+            HudBox { rect: open_rect(from, side, side), powered: None }
         })
         .collect();
-    for bar in [state::weapon_control(), state::drone_control()].into_iter().flatten() {
+    let bars = [(state::weapon_control(), WEAPON_POWERED), (state::drone_control(), DRONE_POWERED)];
+    for (bar, powered) in bars.into_iter().filter_map(|(bar, powered)| Some((bar?, powered))) {
         let at = bar.point(ARMAMENT_LOCATION);
-        for (_, b) in bar.at(ARMAMENT_BOXES).vec_objs().filter(|(_, b)| b.obj(ARMAMENTBOX_ITEM).is_some()) {
+        for (_, b) in bar.at(ARMAMENT_BOXES).vec_objs() {
+            let Some(item) = b.obj(ARMAMENTBOX_ITEM) else {
+                continue;
+            };
             let hit = b.point(ARMAMENTBOX_HIT);
-            boxes.push(open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H));
+            let rect = open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H);
+            boxes.push(HudBox { rect, powered: Some(item.flag(powered)) });
         }
     }
     boxes
@@ -548,14 +561,16 @@ mod tests {
             g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
             let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
             weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
-            let item = g.arena.alloc(size_of::<usize>());
+            let item = g.arena.alloc(WEAPON_POWERED + size_of::<u8>());
+            item.set(WEAPON_POWERED, true);
             let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
             filled.set(ARMAMENTBOX_HIT, Point { x: 5, y: 6 });
             filled.set(ARMAMENTBOX_ITEM, item.addr());
             let empty = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
             g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(filled), Some(empty)]);
-            let icon = Rect { x: 52, y: 652, w: 20, h: 20 };
-            assert_eq!(hud_boxes(), [icon, Rect { x: 306, y: 647, w: 94, h: 38 }]);
+            let icon = HudBox { rect: Rect { x: 52, y: 652, w: 20, h: 20 }, powered: None };
+            let weapon = HudBox { rect: Rect { x: 306, y: 647, w: 94, h: 38 }, powered: Some(true) };
+            assert_eq!(hud_boxes(), [icon, weapon]);
         });
     }
 
