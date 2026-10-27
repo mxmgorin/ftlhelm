@@ -72,7 +72,7 @@ Download [`ftlhelm-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlhelm/rel
 
 ### Steam Deck
 
-As for Steam, except step 2: in **Properties > Controller**, leave Steam Input on with the **Gamepad** template.
+As for Steam, except step 2: leave Steam Input on, and in FTL's **Controller Settings** open the current layout and apply **Templates > Gamepad**.
 
 For touch in Game Mode, open FTL's controller layout (**Controller Settings > Edit Layout > Action Sets**), choose the gear of the action set, **Add Always-On command**, and set it to the System command **Touchscreen Native Support**. Desktop Mode needs no setting.
 

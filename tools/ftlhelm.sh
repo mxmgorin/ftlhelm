@@ -2,7 +2,7 @@
 # Runs a command with ftlhelm preloaded, the ftlhelm.ini and ftlhelm.log next to this script.
 #
 #   Steam launch options:  /path/to/ftlhelm/ftlhelm.sh %command%
-#   Without Steam:         /path/to/ftlhelm/ftlhelm.sh "/path/to/FTL Faster Than Light/FTL"
+#   Without Steam:         cd "/path/to/FTL Faster Than Light" && /path/to/ftlhelm/ftlhelm.sh ./FTL
 #
 # Keeps the preloads already set (the Steam overlay) after ftlhelm.so. FTLHELM_LAYOUT and
 # FTLHELM_LOG, when already set, name another layout and log.
