@@ -252,7 +252,17 @@ pub const EQUIP_OVER_AUG_CAPACITY: usize = 809;
 pub const CREWSCREEN_BOXES: usize = 184;
 pub const EQUIPBOX_HITBOX: usize = 96;
 pub const TABBED_BUTTONS: usize = 32;
+pub const TABBED_WINDOWS: usize = 56;
 pub const TABBED_CURRENT: usize = 104;
+/// The store screens' window for the buy tab: the Store.
+pub const STORE_BUY_TAB: usize = 0;
+/// Store::vStoreBoxes: the sections' boxes in section order, then the item boxes.
+pub const STORE_BOXES: usize = 1144;
+pub const STORE_SECTION_COUNT: usize = 1580;
+pub const STORE_SHOW_PAGE2: usize = 1600;
+pub const STORE_PAGE_SECTIONS: usize = 2;
+pub const STORE_SECTION_BOXES: usize = 3;
+pub const STOREBOX_BUTTON: usize = 24;
 
 pub const SHIP_ROOMS: usize = 16;
 pub const SHIP_DOORS: usize = 40;

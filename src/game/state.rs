@@ -147,6 +147,26 @@ pub fn open_tabbed() -> Option<Obj> {
         .find(|w| w.flag(FOCUS_OPEN))
 }
 
+/// The buttons of the store page not shown, which the game hit-tests all the same; none
+/// with the store closed.
+pub fn hidden_store_buttons() -> Vec<usize> {
+    let Some(screens) = gui().map(|g| g.at(layout().gui_store_screens)).filter(|s| s.flag(FOCUS_OPEN)) else {
+        return Vec::new();
+    };
+    // Only an open store screen's window is sure to be live.
+    let Some(store) = screens.at(TABBED_WINDOWS).vec_obj(STORE_BUY_TAB) else {
+        return Vec::new();
+    };
+    let page2 = store.flag(STORE_SHOW_PAGE2);
+    let section_boxes = store.i32(STORE_SECTION_COUNT).max(0) as usize * STORE_SECTION_BOXES;
+    store
+        .at(STORE_BOXES)
+        .vec_objs()
+        .filter(|&(i, _)| i < section_boxes && (i >= STORE_PAGE_SECTIONS * STORE_SECTION_BOXES) != page2)
+        .map(|(_, b)| b.addr() + STOREBOX_BUTTON)
+        .collect()
+}
+
 /// Whether the ship view is up with nothing over it: no menu, ship or store screen, dialog
 /// or map.
 pub fn ship_view() -> bool {

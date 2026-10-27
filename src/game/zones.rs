@@ -250,10 +250,12 @@ impl Zones {
 
     /// The hit-tested buttons: with the map open only its own, with another screen or the
     /// menu open none from the HUD's top and bottom rows.
+    /// None from the store page not shown.
     fn add_button_zones(&mut self, screen_open: bool, map: Option<Obj>) {
+        let hidden = state::hidden_store_buttons();
         for i in 0..self.buttons.len() {
             let b = self.buttons[i];
-            if map.is_some_and(|m| !m.contains(STARMAP_SIZE, b.object)) {
+            if map.is_some_and(|m| !m.contains(STARMAP_SIZE, b.object)) || hidden.contains(&b.object) {
                 continue;
             }
             if screen_open && (b.rect.y < HUD_TOP_HEIGHT || b.rect.y >= HUD_BOTTOM_TOP) {
@@ -548,6 +550,31 @@ mod tests {
                     (ZoneKind::Button, 1, rect(600, 300)),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn the_store_lists_the_buttons_of_its_shown_page_and_items() {
+        with_game(|g| {
+            let screens = g.gui.at(layout().gui_store_screens);
+            screens.set(FOCUS_OPEN, 1u8);
+            let store = g.arena.alloc(STORE_SHOW_PAGE2 + 1);
+            store.set(STORE_SECTION_COUNT, 3i32);
+            g.arena.ptr_vector(screens, TABBED_WINDOWS, &[Some(store)]);
+            let item_box = 3 * STORE_SECTION_BOXES;
+            let mut boxes = vec![None; item_box + 1];
+            let mut l = Layer::default();
+            for (n, i) in [0, STORE_PAGE_SECTIONS * STORE_SECTION_BOXES, item_box].into_iter().enumerate() {
+                let b = g.arena.alloc(STOREBOX_BUTTON + size_of::<usize>());
+                boxes[i] = Some(b);
+                let r = rect(400 + 2 * SIDE * n as i32, 300);
+                l.zones.buttons.push(Button { rect: r, object: b.addr() + STOREBOX_BUTTON });
+            }
+            g.arena.ptr_vector(store, STORE_BOXES, &boxes);
+            let ids = |l: &mut Layer| built(l).into_iter().map(|(_, id, _)| id).collect::<Vec<_>>();
+            assert_eq!(ids(&mut l), [0, 2], "page 1 and the items");
+            store.set(STORE_SHOW_PAGE2, 1u8);
+            assert_eq!(ids(&mut l), [1, 2], "page 2 and the items");
         });
     }
 
