@@ -221,6 +221,9 @@ pub const DRONE_ICON_PREFIX: &str = "systemUI/weapbox_icon_D_";
 pub const ICON_SUFFIX: &str = ".png";
 pub const WEAPON_ICON_FALLBACK: &str = "icons/s_weapons_overlay.png";
 pub const DRONE_ICON_FALLBACK: &str = "icons/s_drones_overlay.png";
+/// The game's pointer, and its arrow's region of the texture.
+pub const POINTER_ICON: &str = "mouse/pointerValid.png";
+pub const POINTER_REGION: [f32; 4] = [0.0, 0.0, 14.0, 21.0];
 
 pub const SHIPMANAGER_CREW: usize = 192;
 pub const SHIPMANAGER_SHIP: usize = 280;

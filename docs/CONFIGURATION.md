@@ -154,7 +154,7 @@ state.
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
 without one), and an optional icon: a game image path under `img/` in `ftl.dat`, with
-`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square.
+`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, and `zoom`, `text_size` and `help` plates show their own glyphs.
 
 ## Environment variables
 

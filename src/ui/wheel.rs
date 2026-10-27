@@ -70,6 +70,16 @@ const WINDOW_COLOR: GlColor = GlColor::new(0.47, 0.39, 0.38, 0.85);
 const DARK_COLOR: GlColor = GlColor::new(0.16, 0.14, 0.13, 0.85);
 const DIM_COLOR: GlColor = GlColor::new(0.0, 0.0, 0.0, 0.5);
 const POWER_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
+/// Glyphs of built-ins without game art: text as wide as the icon box, up to GLYPH_TEXT_MAX
+/// times its size; the zoom's corner brackets round a plus, ZOOM_GLYPH_STROKE thick.
+const GLYPH_TEXT_MAX: f32 = 2.0;
+const TEXT_GLYPH: &str = "Aa";
+const HELP_GLYPH: &str = "?";
+const ZOOM_GLYPH_W: f32 = 32.0;
+const ZOOM_GLYPH_H: f32 = 26.0;
+const ZOOM_GLYPH_ARM: f32 = 9.0;
+const ZOOM_GLYPH_PLUS: f32 = 12.0;
+const ZOOM_GLYPH_STROKE: f32 = 3.0;
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
 const ZOOM_OFF_BADGE: &str = "Whole frame";
@@ -118,6 +128,15 @@ fn draw_backdrop(backdrop: Backdrop, (ox, oy): (f32, f32)) {
         Backdrop::Dim => draw_rect(0.0, 0.0, GAME_W as f32, GAME_H as f32, DIM_COLOR),
         Backdrop::Disc => draw_disc(ox, oy, r, DISC_COLOR),
     }
+}
+
+/// A plate's own glyph, for a built-in the game has no art for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Glyph {
+    /// Text drawn large.
+    Text(&'static str),
+    /// Corner brackets round a plus.
+    Zoom,
 }
 
 /// Where a power wheel finds the item a slot key powers.
@@ -182,6 +201,13 @@ pub struct Plate {
     icon: Option<Ptr>,
     /// The icon's region in texture pixels, when only part of it is the icon.
     region: Option<[f32; 4]>,
+    /// The icon is a face cut from a game button: its glyph lets the button's slate base show
+    /// through.
+    icon_base: bool,
+    /// The icon is drawn at its own size, not fitted to the box: pixel art keeps even lines.
+    icon_native: bool,
+    /// A glyph drawn in place of an icon.
+    glyph: Option<Glyph>,
     /// How far the art sits right of the texture's centre, in texture pixels.
     icon_shift: f32,
     /// A crew member's animation, drawn as the game's portrait in place of an icon.
@@ -261,13 +287,14 @@ fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, size: f32, tint: GlColor) {
     if tw <= 0.0 || th <= 0.0 || sw <= 0.0 || sh <= 0.0 {
         return;
     }
-    let k = size / sw.max(sh);
+    let k = if pl.icon_native { 1.0 } else { size / sw.max(sh) };
     let (w, h) = (sw * k, sh * k);
     let (x, y) = (cx - w / 2.0 - pl.icon_shift * k, cy - h / 2.0);
     match pl.region {
-        // A face cut from a game button: its glyph lets the button's slate base show through.
         Some([rx, ry, rw, rh]) => {
-            draw_rect(x, y, w, h, INK_COLOR);
+            if pl.icon_base {
+                draw_rect(x, y, w, h, INK_COLOR);
+            }
             // SAFETY: the renderer's blit on a game texture; the region goes in as fractions.
             unsafe {
                 (a.blit_partial)(icon, x, y, w, h, rx / tw, (rx + rw) / tw, ry / th, (ry + rh) / th, 1.0, tint, false)
@@ -294,7 +321,25 @@ fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
 
 /// Whether a plate shows its label in place of an icon.
 fn shows_label(pl: &Plate) -> bool {
-    pl.bound && !pl.empty && pl.available && pl.icon.is_none() && pl.portrait.is_none()
+    pl.bound && !pl.empty && pl.available && pl.icon.is_none() && pl.portrait.is_none() && pl.glyph.is_none()
+}
+
+/// Draws `glyph` in slate centred at cx,cy, text fitted to `size` wide.
+fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
+    match glyph {
+        Glyph::Text(text) => {
+            let k = (size / text_width(font, text)).min(GLYPH_TEXT_MAX);
+            set_color(INK_COLOR);
+            draw_text_scaled(font, cx, cy, k, text);
+            set_color(TEXT_COLOR);
+        }
+        Glyph::Zoom => {
+            let (w, h, t, p) = (ZOOM_GLYPH_W, ZOOM_GLYPH_H, ZOOM_GLYPH_STROKE, ZOOM_GLYPH_PLUS);
+            draw_corners(cx - w / 2.0, cy - h / 2.0, w, h, ZOOM_GLYPH_ARM, t, INK_COLOR);
+            draw_rect(cx - p / 2.0, cy - t / 2.0, p, t, INK_COLOR);
+            draw_rect(cx - t / 2.0, cy - p / 2.0, t, p, INK_COLOR);
+        }
+    }
 }
 
 /// The size, up to the font's own, at which every label shown in a plate fits its width.
@@ -328,6 +373,8 @@ fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: b
     let (icon, icon_cy) = if pl.pips > 0 { (PIP_ICON, y + CONTENT_INSET + PIP_ICON / 2.0) } else { (TILE_ICON, cy) };
     if pl.icon.is_some() || pl.portrait.is_some() {
         draw_plate_icon(pl, cx, icon_cy, icon, art_tint(fill));
+    } else if let Some(glyph) = pl.glyph {
+        draw_glyph(glyph, font, cx, icon_cy, icon);
     } else if shows_label(pl) {
         set_color(INK_COLOR);
         draw_text_scaled(font, cx, icon_cy, label_k, &pl.label);
@@ -439,6 +486,22 @@ fn system_plates() -> [Plate; WHEEL_SLOTS] {
     plates
 }
 
+/// Gives the plate of built-in `b` its art when it has a look of its own: the game's pointer
+/// for the mouse mode, glyphs for the zoom, the text size and the help.
+fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
+    match b {
+        Builtin::DpadMode => {
+            pl.icon = images.get(POINTER_ICON);
+            pl.region = Some(POINTER_REGION);
+            pl.icon_native = true;
+        }
+        Builtin::Zoom => pl.glyph = Some(Glyph::Zoom),
+        Builtin::TextSize => pl.glyph = Some(Glyph::Text(TEXT_GLYPH)),
+        Builtin::Help => pl.glyph = Some(Glyph::Text(HELP_GLYPH)),
+        _ => {}
+    }
+}
+
 fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
     let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
     for (pl, pdef) in plates.iter_mut().zip(def.plates.iter()) {
@@ -452,6 +515,9 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
         if let Some(icon) = &pdef.icon {
             pl.icon = images.get(&icon.path);
             pl.region = icon.region;
+            pl.icon_base = icon.region.is_some();
+        } else if let Action::Builtin(b) = pdef.action {
+            builtin_art(images, pl, b);
         }
         let Action::Key { code, .. } = pdef.action else {
             continue;
@@ -942,6 +1008,7 @@ mod tests {
     fn settings_plates_show_their_values_and_step_them() {
         with_game(|_| {
             let mut l = Layer::default();
+            l.images.insert(POINTER_ICON, 0);
             (l.zoom.level, l.cfg.text_scale, l.bind.dpad_mouse) = (2.0, 1.5, true);
             let layout =
                 "[wheel:settings]\nkind = settings\nup = dpad_mode\nright = zoom\nleft = text_size\ndown = help\n";
@@ -966,6 +1033,27 @@ mod tests {
             l.wheel.sel = Some(0);
             l.act_on_plate();
             assert_eq!((l.bind.dpad_mouse, l.wheel.open), (false, None));
+        });
+    }
+
+    #[test]
+    fn settings_plates_take_the_pointer_and_glyphs_unless_given_an_icon() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let (pointer, door) = (g.arena.alloc(size_of::<usize>()), g.arena.alloc(size_of::<usize>()));
+            l.images.insert(POINTER_ICON, pointer.addr());
+            l.images.insert("door.png", door.addr());
+            let layout = "[wheel:settings]\nkind = settings\nup = dpad_mode\nright = zoom\nleft = text_size\n\
+                          down = help\nup_right = dpad_mode \"Mouse\" door.png@1,2,3,4\n";
+            let p = plates(&mut l, layout);
+            assert_eq!((p[0].icon, p[0].region, p[0].icon_base), (Some(pointer.ptr()), Some(POINTER_REGION), false));
+            assert!(p[0].icon_native);
+            assert_eq!(p[2].glyph, Some(Glyph::Zoom));
+            assert_eq!(p[6].glyph, Some(Glyph::Text(TEXT_GLYPH)));
+            assert_eq!(p[4].glyph, Some(Glyph::Text(HELP_GLYPH)));
+            assert!(p.iter().all(|pl| !shows_label(pl)));
+            assert_eq!((p[1].icon, p[1].icon_base, p[1].glyph), (Some(door.ptr()), true, None));
+            assert!(!p[1].icon_native, "a layout icon is fitted");
         });
     }
 

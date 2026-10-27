@@ -188,8 +188,25 @@ fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color:
 /// Corner brackets `thick` wide and `arm` long on the corners of `x, y, w, h`, each over a dark
 /// edge one line wider.
 pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color: GlColor) {
+    let bars = bracket_bars(x, y, w, h, arm, thick);
+    let e = OVERLAY_LINE;
+    for (bx, by, bw, bh) in bars {
+        draw_rect(bx - e, by - e, bw + 2.0 * e, bh + 2.0 * e, PLATE_BEVEL_COLOR);
+    }
+    draw_corners(x, y, w, h, arm, thick, color);
+}
+
+/// Corner brackets `thick` wide and `arm` long on the corners of `x, y, w, h`.
+pub fn draw_corners(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color: GlColor) {
+    for (bx, by, bw, bh) in bracket_bars(x, y, w, h, arm, thick) {
+        draw_rect(bx, by, bw, bh, color);
+    }
+}
+
+/// The bars of corner brackets on `x, y, w, h`: two per corner.
+fn bracket_bars(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32) -> [(f32, f32, f32, f32); 8] {
     let (right, bottom) = (x + w, y + h);
-    let bars = [
+    [
         (x, y, arm, thick),
         (x, y, thick, arm),
         (right - arm, y, arm, thick),
@@ -198,14 +215,7 @@ pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color
         (x, bottom - arm, thick, arm),
         (right - arm, bottom - thick, arm, thick),
         (right - thick, bottom - arm, thick, arm),
-    ];
-    let e = OVERLAY_LINE;
-    for (bx, by, bw, bh) in bars {
-        draw_rect(bx - e, by - e, bw + 2.0 * e, bh + 2.0 * e, PLATE_BEVEL_COLOR);
-    }
-    for (bx, by, bw, bh) in bars {
-        draw_rect(bx, by, bw, bh, color);
-    }
+    ]
 }
 
 /// A triangle pointing down, `w` wide and `h` tall, its tip at (`cx`, `tip`), over a dark edge
