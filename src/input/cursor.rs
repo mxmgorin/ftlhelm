@@ -138,7 +138,7 @@ impl Layer {
         c.synced = true;
         (self.cursor.last_wx, self.cursor.last_wy) = self.to_window(self.cursor.x, self.cursor.y);
         if moved_elsewhere {
-            self.show_arrow();
+            self.leave_touch();
         }
     }
 

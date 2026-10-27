@@ -28,6 +28,19 @@ const BADGE_H: f32 = 30.0;
 const BADGE_PAD: f32 = 14.0;
 const BADGE_SEPARATOR: &str = " / ";
 const BADGE_MARGIN: f32 = 8.0;
+/// The pause button in the frame's bottom right corner; the margin holds its glow and keeps its
+/// reach off the HUD's rightmost box, the battery's.
+const PAUSE_BUTTON_SIZE: f32 = 56.0;
+const PAUSE_MARGIN: f32 = 8.0;
+/// A touch reaches the button this far past its edge: in the corner, up to the frame's edges.
+const PAUSE_HIT_PAD: f32 = PAUSE_MARGIN;
+const PAUSE_CORNER: (f32, f32) =
+    (GAME_W as f32 - PAUSE_MARGIN - PAUSE_BUTTON_SIZE, GAME_H as f32 - PAUSE_MARGIN - PAUSE_BUTTON_SIZE);
+/// Its glyph's two bars.
+const PAUSE_BAR_W: f32 = 7.0;
+const PAUSE_BAR_H: f32 = 22.0;
+/// Keeps the glyph's width even like the button's, so it centres on whole pixels.
+const PAUSE_BAR_GAP: f32 = 8.0;
 /// Text sits this far below a panel row's top edge.
 const TEXT_DY: f32 = 5.0;
 /// The least room a scaled panel leaves to the edges of what is shown.
@@ -106,6 +119,17 @@ fn builtin_title(b: Builtin) -> &'static str {
     }
 }
 
+/// Draws the pause button at (`x`, `y`): a game button with two bars, lit while the game is
+/// paused.
+fn draw_pause_button(x: f32, y: f32) {
+    let s = PAUSE_BUTTON_SIZE;
+    let fill = if state::game_paused() { BUTTON_SELECTED_COLOR } else { BUTTON_PALE_COLOR };
+    draw_game_button(x, y, s, s, fill);
+    let (cx, top) = (x + s / 2.0, y + (s - PAUSE_BAR_H) / 2.0);
+    draw_rect(cx - PAUSE_BAR_GAP / 2.0 - PAUSE_BAR_W, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
+    draw_rect(cx + PAUSE_BAR_GAP / 2.0, top, PAUSE_BAR_W, PAUSE_BAR_H, BUTTON_LINE_COLOR);
+}
+
 /// The badge's crew part on the ship view: the selected crew member's name, or how many are
 /// selected.
 fn crew_part() -> Option<String> {
@@ -142,11 +166,16 @@ impl Layer {
             self.draw_focus();
         }
         self.draw_touch();
+        let pause = self.pause_button();
+        if let Some((x, y)) = pause {
+            draw_pause_button(x, y);
+        }
         if self.cursor.synced && self.cfg.overlay && state::gui().is_some() {
             let text = self.badge_text();
             if !text.is_empty() {
                 let w = text_width(WHEEL_FONT, &text) + 2.0 * BADGE_PAD;
-                let (right, top) = self.zoom.view.map_or((GAME_W as f32, 0.0), |v| (v.right(), v.y));
+                let (right, top) = self.top_right();
+                let right = pause.filter(|_| !self.corner_shown()).map_or(right, |(x, _)| x);
                 let (x, y) = (right - BADGE_MARGIN - w, top + BADGE_MARGIN);
                 draw_panel(x, y, w, BADGE_H, PLATE_COLOR, PLATE_EDGE_COLOR);
                 draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
@@ -156,6 +185,38 @@ impl Layer {
             self.draw_help();
         }
         self.wheel.open.is_none() && !self.help_shown
+    }
+
+    /// The top right corner of what is shown.
+    fn top_right(&self) -> (f32, f32) {
+        self.zoom.view.map_or((GAME_W as f32, 0.0), |v| (v.right(), v.y))
+    }
+
+    /// Whether the view shows the pause button's place in the frame's corner.
+    fn corner_shown(&self) -> bool {
+        let (x, y) = PAUSE_CORNER;
+        self.zoom.view.is_none_or(|v| x + PAUSE_BUTTON_SIZE <= v.right() && y + PAUSE_BUTTON_SIZE <= v.bottom())
+    }
+
+    /// Where the pause button sits while touch is in use, on the ship view with nothing over it:
+    /// in the frame's corner, else in the top right of the view.
+    fn pause_button(&self) -> Option<(f32, f32)> {
+        if !self.touch_in_use() || !state::ship_view() || self.wheel.open.is_some() || self.help_shown {
+            return None;
+        }
+        if self.corner_shown() {
+            return Some(PAUSE_CORNER);
+        }
+        let (right, top) = self.top_right();
+        Some((right - PAUSE_MARGIN - PAUSE_BUTTON_SIZE, top + PAUSE_MARGIN))
+    }
+
+    /// Whether a touch at frame point (`x`, `y`) reaches the pause button.
+    pub fn pause_button_hit(&self, (x, y): (f32, f32)) -> bool {
+        self.pause_button().is_some_and(|(bx, by)| {
+            let reach = |v: f32, from: f32| v >= from - PAUSE_HIT_PAD && v < from + PAUSE_BUTTON_SIZE + PAUSE_HIT_PAD;
+            reach(x, bx) && reach(y, by)
+        })
     }
 
     /// Frames the zone a focus move left the cursor on with corner brackets.

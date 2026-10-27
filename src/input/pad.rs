@@ -381,7 +381,7 @@ impl Layer {
     /// zones, sticks point an open wheel, everything else goes through the layout.
     pub fn apply_pad(&mut self, mut p: PadFrame, t: f64, dt: f32) {
         if any_input(&p, self.cfg.cursor_deadzone) {
-            self.show_arrow();
+            self.leave_touch();
         }
         let mode = self.pointer_modes(&mut p);
         let in_wheel = self.wheel.open.is_some();

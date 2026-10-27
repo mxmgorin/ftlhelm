@@ -5,21 +5,24 @@
 //! `Gestures`, a state machine of one finger, and applies the acts it hands out. A tap clicks
 //! where the finger landed, a finger held past the long press right-clicks there when it
 //! lifts, and a finger moved past the slop drags with the left button from there; a finger
-//! that goes down takes over. Events arrive in window pixels, where the slop is measured; a
-//! gesture acts at the frame point the screen shows under the finger, through the zoomed
-//! view.
+//! that goes down takes over, unless it joins the first for a two-finger tap, which pauses
+//! the game as the pause button does. Events arrive in window pixels, where the slop is
+//! measured; a gesture acts at the frame point the screen shows under the finger, through the
+//! zoomed view.
 //!
 //! The game resolves what lies under the pointer a frame after a move, so a press waits for
 //! the frame after the move before it. A finger that lands on nothing the game takes moves,
 //! once the game has flagged the point, to the nearest target within reach: a zone or a HUD
-//! box.
+//! box. A finger that drags or pairs before the flag stays where it landed; a finger landing
+//! while the game looks waits for the flag.
 
 use std::collections::VecDeque;
 
 use crate::core::layer::Layer;
 use crate::core::util::{log, now_s};
-use crate::game::actions::MouseButton;
+use crate::game::actions::{tap_key, MouseButton};
 use crate::game::api::{api, Rect};
+use crate::game::offsets::KEY_SPACE;
 use crate::game::state;
 use crate::game::zones::{hud_boxes, ZoneKind};
 use crate::ui::draw::{draw_ring_timer, RING_LIT_COLOR, RING_READY_COLOR, RING_SEGMENTS};
@@ -28,6 +31,9 @@ use crate::ui::draw::{draw_ring_timer, RING_LIT_COLOR, RING_READY_COLOR, RING_SE
 const MAX_QUEUED_EVENTS: usize = 64;
 /// Frame pixels a snapped point keeps inside its target's edge, at most half the target.
 const SNAP_INSET: f32 = 2.0;
+/// Seconds within which a second finger joins the first for a two-finger tap; both lift
+/// before the long press for it.
+const PAIR_JOIN_S: f64 = 0.2;
 /// Frames the game takes to flag what lies under a moved pointer.
 const PROBE_FRAMES: u32 = 2;
 /// The ring timer around a finger held toward a right click, in window pixels: wider than a
@@ -94,6 +100,8 @@ pub enum Act {
     Press,
     /// The left button up.
     Release,
+    /// The game's pause, on or off.
+    Pause,
 }
 
 /// The settings the gestures take.
@@ -113,6 +121,14 @@ enum Stage {
     Held,
     /// Moved past the slop; the left button is down.
     Drag,
+    /// Joined by a second finger: a pause if both lift before the long press, within the slop.
+    Pair {
+        /// The second finger and where it went down, in window pixels.
+        partner: i32,
+        start: (i32, i32),
+        /// The one of the two that lifted, if one has.
+        lifted: Option<i32>,
+    },
     /// Taken by the overlay; the rest of the touch does nothing.
     Spent,
 }
@@ -136,9 +152,14 @@ pub struct Gestures {
 }
 
 impl Gestures {
-    /// Whether `id` is the finger down.
+    /// Whether `id` is the finger down or its partner.
     fn follows(&self, id: i32) -> bool {
-        self.finger.is_some_and(|f| f.id == id)
+        self.finger.is_some_and(|f| f.id == id || matches!(f.stage, Stage::Pair { partner, .. } if partner == id))
+    }
+
+    /// Whether the finger down left the point it landed on: a drag, or a pair.
+    pub fn moved_on(&self) -> bool {
+        self.finger.is_some_and(|f| matches!(f.stage, Stage::Drag | Stage::Pair { .. }))
     }
 
     /// Moves the pointer to frame point `at` ahead of the acts waiting; the finger down, if
@@ -170,10 +191,16 @@ impl Gestures {
     pub fn event(&mut self, ev: &TouchEvent, (x, y): (f32, f32), taken: bool, limits: Limits) {
         match ev.phase {
             TouchPhase::Down => {
+                let joins = |f: &Finger| f.stage == Stage::Pending && f.id != ev.id && ev.t - f.since <= PAIR_JOIN_S;
+                if let Some(f) = self.finger.as_mut().filter(|f| !taken && joins(f)) {
+                    f.stage = Stage::Pair { partner: ev.id, start: (ev.x, ev.y), lifted: None };
+                    return;
+                }
                 // The newest finger takes over, so a lost up leaves no finger behind.
                 self.lift();
                 let stage = if taken { Stage::Spent } else { Stage::Pending };
-                self.finger = Some(Finger { id: ev.id, start: (ev.x, ev.y), since: ev.t, at: (x, y), stage });
+                let (start, since) = ((ev.x, ev.y), ev.t);
+                self.finger = Some(Finger { id: ev.id, start, since, at: (x, y), stage });
                 if !taken {
                     self.due.push_back(Act::Move(x, y));
                 }
@@ -183,8 +210,13 @@ impl Gestures {
                 let Some(f) = self.finger.as_mut() else {
                     return;
                 };
-                let drift = ((ev.x - f.start.0) as f32).hypot((ev.y - f.start.1) as f32);
+                let start = match f.stage {
+                    Stage::Pair { partner, start, .. } if partner == ev.id => start,
+                    _ => f.start,
+                };
+                let drift = ((ev.x - start.0) as f32).hypot((ev.y - start.1) as f32);
                 match f.stage {
+                    Stage::Pair { .. } if drift > limits.slop => f.stage = Stage::Spent,
                     Stage::Pending | Stage::Held if drift > limits.slop => {
                         f.stage = Stage::Drag;
                         self.due.extend([Act::Press, Act::Move(x, y)]);
@@ -194,14 +226,21 @@ impl Gestures {
                 }
             }
             TouchPhase::Up => {
-                let Some(f) = self.finger.take() else {
+                let Some(mut f) = self.finger.take() else {
                     return;
                 };
                 match f.stage {
+                    // A repeated up of the finger that lifted.
+                    Stage::Pair { lifted: Some(id), .. } if id == ev.id => self.finger = Some(f),
+                    Stage::Pair { partner, start, lifted: None } => {
+                        f.stage = Stage::Pair { partner, start, lifted: Some(ev.id) };
+                        self.finger = Some(f);
+                    }
+                    Stage::Pair { .. } if ev.t - f.since < limits.long_press => self.due.push_back(Act::Pause),
                     Stage::Pending if ev.t - f.since < limits.long_press => self.due.push_back(Act::Tap),
                     Stage::Pending | Stage::Held => self.due.push_back(Act::LongPress),
                     Stage::Drag => self.due.extend([Act::Move(x, y), Act::Release]),
-                    Stage::Spent => {}
+                    Stage::Pair { .. } | Stage::Spent => {}
                 }
             }
             TouchPhase::Cancel => self.lift(),
@@ -279,8 +318,8 @@ pub struct Touch {
     gestures: Gestures,
     probe: Option<Probe>,
     mark: Option<Mark>,
-    /// A touch moved the pointer last: the plain pointer stays hidden.
-    arrow_hidden: bool,
+    /// A touch came last, no pad or mouse since: the input in use.
+    in_use: bool,
     /// A touch event came this run.
     seen: bool,
 }
@@ -332,25 +371,43 @@ impl Layer {
                 self.touch.gestures.retarget(p.target);
             }
         }
-        for ev in std::mem::take(&mut self.touch.queued) {
+        let mut queued = std::mem::take(&mut self.touch.queued);
+        let mut next = 0;
+        while let Some(&ev) = queued.get(next) {
+            // A new finger waits for the probe, so the acts before it land where it resolves.
+            if ev.phase == TouchPhase::Down && self.probe_settling() {
+                break;
+            }
+            next += 1;
             let at = self.frame_at(ev.x, ev.y);
             if self.debug {
                 log!("touch {} {} at {},{}: frame {:.0},{:.0}", ev.phase.name(), ev.id, ev.x, ev.y, at.0, at.1);
             }
             let taken = ev.phase == TouchPhase::Down && self.overlay_takes_touch(at);
             if ev.phase == TouchPhase::Down {
-                self.touch.arrow_hidden |= !taken;
+                self.touch.in_use |= !taken;
                 let target = if taken { at } else { self.snap_touch(at) };
                 self.touch.probe = (target != at).then_some(Probe { landed: at, target, settle: None });
             }
             self.touch.gestures.event(&ev, at, taken, limits);
+            if self.touch.gestures.moved_on() {
+                self.touch.probe = None;
+            }
         }
-        if self.touch.probe.is_some_and(|p| p.settle.is_some()) {
+        queued.drain(..next);
+        queued.append(&mut self.touch.queued);
+        self.touch.queued = queued;
+        if self.probe_settling() {
             return;
         }
         for act in self.touch.gestures.frame(now, limits) {
             self.apply_act(act);
         }
+    }
+
+    /// Whether a probe waits for the game's flag; the acts wait with it.
+    fn probe_settling(&self) -> bool {
+        self.touch.probe.is_some_and(|p| p.settle.is_some())
     }
 
     /// The point a finger landing at frame point `at` would move to: the nearest target within
@@ -367,14 +424,14 @@ impl Layer {
         snap(&targets, at, reach)
     }
 
-    /// Whether the game's plain pointer stays hidden: a touch moved it last.
-    pub fn arrow_hidden(&self) -> bool {
-        self.cfg.touch && self.touch.arrow_hidden
+    /// Whether touch is on and the input in use.
+    pub fn touch_in_use(&self) -> bool {
+        self.cfg.touch && self.touch.in_use
     }
 
-    /// Shows the game's plain pointer again, for a pointer moved by something else.
-    pub fn show_arrow(&mut self) {
-        self.touch.arrow_hidden = false;
+    /// Ends touch's use, as another input takes over.
+    pub fn leave_touch(&mut self) {
+        self.touch.in_use = false;
     }
 
     /// Draws a ring timer around a finger held toward a right click: its segments light up as
@@ -399,13 +456,16 @@ impl Layer {
         draw_ring_timer(x, y, HOLD_RING_R * k, HOLD_RING_W * k, lit, color, 1.0);
     }
 
-    /// Lets the help or an open wheel take a touch landing at frame point `at`: the help
-    /// closes, a wheel acts on the plate there. Returns whether either took it.
+    /// Lets the help, an open wheel or the pause button take a touch landing at frame point
+    /// `at`: the help closes, a wheel acts on the plate there, the button pauses or resumes.
+    /// Returns whether one took it.
     fn overlay_takes_touch(&mut self, (x, y): (f32, f32)) -> bool {
         if self.help_shown {
             self.show_help(false);
         } else if self.wheel.open.is_some() {
             self.touch_wheel(x, y);
+        } else if self.pause_button_hit((x, y)) {
+            tap_key(KEY_SPACE, false);
         } else {
             return false;
         }
@@ -442,6 +502,7 @@ impl Layer {
             }
             Act::Press => self.click(MouseButton::Left, true),
             Act::Release => self.click(MouseButton::Left, false),
+            Act::Pause => tap_key(KEY_SPACE, false),
         }
     }
 
@@ -467,11 +528,15 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::layout::Input;
     use crate::game::api::Point;
     use crate::game::fake::{calls, with_game, Call};
-    use crate::game::offsets::{CREW_POTENTIAL, CREW_SELECTED, GUI_CREW_CONTROL, MOUSE_VALID, PLAYER_SHIP_ID};
+    use crate::game::offsets::{
+        CREW_POTENTIAL, CREW_SELECTED, GAME_H, GAME_W, GUI_CREW_CONTROL, MOUSE_VALID, PLAYER_SHIP_ID,
+    };
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;
+    use crate::ui::zoom::View;
 
     const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0 };
     /// A frame step at the game's frame rate.
@@ -587,6 +652,60 @@ mod tests {
     }
 
     #[test]
+    fn two_fingers_tapped_together_pause() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Move, 1, (305, 203), 0.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.15);
+        assert_eq!(g.frame(0.15, LIMITS), [Act::Move(100.0, 200.0)]);
+        feed(&mut g, TouchPhase::Up, 1, (305, 203), 0.2);
+        assert_eq!(g.frame(0.2, LIMITS), [Act::Pause]);
+        assert!(g.frame(1.0, LIMITS).is_empty(), "a pair never long-presses");
+    }
+
+    #[test]
+    fn a_pair_that_moves_or_stays_does_nothing() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Move, 1, (350, 200), 0.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.15);
+        feed(&mut g, TouchPhase::Up, 1, (350, 200), 0.2);
+        assert!(g.frame(0.2, LIMITS).is_empty(), "moved");
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 1.0);
+        g.frame(1.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 1.05);
+        feed(&mut g, TouchPhase::Up, 1, (300, 200), 1.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 2.0);
+        assert!(g.frame(2.0, LIMITS).is_empty(), "held");
+    }
+
+    #[test]
+    fn a_pair_ignores_a_repeated_up_of_the_finger_that_lifted() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.15);
+        assert_eq!(g.frame(0.15, LIMITS), [Act::Move(100.0, 200.0)]);
+        feed(&mut g, TouchPhase::Up, 1, (300, 200), 0.2);
+        assert_eq!(g.frame(0.2, LIMITS), [Act::Pause]);
+    }
+
+    #[test]
+    fn a_late_second_finger_takes_over() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 300), 0.3);
+        assert_eq!(g.frame(0.3, LIMITS), [Act::Move(300.0, 300.0)]);
+        feed(&mut g, TouchPhase::Up, 1, (300, 300), 0.35);
+        assert_eq!(g.frame(0.35, LIMITS), [Act::Tap]);
+    }
+
+    #[test]
     fn a_lost_up_ends_the_drag_before_the_next_down() {
         let mut g = Gestures::default();
         feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
@@ -668,6 +787,45 @@ mod tests {
         });
     }
 
+    /// Runs the touch through the layer for `frames` frames; returns the clicks it made.
+    fn clicks(l: &mut Layer, frames: u32) -> Vec<Call> {
+        let t = now_s();
+        for _ in 0..frames {
+            l.apply_touch(t);
+        }
+        calls().into_iter().filter(|c| matches!(c, Call::Button(..))).collect()
+    }
+
+    #[test]
+    fn a_drag_begun_before_the_probe_settles_presses_where_the_finger_landed() {
+        with_game(|_| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            l.zones.list = vec![Zone { rect: Rect { x: 100, y: 100, w: 70, h: 35 }, id: 2, kind: ZoneKind::Room }];
+            l.queue_touch(TouchPhase::Down, 0, 120, 90);
+            l.apply_touch(now_s());
+            l.queue_touch(TouchPhase::Move, 0, 160, 90);
+            l.queue_touch(TouchPhase::Up, 0, 160, 90);
+            let left = |down, x| Call::Button(MouseButton::Left, down, x, 90);
+            assert_eq!(clicks(&mut l, TAP_FRAMES), [left(true, 120), left(false, 160)]);
+        });
+    }
+
+    #[test]
+    fn a_finger_landing_while_the_probe_settles_waits_for_it() {
+        with_game(|_| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            l.zones.list = vec![Zone { rect: Rect { x: 100, y: 100, w: 70, h: 35 }, id: 2, kind: ZoneKind::Room }];
+            l.queue_touch(TouchPhase::Down, 0, 120, 90);
+            l.queue_touch(TouchPhase::Up, 0, 120, 90);
+            l.apply_touch(now_s());
+            l.queue_touch(TouchPhase::Down, 1, 120, 110);
+            l.queue_touch(TouchPhase::Up, 1, 120, 110);
+            let click =
+                |y| [Call::Button(MouseButton::Left, true, 120, y), Call::Button(MouseButton::Left, false, 120, y)];
+            assert_eq!(clicks(&mut l, 2 * TAP_FRAMES), [click(102), click(110)].concat());
+        });
+    }
+
     #[test]
     fn a_touch_closes_the_help_and_clicks_nothing() {
         with_game(|_| {
@@ -679,20 +837,62 @@ mod tests {
     }
 
     #[test]
-    fn a_touch_hides_the_plain_pointer_until_the_pad_or_the_mouse_moves_it() {
+    fn touch_stays_in_use_until_the_pad_or_the_mouse_moves_the_pointer() {
         with_game(|g| {
             let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
             l.sync_cursor();
             tap(&mut l, 120, 110);
-            assert!(l.arrow_hidden());
+            assert!(l.touch_in_use());
             let mut p = PadFrame::default();
             p.stick[0] = [1.0, 0.0];
             l.apply_pad(p, now_s(), DT as f32);
-            assert!(!l.arrow_hidden(), "a stick moved");
+            assert!(!l.touch_in_use(), "a stick moved");
             tap(&mut l, 120, 110);
             g.mouse.set(0, Point { x: 300, y: 200 });
             l.sync_cursor();
-            assert!(!l.arrow_hidden(), "the mouse moved");
+            assert!(!l.touch_in_use(), "the mouse moved");
+        });
+    }
+
+    #[test]
+    fn the_pause_button_shows_on_the_ship_view_while_touch_is_in_use_and_pauses() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            g.player_manager();
+            let button = (GAME_W - 30, GAME_H - 30);
+            let at = (button.0 as f32, button.1 as f32);
+            assert!(!l.pause_button_hit(at), "no touch yet");
+            tap(&mut l, 120, 110);
+            assert!(l.pause_button_hit(at));
+            assert!(l.pause_button_hit(((GAME_W - 1) as f32, (GAME_H - 1) as f32)), "the corner's edge");
+            assert!(!l.pause_button_hit(((GAME_W - 30) as f32, 25.0)), "the top right");
+            l.queue_touch(TouchPhase::Down, 0, button.0, button.1);
+            l.queue_touch(TouchPhase::Up, 0, button.0, button.1);
+            for _ in 0..TAP_FRAMES {
+                l.apply_touch(now_s());
+            }
+            let keys: Vec<Call> =
+                calls().into_iter().filter(|c| matches!(c, Call::KeyDown(_) | Call::KeyUp(_))).collect();
+            assert_eq!(keys, [Call::KeyDown(KEY_SPACE), Call::KeyUp(KEY_SPACE)]);
+            let mut p = PadFrame::default();
+            p.down[Input::Start as usize] = true;
+            l.apply_pad(p, now_s(), DT as f32);
+            assert!(!l.pause_button_hit(at), "a pad is in use");
+        });
+    }
+
+    #[test]
+    fn the_pause_button_moves_to_the_top_right_of_a_view_that_leaves_the_corner_out() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            g.player_manager();
+            tap(&mut l, 120, 110);
+            let corner = ((GAME_W - 30) as f32, (GAME_H - 30) as f32);
+            l.zoom.view = Some(View { x: 640.0, y: 360.0, w: 640.0, h: 360.0, k: 2.0 });
+            assert!(l.pause_button_hit(corner), "the view shows the corner");
+            l.zoom.view = Some(View { x: 0.0, y: 0.0, w: 640.0, h: 360.0, k: 2.0 });
+            assert!(!l.pause_button_hit(corner));
+            assert!(l.pause_button_hit((610.0, 25.0)));
         });
     }
 

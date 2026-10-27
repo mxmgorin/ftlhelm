@@ -1,5 +1,6 @@
 //! Drawing over the game's renderer: text through its fonts on its own std::string, panels,
-//! discs, ring timers, game images by path, and the shared palette.
+//! buttons in the game's style, discs, ring timers, game images by path, and the shared
+//! palette.
 
 use std::collections::HashMap;
 use std::ffi::c_int;
@@ -29,6 +30,22 @@ pub const RING_TRACK_COLOR: GlColor = GlColor::new(0.05, 0.16, 0.13, 0.6);
 pub const RING_READY_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 0.85);
 /// The green of the game's frame around a selected crew member's box.
 pub const CREW_SELECTED_COLOR: GlColor = GlColor::new(0.47, 1.0, 0.47, 1.0);
+/// The game's top-bar buttons: a cyan glow fading out past a pale band, a slate line inside
+/// it, then the fill, pale or yellow while selected; all with cut corners.
+pub const BUTTON_PALE_COLOR: GlColor = GlColor::new(0.92, 0.96, 0.9, 1.0);
+pub const BUTTON_LINE_COLOR: GlColor = GlColor::new(0.21, 0.29, 0.35, 1.0);
+pub const BUTTON_SELECTED_COLOR: GlColor = GlColor::new(1.0, 0.9, 0.37, 1.0);
+const BUTTON_GLOW_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.99, 1.0);
+/// The glow's alpha per pixel out from the band.
+const BUTTON_GLOW: [f32; 7] = [0.345, 0.259, 0.184, 0.122, 0.075, 0.039, 0.012];
+const BUTTON_BAND: f32 = 3.0;
+const BUTTON_LINE: f32 = 2.0;
+/// Rows each corner cut takes: the band's, the line's, the fill's; the glow's grows by one
+/// every GLOW_CUT_STEP pixels out.
+const BUTTON_CUT: f32 = 6.0;
+const BUTTON_LINE_CUT: f32 = 4.0;
+const BUTTON_FILL_CUT: f32 = 3.0;
+const GLOW_CUT_STEP: f32 = 2.0;
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
@@ -159,6 +176,38 @@ pub fn draw_down_marker(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {
             row += OVERLAY_LINE;
         }
     }
+}
+
+/// A filled rectangle with its corners cut at 45 degrees, `cut` rows deep; out of one-line
+/// rows like a disc.
+fn draw_cut_rect(x: f32, y: f32, w: f32, h: f32, cut: f32, color: GlColor) {
+    draw_rect(x, y + cut, w, h - 2.0 * cut, color);
+    let mut row = 0.0;
+    while row < cut {
+        let inset = cut - row;
+        draw_rect(x + inset, y + row, w - 2.0 * inset, OVERLAY_LINE, color);
+        draw_rect(x + inset, y + h - OVERLAY_LINE - row, w - 2.0 * inset, OVERLAY_LINE, color);
+        row += OVERLAY_LINE;
+    }
+}
+
+/// Draws a button in the game's top-bar style with its band's outer edge at `x, y, w, h`;
+/// the glow reaches BUTTON_GLOW's length past it.
+pub fn draw_game_button(x: f32, y: f32, w: f32, h: f32, fill: GlColor) {
+    // Each ring is a whole cut rect over the wider ones: its alpha tops theirs up to its own.
+    let mut laid = 0.0;
+    for (i, &alpha) in BUTTON_GLOW.iter().enumerate().rev() {
+        let out = (i + 1) as f32;
+        let cut = BUTTON_CUT + (out / GLOW_CUT_STEP).floor();
+        let a = 1.0 - (1.0 - alpha) / (1.0 - laid);
+        draw_cut_rect(x - out, y - out, w + 2.0 * out, h + 2.0 * out, cut, GlColor { a, ..BUTTON_GLOW_COLOR });
+        laid = alpha;
+    }
+    draw_cut_rect(x, y, w, h, BUTTON_CUT, BUTTON_PALE_COLOR);
+    let b = BUTTON_BAND;
+    draw_cut_rect(x + b, y + b, w - 2.0 * b, h - 2.0 * b, BUTTON_LINE_CUT, BUTTON_LINE_COLOR);
+    let f = BUTTON_BAND + BUTTON_LINE;
+    draw_cut_rect(x + f, y + f, w - 2.0 * f, h - 2.0 * f, BUTTON_FILL_CUT, fill);
 }
 
 /// `color` with its alpha scaled by `opacity`.

@@ -85,6 +85,10 @@ impl View {
     pub fn right(&self) -> f32 {
         self.x + self.w
     }
+
+    pub fn bottom(&self) -> f32 {
+        self.y + self.h
+    }
 }
 
 /// What a frame blit shows: a part of the frame and the screen rectangle it fills.

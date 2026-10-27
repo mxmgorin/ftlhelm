@@ -146,7 +146,7 @@ extern "C" fn onloop_hook(app: Ptr) {
 extern "C" fn mouse_render_hook(this: Ptr) {
     let (draw_pointer, hide_arrow, scale) = with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
-        (l.draw_overlay(), l.arrow_hidden(), l.pointer_scale())
+        (l.draw_overlay(), l.touch_in_use(), l.pointer_scale())
     })
     .unwrap_or((true, false, 1.0));
     if draw_pointer {

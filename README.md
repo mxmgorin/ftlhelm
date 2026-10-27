@@ -29,7 +29,7 @@ ftlhelm is a gamepad layer for [FTL: Faster Than Light](https://subsetgames.com/
   - **Pointer** up to twice its size
 - **Fast forward** while a button is held
 - **Mouse mode**: the D-pad and sticks move the game's cursor freely
-- **Touch**: tap to click, hold and release to right-click, drag to select; a touch just beside a button, room or system icon lands on it
+- **Touch**: tap to click, hold and release to right-click, drag to select, tap with two fingers or the pause button to pause; a touch just beside a button, room or system icon lands on it
 - **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
 
 <p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"></p>

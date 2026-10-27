@@ -58,9 +58,12 @@ button, beacon, choice, slot, system icon or weapon box within `touch_snap`.
 | tap | click; with crew selected, a room orders them there unless a crew member is under the finger |
 | hold for `touch_long_press`, release | right click; a ring around the finger fills while it is held and turns white once the hold is long enough |
 | drag | drag with the left button: a selection box, an item, a slider; also after a hold |
+| tap with two fingers | pause or resume |
 
-After a touch the pointer arrow hides, until the mouse or a pad moves the pointer; tooltips
-and the targeting pointers stay. A touch's click leaves a small ring that fades.
+After a touch, the pointer arrow hides and the ship view shows a pause button in the bottom
+right corner, lit yellow while the game is paused, until a pad or the mouse is used;
+tooltips and the targeting pointers stay. A zoomed view without that corner shows the button
+in its top right corner. A touch's click leaves a small ring that fades.
 
 A tap closes the controls table. With a wheel open, a tap on a plate acts on it; a tap
 elsewhere closes the wheel.
