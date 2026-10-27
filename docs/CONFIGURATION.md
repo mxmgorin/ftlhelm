@@ -43,6 +43,7 @@ default; a value outside its range is clamped. When the settings wheel closes, i
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `wheels_ship_only` | 1 | switch | wheels open only on the ship view; the settings wheel opens anywhere |
+| `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | under a wheel's plates: an octagon or a circle in the game's window frame, mocha or dark; the whole frame dimmed; a dark disc |
 | `autopause_wheel` | 1 | switch | pause while a wheel is open |
 | `autopause_aim` | 0 | switch | pause when a weapon or ability starts waiting for a target |
 | `speed_level` | 6 | 1 to 6 | game speed while fast forward is held; each game step is scaled by (16 + 7 * level) / 16 |

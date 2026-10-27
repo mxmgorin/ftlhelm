@@ -1,7 +1,7 @@
 //! Wheels: plates built from the layout and the game, laid out around the cursor with
 //! icons and power pips, picked by the sticks and the D-pad, and acted on.
 
-use std::f32::consts::PI;
+use std::f32::consts::{PI, SQRT_2};
 
 use super::draw::*;
 use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
@@ -45,8 +45,17 @@ const WHEEL_TEXT_PAD: f32 = 6.0;
 const CARD_PAD: f32 = 5.0;
 const HEADER_PAD: f32 = 3.0;
 const CARD_GAP: f32 = 4.0;
-/// The disc under the plates reaches this far past them.
+/// The backdrop under the plates reaches this far past them: an octagon or a disc past their
+/// sides, a circle past their outer corners.
 const WHEEL_DISC_PAD: f32 = 14.0;
+const BACKDROP_R: f32 = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_DISC_PAD;
+const BACKDROP_ROUND_R: f32 = WHEEL_RADIUS + WHEEL_TILE / 2.0 * SQRT_2 + WHEEL_DISC_PAD;
+/// The octagon's cut: a plate's corner keeps as far from a slanted side as a plate's side
+/// does from a straight one.
+const BACKDROP_CUT: i32 = ((2.0 - SQRT_2) * (WHEEL_RADIUS + WHEEL_DISC_PAD) + 0.5) as i32;
+const BACKDROP_FRAME: FrameStyle = FrameStyle { cut: BACKDROP_CUT, ..BOX_FRAME };
+/// The round backdrop's band, as wide as the octagon's.
+const BACKDROP_BAND: f32 = BOX_FRAME.band as f32;
 /// The selected plate grows by this much on each side.
 const SELECTED_GROW: f32 = 4.0;
 /// Plates as the game's buttons: pale, the pick yellow and grown, a disabled one grey and
@@ -56,6 +65,10 @@ const PLATE_POWERED_FRAME: FrameStyle = FrameStyle { band_color: POWER_COLOR, ..
 const PLATE_DISABLED_FRAME: FrameStyle = FrameStyle { glow: None, ..PLATE_FRAME };
 
 const DISC_COLOR: GlColor = GlColor::new(0.02, 0.06, 0.06, 0.5);
+/// The game's event window fill and its dark box fill, both a little see-through.
+const WINDOW_COLOR: GlColor = GlColor::new(0.47, 0.39, 0.38, 0.85);
+const DARK_COLOR: GlColor = GlColor::new(0.16, 0.14, 0.13, 0.85);
+const DIM_COLOR: GlColor = GlColor::new(0.0, 0.0, 0.0, 0.5);
 const POWER_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
@@ -65,6 +78,47 @@ const MOUSE_ON_BADGE: &str = "On";
 /// A switch plate's one pip, lit while the switch is on.
 const SWITCH_PIPS: i32 = 1;
 const MOUSE_OFF_BADGE: &str = "Off";
+
+/// What lies under a wheel's plates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Backdrop {
+    /// An octagon in the game's window frame, filled as its event window.
+    #[default]
+    Octagon,
+    /// The octagon filled as the game's dark boxes.
+    OctagonDark,
+    /// A circle in the window frame, filled as the event window.
+    Circle,
+    /// The circle filled as the game's dark boxes.
+    CircleDark,
+    /// The whole frame dimmed.
+    Dim,
+    /// A dark disc, half see-through.
+    Disc,
+}
+
+/// Backdrops by their names in the config.
+pub const BACKDROPS: [(&str, Backdrop); 6] = [
+    ("octagon", Backdrop::Octagon),
+    ("octagon_dark", Backdrop::OctagonDark),
+    ("circle", Backdrop::Circle),
+    ("circle_dark", Backdrop::CircleDark),
+    ("dim", Backdrop::Dim),
+    ("disc", Backdrop::Disc),
+];
+
+/// Draws `backdrop` under a wheel's plates around (`ox`, `oy`).
+fn draw_backdrop(backdrop: Backdrop, (ox, oy): (f32, f32)) {
+    let r = BACKDROP_R;
+    match backdrop {
+        Backdrop::Octagon => draw_frame(ox - r, oy - r, 2.0 * r, 2.0 * r, &BACKDROP_FRAME, WINDOW_COLOR),
+        Backdrop::OctagonDark => draw_frame(ox - r, oy - r, 2.0 * r, 2.0 * r, &BACKDROP_FRAME, DARK_COLOR),
+        Backdrop::Circle => draw_round_frame(ox, oy, BACKDROP_ROUND_R, BACKDROP_BAND, WINDOW_COLOR),
+        Backdrop::CircleDark => draw_round_frame(ox, oy, BACKDROP_ROUND_R, BACKDROP_BAND, DARK_COLOR),
+        Backdrop::Dim => draw_rect(0.0, 0.0, GAME_W as f32, GAME_H as f32, DIM_COLOR),
+        Backdrop::Disc => draw_disc(ox, oy, r, DISC_COLOR),
+    }
+}
 
 /// Where a power wheel finds the item a slot key powers.
 struct Armament {
@@ -165,10 +219,11 @@ fn wheel_origin(cx: f32, cy: f32) -> (f32, f32) {
     (clampf(cx, reach, GAME_W as f32 - reach), clampf(cy, reach, GAME_H as f32 - reach))
 }
 
-/// The frame area a wheel opened at (cx, cy) covers: left, top, right, bottom.
+/// The frame area a wheel opened at (cx, cy) covers with its largest backdrop: left, top,
+/// right, bottom.
 pub fn wheel_area(cx: f32, cy: f32) -> [f32; 4] {
     let (ox, oy) = wheel_origin(cx, cy);
-    let r = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_DISC_PAD;
+    let r = BACKDROP_ROUND_R;
     [ox - r, oy - r, ox + r, oy + r]
 }
 
@@ -438,7 +493,7 @@ impl Layer {
         let origin = wheel_origin(self.cursor.x, self.cursor.y);
         let (ox, oy) = origin;
         let font = self.plate_font;
-        draw_disc(ox, oy, WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_DISC_PAD, DISC_COLOR);
+        draw_backdrop(self.cfg.wheel_backdrop, origin);
         // The middle: the wheel's title alone, or above the pick's name and detail.
         let title = def.name.to_ascii_uppercase();
         let sel = self.wheel.sel.map(|s| &self.wheel.plates[s]);

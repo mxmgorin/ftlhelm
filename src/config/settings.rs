@@ -11,6 +11,7 @@ use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
+use crate::ui::wheel::{Backdrop, BACKDROPS};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
@@ -87,6 +88,7 @@ pub struct Settings {
     pub crew_follow: bool,
     /// Wheels open only on the ship view.
     pub wheels_ship_only: bool,
+    pub wheel_backdrop: Backdrop,
     pub rumble_strength: f32,
     pub rumble_time: f32,
     /// How much larger event and tooltip text is drawn; TEXT_SCALE_AUTO picks by screen size.
@@ -134,6 +136,7 @@ impl Default for Settings {
             focus_first: true,
             crew_follow: false,
             wheels_ship_only: true,
+            wheel_backdrop: Backdrop::default(),
             rumble_strength: RUMBLE_STRENGTH,
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
@@ -155,6 +158,7 @@ enum Field {
     Float(fn(&mut Settings) -> &mut f32, f32, f32),
     Int(fn(&mut Settings) -> &mut i32, f32, f32),
     Bool(fn(&mut Settings) -> &mut bool),
+    Backdrop(fn(&mut Settings) -> &mut Backdrop),
 }
 
 /// Config file keys: the field each sets and the range a number is clamped to.
@@ -179,6 +183,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("focus_first", Field::Bool(|c| &mut c.focus_first)),
     ("crew_follow", Field::Bool(|c| &mut c.crew_follow)),
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
+    ("wheel_backdrop", Field::Backdrop(|c| &mut c.wheel_backdrop)),
     ("rumble_strength", Field::Float(|c| &mut c.rumble_strength, 0.0, 1.0)),
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
@@ -197,22 +202,27 @@ impl Settings {
     /// Sets one option from a "key = value" line; unknown keys and unreadable values are
     /// logged and skipped.
     pub fn apply(&mut self, key: &str, value: &str) {
-        let Some(value) = float_prefix(value) else {
-            log!("config: bad value for {key}");
+        let Some((_, field)) = OPTIONS.iter().find(|(name, _)| *name == key) else {
+            log!("config: unknown key {key}");
             return;
         };
-        match OPTIONS.iter().find(|(name, _)| *name == key) {
-            Some((_, field)) => self.set(field, value),
-            None => log!("config: unknown key {key}"),
+        if self.set(field, value).is_none() {
+            log!("config: bad value for {key}");
         }
     }
 
-    fn set(&mut self, field: &Field, value: f32) {
+    /// Sets `field` from a number's prefix or a name's first word; None when it reads as neither.
+    fn set(&mut self, field: &Field, value: &str) -> Option<()> {
         match *field {
-            Field::Float(f, lo, hi) => *f(self) = clampf(value, lo, hi),
-            Field::Int(f, lo, hi) => *f(self) = clampf(value, lo, hi) as i32,
-            Field::Bool(f) => *f(self) = value != 0.0,
+            Field::Float(f, lo, hi) => *f(self) = clampf(float_prefix(value)?, lo, hi),
+            Field::Int(f, lo, hi) => *f(self) = clampf(float_prefix(value)?, lo, hi) as i32,
+            Field::Bool(f) => *f(self) = float_prefix(value)? != 0.0,
+            Field::Backdrop(f) => {
+                let word = value.split_whitespace().next()?;
+                *f(self) = BACKDROPS.iter().find(|(name, _)| *name == word)?.1;
+            }
         }
+        Some(())
     }
 
     /// Every option's current value, as one log line.
@@ -223,6 +233,10 @@ impl Settings {
                 Field::Float(f, ..) => format!("{:.2}", *f(self)),
                 Field::Int(f, ..) => f(self).to_string(),
                 Field::Bool(f) => (*f(self) as i32).to_string(),
+                Field::Backdrop(f) => {
+                    let b = *f(self);
+                    BACKDROPS.iter().find(|(_, v)| *v == b).map_or("?", |(name, _)| name).to_string()
+                }
             };
             out.push_str(&format!(" {name}={value}"));
         }
@@ -435,6 +449,18 @@ mod tests {
         assert_eq!(cfg.tap_hold, 0.3);
         assert_eq!(cfg.cursor_speed, 900.0);
         assert_eq!(cfg.speed_level, 3);
+    }
+
+    #[test]
+    fn the_wheel_backdrop_goes_by_name_and_keeps_its_value_on_a_bad_one() {
+        let mut cfg = Settings::default();
+        assert_eq!(cfg.wheel_backdrop, Backdrop::Octagon);
+        cfg.apply("wheel_backdrop", "circle_dark   # try");
+        assert_eq!(cfg.wheel_backdrop, Backdrop::CircleDark);
+        cfg.apply("wheel_backdrop", "hexagon");
+        cfg.apply("wheel_backdrop", "1");
+        assert_eq!(cfg.wheel_backdrop, Backdrop::CircleDark);
+        assert!(cfg.describe().contains(" wheel_backdrop=circle_dark "));
     }
 
     #[test]

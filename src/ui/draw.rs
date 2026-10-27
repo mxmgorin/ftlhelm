@@ -85,6 +85,9 @@ static RINGS: Mutex<BTreeMap<Ring, usize>> = Mutex::new(BTreeMap::new());
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
 const TURN_DEG: f32 = 360.0;
+/// The renderer's pies put a point every PIE_STEP_DEG from the start while short of the end,
+/// none at the end itself.
+const PIE_STEP_DEG: f32 = 10.0;
 const RING_GAP_DEG: f32 = 5.0;
 /// The first segment starts straight up; angles run clockwise from the right.
 const RING_START_DEG: f32 = -90.0;
@@ -144,9 +147,29 @@ pub fn draw_rect_outline(x: f32, y: f32, w: f32, h: f32, color: GlColor) {
     unsafe { (api().draw_rect_outline)(x as i32, y as i32, w as i32, h as i32, color, OVERLAY_LINE) }
 }
 
+/// A circle in a frame's style, its band's outer edge at radius `r`: the glow past it, a
+/// `band` wide pale ring, then the fill.
+pub fn draw_round_frame(cx: f32, cy: f32, r: f32, band: f32, fill: GlColor) {
+    for (i, &alpha) in FRAME_GLOW.iter().enumerate() {
+        draw_circle(cx, cy, r + (i + 1) as f32, OVERLAY_LINE, faded(FRAME_GLOW_COLOR, alpha));
+    }
+    draw_circle(cx, cy, r, band, BUTTON_PALE_COLOR);
+    draw_disc(cx, cy, r - band, fill);
+}
+
+/// A ring `width` wide inside radius `r`.
+fn draw_circle(cx: f32, cy: f32, r: f32, width: f32, color: GlColor) {
+    draw_arc(cx, cy, r, width, whole_turn(0.0), color);
+}
+
+/// A whole turn from `start`, its end past the last point so the pie closes.
+fn whole_turn(start: f32) -> (f32, f32) {
+    (start, start + TURN_DEG + PIE_STEP_DEG / 2.0)
+}
+
 /// A filled disc: a pie as wide as its radius.
 pub fn draw_disc(cx: f32, cy: f32, r: f32, color: GlColor) {
-    draw_arc(cx, cy, r, r, (0.0, TURN_DEG), color);
+    draw_arc(cx, cy, r, r, whole_turn(0.0), color);
 }
 
 /// An arc `width` wide inside radius `r`, from `from` to `to` degrees.
@@ -327,7 +350,7 @@ fn faded(color: GlColor, opacity: f32) -> GlColor {
 /// clockwise from the top over a dark track, the first `lit` in `color`; all of it at
 /// `opacity`.
 pub fn draw_ring_timer(cx: f32, cy: f32, r: f32, width: f32, lit: usize, color: GlColor, opacity: f32) {
-    let whole = (RING_START_DEG, RING_START_DEG + TURN_DEG);
+    let whole = whole_turn(RING_START_DEG);
     let track = faded(RING_TRACK_COLOR, opacity);
     draw_arc(cx, cy, r + RING_TRACK_PAD, width + 2.0 * RING_TRACK_PAD, whole, track);
     let step = TURN_DEG / RING_SEGMENTS as f32;
