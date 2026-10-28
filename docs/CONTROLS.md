@@ -45,9 +45,8 @@ between zones and mouse mode. In mouse mode they move the cursor freely, at `cur
 with `cursor_deadzone` and `cursor_curve` for the sticks.
 
 The badge in the top right corner names the selected crew member, or counts several, and the
-active modes: Mouse, Doors, Fast (fast forward), Target with the armed weapon, and Paused on
-a zoomed ship view. `badge = 0` hides it; `overlay = 0` hides it, the zone brackets and the
-crew markers.
+active modes: Mouse, Doors, Fast (fast forward) and Target with the armed weapon. `badge = 0`
+hides it; `overlay = 0` hides it, the zone brackets and the crew markers.
 
 ## Touch
 

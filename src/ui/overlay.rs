@@ -82,7 +82,6 @@ fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
 
 const INPUT_TITLES: [&str; SIL_BUTTONS] =
     ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
-const PAUSED_TITLE: &str = "Paused";
 const CREW_TITLE: &str = "Crew";
 /// A focused zone's corner brackets, in frame pixels: their arms take a share of the zone's
 /// shorter side within bounds, and they slide in from further out as the focus lands.
@@ -456,10 +455,6 @@ impl Layer {
             return String::new();
         }
         let mut parts = Vec::new();
-        // The game shows its pause in the middle of the frame, which a zoomed ship view may leave out.
-        if self.zoom.view.is_some() && state::ship_view() && state::game_paused() {
-            parts.push(PAUSED_TITLE.to_string());
-        }
         if state::mouse().i32(MOUSE_AIMING) != 0 {
             let weapon = state::weapon_control()
                 .and_then(|c| c.obj(WEAPONCTRL_ARMED))
