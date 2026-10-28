@@ -8,7 +8,7 @@ use crate::game::api::{Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
-use crate::game::zones::ZoneKind;
+use crate::game::zones::{Zone, ZoneKind};
 use crate::ui::zoom::Span;
 
 /// Frames a newly opened screen gets to show its items before the focus gives up; a
@@ -192,7 +192,8 @@ impl Layer {
             cones: [self.cfg.focus_cone_narrow, self.cfg.focus_cone_wide],
             side_weight: self.cfg.focus_side_weight,
         };
-        let best = pick_toward(&rects, from, (self.cursor.x, self.cursor.y), (dx, dy), aim);
+        let best = choice_step(&self.zones.list, from, (dx, dy))
+            .or_else(|| pick_toward(&rects, from, (self.cursor.x, self.cursor.y), (dx, dy), aim));
         if self.debug {
             log!("focus {:.0},{:.0}: from {} to {}", dx / len, dy / len, index(from), index(best));
         }
@@ -340,6 +341,17 @@ pub fn pick_toward(rects: &[Rect], from: Option<usize>, at: (f32, f32), dir: (f3
     best.map(|(i, _)| i)
 }
 
+/// The choice after or before choice `from` in its dialog's order for a vertical move; None
+/// when `from` is no choice, the move is sideways, or the list ends that way.
+fn choice_step(zones: &[Zone], from: Option<usize>, (dx, dy): (f32, f32)) -> Option<usize> {
+    let from = &zones[from?];
+    if from.kind != ZoneKind::Choice || dy.abs() <= dx.abs() {
+        return None;
+    }
+    let next = from.id + if dy > 0.0 { 1 } else { -1 };
+    zones.iter().position(|z| z.kind == ZoneKind::Choice && z.id == next)
+}
+
 /// A zone index for the log, -1 for none.
 fn index(i: Option<usize>) -> i64 {
     i.map_or(-1, |i| i as i64)
@@ -349,7 +361,6 @@ fn index(i: Option<usize>) -> i64 {
 mod tests {
     use super::*;
     use crate::game::fake::with_game;
-    use crate::game::zones::Zone;
 
     const AIM: Aim = Aim { cones: [30.0, 60.0], side_weight: 2.0 };
 
@@ -399,6 +410,24 @@ mod tests {
             (l.cursor.x, l.cursor.y) = (300.0, 300.0);
             l.send_cursor();
             assert_eq!(l.focused_zone(now_s()), None, "the cursor moved on");
+        });
+    }
+
+    #[test]
+    fn up_and_down_step_through_event_choices_in_order_whatever_their_widths() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let choice = |id, y, w| Zone { rect: Rect { x: 352, y, w, h: 32 }, id, kind: ZoneKind::Choice };
+            l.zones.list = vec![choice(0, 280, 453), choice(1, 312, 339), choice(2, 344, 71)];
+            (l.cursor.x, l.cursor.y) = l.zones.list[1].rect.center();
+            l.send_cursor();
+            l.focus_move(0.0, 1.0);
+            assert_eq!(l.zone_under_cursor(), Some(2), "down to the short last choice");
+            l.focus_move(0.0, 1.0);
+            assert_eq!(l.zone_under_cursor(), Some(2), "the list ends there");
+            l.focus_move(0.0, -1.0);
+            l.focus_move(0.0, -1.0);
+            assert_eq!(l.zone_under_cursor(), Some(0), "up through the list");
         });
     }
 
