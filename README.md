@@ -16,8 +16,6 @@
 
 ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
-<p align="center"><img src="docs/images/demo.gif" alt="The D-pad walking the rooms, a crew order, door mode, the crew sent back to their stations, the weapons, crew, systems and abilities wheels, the upgrades screen with its tabs, the controls table, a jump and a volley at an enemy ship" width="800"></p>
-
 ## Features
 
 - **Zones**: the D-pad and sticks jump between rooms, doors, event choices, beacons and buttons
@@ -38,7 +36,16 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
   - **Near misses** land on the closest button, room or icon
 - **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
 
-<p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"></p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/images/zones.gif" alt="Zones: the D-pad steps the focus brackets through the ship's rooms, an event's choices down to Leave, the beacon map's beacons and a store's items" width="400"><br><sub><b>Zones</b>: the D-pad steps through rooms, event choices, beacons and store items</sub></td>
+    <td align="center"><img src="docs/images/touch.gif" alt="Touch: a tap selects a crew member and another sends them to a room, swipes on the shields icon take its power off and back on, a held finger fills the ring to a right click, and the on-screen button pauses the game" width="400"><br><sub><b>Touch</b>: tap to select and send crew, swipe to set power, hold to right-click, the pause button</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"><br><sub><b>Zoom</b> on a 640x480 screen: the view follows the cursor, the beacon map enlarged to fit</sub></p>
+
+<p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without ftlhelm on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without ftlhelm on the left, with it on the right</sub></p>
 
 ## Controls
 
