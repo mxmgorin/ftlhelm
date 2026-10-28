@@ -181,13 +181,14 @@ impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
     /// should be drawn, as they would cover an open wheel or the help.
     pub fn draw_overlay(&self) -> bool {
-        if self.wheel.open.is_some() {
-            self.draw_wheel();
-        } else if !self.help_shown && self.cfg.overlay {
+        if !self.wheel_at_cursor() && !self.help_shown && self.cfg.overlay {
             if self.cfg.crew_marker {
                 self.draw_crew_marks();
             }
             self.draw_focus();
+        }
+        if self.wheel.open.is_some() {
+            self.draw_wheel();
         }
         self.draw_touch();
         let pause = self.pause_button();
@@ -255,7 +256,7 @@ impl Layer {
     /// The zone focus brackets frame while the overlay shows them, and the seconds since its
     /// focus move.
     fn shown_focus(&self, now: f64) -> Option<(usize, f64)> {
-        let shown = self.cfg.overlay && self.cfg.focus_brackets && self.wheel.open.is_none() && !self.help_shown;
+        let shown = self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help_shown;
         shown.then(|| self.focused_zone(now)).flatten()
     }
 

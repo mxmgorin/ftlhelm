@@ -1,5 +1,6 @@
-//! Wheels: plates built from the layout and the game, laid out around the cursor with
-//! icons and power pips, picked by the sticks and the D-pad, and acted on.
+//! Wheels: plates built from the layout and the game, laid out around the middle of the
+//! screen or the cursor with icons and power pips, picked by the sticks and the D-pad, and
+//! acted on.
 
 use std::f32::consts::{FRAC_1_SQRT_2, PI, SQRT_2};
 
@@ -51,6 +52,8 @@ const CARD_GAP: f32 = 4.0;
 const WHEEL_DISC_PAD: f32 = 14.0;
 const BACKDROP_R: f32 = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_DISC_PAD;
 const BACKDROP_ROUND_R: f32 = WHEEL_RADIUS + WHEEL_TILE / 2.0 * SQRT_2 + WHEEL_DISC_PAD;
+/// The side of the square a wheel's largest backdrop covers.
+pub const WHEEL_SIZE: f32 = 2.0 * BACKDROP_ROUND_R;
 /// The octagon's cut: a plate's corner keeps as far from a slanted side as a plate's side
 /// does from a straight one.
 const BACKDROP_CUT: i32 = ((2.0 - SQRT_2) * (WHEEL_RADIUS + WHEEL_DISC_PAD) + 0.5) as i32;
@@ -147,6 +150,19 @@ pub const BACKDROPS: [(&str, Backdrop); 6] = [
     ("dim", Backdrop::Dim),
     ("disc", Backdrop::Disc),
 ];
+
+/// Where a wheel opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WheelPlace {
+    /// In the middle of the frame part the screen shows.
+    #[default]
+    Center,
+    /// Around the cursor.
+    Cursor,
+}
+
+/// Wheel places by their names in the config.
+pub const WHEEL_PLACES: [(&str, WheelPlace); 2] = [("center", WheelPlace::Center), ("cursor", WheelPlace::Cursor)];
 
 /// Draws `backdrop` under a wheel's plates around (`ox`, `oy`).
 fn draw_backdrop(backdrop: Backdrop, (ox, oy): (f32, f32)) {
@@ -290,7 +306,7 @@ impl WheelUi {
     }
 }
 
-/// The point the plates circle, kept inside the screen.
+/// The point the plates of a wheel opened at (cx, cy) circle, kept inside the screen.
 fn wheel_origin(cx: f32, cy: f32) -> (f32, f32) {
     let reach = WHEEL_RADIUS + WHEEL_TILE / 2.0 + WHEEL_MARGIN;
     (clampf(cx, reach, GAME_W as f32 - reach), clampf(cy, reach, GAME_H as f32 - reach))
@@ -300,7 +316,7 @@ fn wheel_origin(cx: f32, cy: f32) -> (f32, f32) {
 /// right, bottom.
 pub fn wheel_area(cx: f32, cy: f32) -> [f32; 4] {
     let (ox, oy) = wheel_origin(cx, cy);
-    let r = BACKDROP_ROUND_R;
+    let r = WHEEL_SIZE / 2.0;
     [ox - r, oy - r, ox + r, oy + r]
 }
 
@@ -702,11 +718,26 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
 }
 
 impl Layer {
+    /// Whether a wheel is open around the cursor.
+    pub fn wheel_at_cursor(&self) -> bool {
+        self.wheel.open.is_some() && self.cfg.wheel_place == WheelPlace::Cursor
+    }
+
+    /// The point the open wheel's plates circle: the middle of the frame part the screen
+    /// shows, or the cursor, as `wheel_place` sets.
+    fn open_wheel_origin(&self) -> (f32, f32) {
+        let (x, y) = match self.cfg.wheel_place {
+            WheelPlace::Center => self.zoom.view.map_or((GAME_W as f32 / 2.0, GAME_H as f32 / 2.0), |v| v.center()),
+            WheelPlace::Cursor => (self.cursor.x, self.cursor.y),
+        };
+        wheel_origin(x, y)
+    }
+
     pub fn draw_wheel(&self) {
         let Some(def) = self.wheel.open.and_then(|w| self.layout.wheels.get(w)) else {
             return;
         };
-        let origin = wheel_origin(self.cursor.x, self.cursor.y);
+        let origin = self.open_wheel_origin();
         let (ox, oy) = origin;
         let font = self.plate_font;
         draw_backdrop(self.cfg.wheel_backdrop, origin);
@@ -934,7 +965,7 @@ impl Layer {
     /// Acts on the plate of the open wheel at frame point (`x`, `y`); closes the wheel when
     /// no plate is there.
     pub fn touch_wheel(&mut self, x: f32, y: f32) {
-        let origin = wheel_origin(self.cursor.x, self.cursor.y);
+        let origin = self.open_wheel_origin();
         let half = WHEEL_TILE / 2.0;
         let slot = (0..WHEEL_SLOTS).find(|&i| {
             let (cx, cy) = plate_center(origin, i);
@@ -1047,6 +1078,17 @@ mod tests {
         assert!((x - 640.0).abs() < 1e-3 && (y - (360.0 - WHEEL_RADIUS)).abs() < 1e-3);
         let (x, y) = plate_center(o, 2);
         assert!((x - (640.0 + WHEEL_RADIUS)).abs() < 1e-3 && (y - 360.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_wheel_opens_in_the_middle_of_the_view_or_at_the_cursor() {
+        let mut l = Layer::default();
+        (l.cursor.x, l.cursor.y) = (300.0, 300.0);
+        assert_eq!(l.open_wheel_origin(), (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0));
+        l.zoom.view = Some(View { x: 100.0, y: 50.0, w: 640.0, h: 480.0, k: 1.0 });
+        assert_eq!(l.open_wheel_origin(), (420.0, 290.0));
+        l.cfg.wheel_place = WheelPlace::Cursor;
+        assert_eq!(l.open_wheel_origin(), (300.0, 300.0));
     }
 
     #[test]

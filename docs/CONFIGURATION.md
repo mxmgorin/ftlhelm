@@ -49,6 +49,7 @@ controls table first closes, `help_at_start = 0`.
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `wheels_ship_only` | 1 | switch | wheels open only on the ship view; the settings wheel opens anywhere |
+| `wheel_place` | center | `center`, `cursor` | where a wheel opens: the middle of the screen, or around the cursor |
 | `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | under a wheel's plates: an octagon or a circle in the game's window frame, mocha or dark; the whole frame dimmed; a dark disc |
 | `autopause_wheel` | 1 | switch | pause while a wheel is open |
 | `autopause_aim` | 0 | switch | pause when a weapon or ability starts waiting for a target |

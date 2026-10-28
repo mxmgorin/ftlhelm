@@ -8,12 +8,12 @@
 //! A level is a magnification of the whole frame as the game fits it to the screen. Each
 //! frame the layer eases the shown level and the camera toward their goals and publishes
 //! the view for the blit. The ship view keeps to the frame columns the HUD covers, its span:
-//! its lowest level shows the span whole. The camera goal keeps the cursor, or the open
-//! wheel, inside the view's inner part, resting on an edge of the span where that does. A
+//! its lowest level shows the span whole. The camera goal keeps the cursor, or a wheel open
+//! around it, inside the view's inner part, resting on an edge of the span where that does. A
 //! pan moves the goal by hand and holds it until the focus moves; a peek shows the span whole
 //! while it lasts, as does an event dialog. While zoomed, a window over the ship view is
-//! shown whole, as large as the screen allows. A frame shown smaller than it is drawn is
-//! area-averaged.
+//! shown whole, as large as the screen allows. An open wheel holds the level down to one
+//! whose view shows it whole. A frame shown smaller than it is drawn is area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -24,7 +24,7 @@ use crate::game::api::{api, Rect};
 use crate::game::offsets::{GAME_H, GAME_W};
 use crate::game::state;
 use crate::ui::shrink;
-use crate::ui::wheel::wheel_area;
+use crate::ui::wheel::{wheel_area, WHEEL_SIZE};
 
 /// The `zoom` setting that zooms one level in where the screen shrinks the frame.
 pub const ZOOM_AUTO: f32 = 0.0;
@@ -183,6 +183,12 @@ fn step(levels: &[f32], level: f32, up: bool) -> f32 {
 fn fit_level(screen: (f32, f32), rect: Rect) -> f32 {
     let (w, h) = (rect.w as f32 + 2.0 * WINDOW_MARGIN, rect.h as f32 + 2.0 * WINDOW_MARGIN);
     clampf((screen.0 / w).min(screen.1 / h) / fit_scale(screen), ZOOM_MIN, ZOOM_MAX)
+}
+
+/// The highest level whose view shows an open wheel whole on a screen of `screen` pixels.
+fn wheel_level(screen: (f32, f32)) -> f32 {
+    let side = WHEEL_SIZE.ceil() as i32;
+    fit_level(screen, Rect { x: 0, y: 0, w: side, h: side })
 }
 
 /// The smallest rectangle holding `rect` and the area `[left, top, right, bottom]`.
@@ -391,19 +397,19 @@ impl Default for Zoom {
 }
 
 impl Zoom {
-    /// Advances the shown level and camera by `dt` seconds toward what `scene` shows; on the
-    /// ship view the goal keeps `focus` (left, top, right, bottom) in view. Returns the view
-    /// to show, None for the whole frame.
-    fn advance(&mut self, screen: (f32, f32), scene: Scene, focus: [f32; 4], dt: f32) -> Option<View> {
+    /// Advances the shown level and camera by `dt` seconds toward what `scene` shows, the
+    /// ship view and a window at most at level `top`; on the ship view the goal keeps `focus`
+    /// (left, top, right, bottom) in view. Returns the view to show, None for the whole frame.
+    fn advance(&mut self, screen: (f32, f32), scene: Scene, focus: [f32; 4], top: f32, dt: f32) -> Option<View> {
         let middle = (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0);
         let (toward, span) = match scene {
             Scene::Ship => {
-                self.target = resolve(self.level, screen, self.span);
+                self.target = resolve(self.level, screen, self.span).min(top);
                 self.follow(screen, focus);
                 (self.goal, self.span)
             }
             Scene::Window(rect) => {
-                self.target = fit_level(screen, rect);
+                self.target = fit_level(screen, rect).min(top);
                 (rect.center(), Span::FRAME)
             }
             Scene::Span => {
@@ -518,10 +524,11 @@ impl Layer {
         self.zoom.peek_from = down.then(now_s);
     }
 
-    /// The frame area the camera keeps in view: the open wheel's, else the cursor.
+    /// The frame area the camera keeps in view: that of a wheel open around the cursor, else
+    /// the cursor.
     fn zoom_focus(&self) -> [f32; 4] {
         let (x, y) = (self.cursor.x, self.cursor.y);
-        if self.wheel.open.is_some() {
+        if self.wheel_at_cursor() {
             wheel_area(x, y)
         } else {
             [x, y, x, y]
@@ -551,13 +558,14 @@ impl Layer {
             Scene::Ship
         } else if let Some(rect) = window {
             // An open wheel shows whole beside the window.
-            Scene::Window(if self.wheel.open.is_some() { hull(rect, focus) } else { rect })
+            Scene::Window(if self.wheel_at_cursor() { hull(rect, focus) } else { rect })
         } else if state::choice_open() {
             Scene::Span
         } else {
             Scene::Whole
         };
-        let view = self.zoom.advance(screen, scene, focus, dt);
+        let top = if self.wheel.open.is_some() { wheel_level(screen) } else { ZOOM_MAX };
+        let view = self.zoom.advance(screen, scene, focus, top, dt);
         self.zoom.view = view;
         publish(view.map(|v| Blit::new(v, screen)));
     }
@@ -667,7 +675,7 @@ mod tests {
         let mut z = Zoom { level: 2.0, ..Zoom::default() };
         let mut view = None;
         for _ in 0..120 {
-            view = z.advance(SQUARE, Scene::Window(map), [0.0; 4], DT);
+            view = z.advance(SQUARE, Scene::Window(map), [0.0; 4], ZOOM_MAX, DT);
         }
         let v = view.expect("a window larger than the whole frame shows");
         assert!(v.x <= map.x as f32 && v.right() >= (map.x + map.w) as f32);
@@ -679,18 +687,34 @@ mod tests {
     }
 
     #[test]
+    fn an_open_wheel_holds_the_level_down_to_show_it_whole() {
+        let mut z = Zoom { level: ZOOM_MAX, ..Zoom::default() };
+        let cursor = [640.0, 360.0, 640.0, 360.0];
+        let mut view = None;
+        for _ in 0..120 {
+            view = z.advance(SMALL, Scene::Ship, cursor, wheel_level(SMALL), DT);
+        }
+        let v = view.expect("zoomed on the ship view");
+        assert!(z.target < ZOOM_MAX && v.w >= WHEEL_SIZE && v.h >= WHEEL_SIZE);
+        // A level that shows the wheel whole stays.
+        let mut z = Zoom { level: 1.5, ..Zoom::default() };
+        z.advance(WIDE, Scene::Ship, cursor, wheel_level(WIDE), DT);
+        assert_eq!(z.target, 1.5);
+    }
+
+    #[test]
     fn a_pan_holds_until_the_focus_moves() {
         let mut z = Zoom { level: 2.0, ..Zoom::default() };
         let cursor = [300.0, 300.0, 300.0, 300.0];
         for _ in 0..120 {
-            z.view = z.advance(SMALL, Scene::Ship, cursor, DT);
+            z.view = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
         }
         assert_eq!(z.goal.0, 320.0);
         z.goal.0 += 400.0;
         z.pin = Some(cursor);
-        z.advance(SMALL, Scene::Ship, cursor, DT);
+        z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
         assert_eq!(z.goal.0, 720.0);
-        z.advance(SMALL, Scene::Ship, [310.0, 300.0, 310.0, 300.0], DT);
+        z.advance(SMALL, Scene::Ship, [310.0, 300.0, 310.0, 300.0], ZOOM_MAX, DT);
         assert_eq!((z.goal.0, z.pin), (320.0, None));
     }
 
@@ -700,14 +724,14 @@ mod tests {
         let cursor = [100.0, 600.0, 100.0, 600.0];
         let mut view = None;
         for _ in 0..120 {
-            view = z.advance(SMALL, Scene::Ship, cursor, DT);
+            view = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
         }
         let v = view.expect("zoomed on the ship view");
         assert_eq!(v.k, 1.0);
         // The view rests on the frame edges nearest the cursor.
         assert_eq!((v.x, v.y), (0.0, GAME_H as f32 - v.h));
         for _ in 0..120 {
-            view = z.advance(SMALL, Scene::Whole, cursor, DT);
+            view = z.advance(SMALL, Scene::Whole, cursor, ZOOM_MAX, DT);
         }
         assert_eq!((view, z.target), (None, ZOOM_MIN));
         assert_eq!(z.goal, v.center());
@@ -739,13 +763,13 @@ mod tests {
         let mut z = Zoom { level: 2.0, span: HUD, ..Zoom::default() };
         let mut view = None;
         for _ in 0..120 {
-            view = z.advance(SMALL, Scene::Span, [300.0; 4], DT);
+            view = z.advance(SMALL, Scene::Span, [300.0; 4], ZOOM_MAX, DT);
         }
         let v = view.expect("the HUD's columns are narrower than the frame");
         assert!((v.x - HUD.left).abs() < 1.0 && (v.right() - HUD.right).abs() < 1.0);
         z.span = Span::FRAME;
         for _ in 0..120 {
-            view = z.advance(SMALL, Scene::Span, [300.0; 4], DT);
+            view = z.advance(SMALL, Scene::Span, [300.0; 4], ZOOM_MAX, DT);
         }
         assert_eq!(view, None);
     }
@@ -756,7 +780,7 @@ mod tests {
         let mut view = None;
         for cursor in [[30.0, 300.0, 30.0, 300.0], [1160.0, 300.0, 1160.0, 300.0]] {
             for _ in 0..120 {
-                view = z.advance(SMALL, Scene::Ship, cursor, DT);
+                view = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
             }
             let v = view.expect("zoomed on the ship view");
             assert!(v.x >= HUD.left - 1.0 && v.right() <= HUD.right + 1.0);

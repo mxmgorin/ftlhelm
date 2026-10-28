@@ -73,7 +73,7 @@ elsewhere closes the wheel.
 
 ## Wheels
 
-Holding B, X, Y, L1 or R1 opens a wheel around the cursor on the ship view; a Select tap
+Holding B, X, Y, L1 or R1 opens a wheel in the middle of the screen on the ship view; a Select tap
 opens the settings wheel on any screen. A wheel stays open after the button is released.
 
 | Input | In a wheel |
@@ -86,7 +86,8 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | hold another wheel's button | switch to that wheel |
 
 `autopause_wheel` pauses the game while a wheel is open; `wheels_ship_only = 0` opens
-wheels over menus, screens and the map too.
+wheels over menus, screens and the map too; `wheel_place = cursor` opens them around the
+cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 
 ## Settings wheel
 

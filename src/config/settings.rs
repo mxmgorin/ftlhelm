@@ -13,7 +13,7 @@ use crate::input::pad::RUMBLE_MAX;
 use crate::ui::overlay::{Notice, LAYOUT_NOTICE_S, LAYOUT_UPDATED_NOTICE};
 use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
-use crate::ui::wheel::{Backdrop, BACKDROPS};
+use crate::ui::wheel::{Backdrop, WheelPlace, BACKDROPS, WHEEL_PLACES};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
@@ -123,6 +123,7 @@ pub struct Settings {
     pub room_crew_pick: bool,
     /// Wheels open only on the ship view.
     pub wheels_ship_only: bool,
+    pub wheel_place: WheelPlace,
     pub wheel_backdrop: Backdrop,
     pub rumble_time: f32,
     /// How much larger event and tooltip text is drawn; TEXT_SCALE_AUTO picks by screen size.
@@ -184,6 +185,7 @@ impl Default for Settings {
             crew_follow: false,
             room_crew_pick: true,
             wheels_ship_only: true,
+            wheel_place: WheelPlace::default(),
             wheel_backdrop: Backdrop::default(),
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
@@ -211,6 +213,7 @@ enum Field {
     Int(fn(&mut Settings) -> &mut i32, f32, f32),
     Bool(fn(&mut Settings) -> &mut bool),
     Backdrop(fn(&mut Settings) -> &mut Backdrop),
+    Place(fn(&mut Settings) -> &mut WheelPlace),
 }
 
 /// Config file keys: the field each sets and the range a number is clamped to.
@@ -240,6 +243,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("crew_follow", Field::Bool(|c| &mut c.crew_follow)),
     ("room_crew_pick", Field::Bool(|c| &mut c.room_crew_pick)),
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
+    ("wheel_place", Field::Place(|c| &mut c.wheel_place)),
     ("wheel_backdrop", Field::Backdrop(|c| &mut c.wheel_backdrop)),
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
@@ -316,10 +320,8 @@ impl Settings {
             Field::Float(f, lo, hi) => *f(self) = clampf(float_prefix(value)?, lo, hi),
             Field::Int(f, lo, hi) => *f(self) = clampf(float_prefix(value)?, lo, hi) as i32,
             Field::Bool(f) => *f(self) = float_prefix(value)? != 0.0,
-            Field::Backdrop(f) => {
-                let word = value.split_whitespace().next()?;
-                *f(self) = BACKDROPS.iter().find(|(name, _)| *name == word)?.1;
-            }
+            Field::Backdrop(f) => *f(self) = by_name(&BACKDROPS, value)?,
+            Field::Place(f) => *f(self) = by_name(&WHEEL_PLACES, value)?,
         }
         Some(())
     }
@@ -348,10 +350,8 @@ impl Settings {
             Field::Float(f, ..) => f(self).to_string(),
             Field::Int(f, ..) => f(self).to_string(),
             Field::Bool(f) => (*f(self) as i32).to_string(),
-            Field::Backdrop(f) => {
-                let b = *f(self);
-                BACKDROPS.iter().find(|(_, v)| *v == b).map_or("?", |(name, _)| name).to_string()
-            }
+            Field::Backdrop(f) => name_of(&BACKDROPS, *f(self)),
+            Field::Place(f) => name_of(&WHEEL_PLACES, *f(self)),
         }
     }
 
@@ -413,6 +413,17 @@ impl Settings {
             _ => self.step(i, true),
         }
     }
+}
+
+/// The value `value`'s first word names in `names`.
+fn by_name<T: Copy>(names: &[(&str, T)], value: &str) -> Option<T> {
+    let word = value.split_whitespace().next()?;
+    names.iter().find(|(name, _)| *name == word).map(|&(_, v)| v)
+}
+
+/// `value`'s name in `names`.
+fn name_of<T: PartialEq>(names: &[(&str, T)], value: T) -> String {
+    names.iter().find(|(_, v)| *v == value).map_or("?", |(name, _)| name).to_string()
 }
 
 /// When the layout file was last polled, and its mtime then.
@@ -692,6 +703,16 @@ mod tests {
         cfg.apply("wheel_backdrop", "1");
         assert_eq!(cfg.wheel_backdrop, Backdrop::CircleDark);
         assert!(cfg.describe().contains(" wheel_backdrop=circle_dark "));
+    }
+
+    #[test]
+    fn the_wheel_place_goes_by_name() {
+        let mut cfg = Settings::default();
+        assert_eq!(cfg.wheel_place, WheelPlace::Center);
+        cfg.apply("wheel_place", "cursor");
+        cfg.apply("wheel_place", "corner");
+        assert_eq!(cfg.wheel_place, WheelPlace::Cursor);
+        assert!(cfg.values().contains(&("wheel_place", "cursor".to_string())));
     }
 
     #[test]
