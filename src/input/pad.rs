@@ -5,7 +5,7 @@ use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLO
 use crate::config::settings::FLICK_OFF;
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::actions::{mouse_move, request_exit, toggle_pause};
+use crate::game::actions::{mouse_move, toggle_pause};
 use crate::game::api::api;
 use crate::game::mem::Obj;
 use crate::game::offsets::{
@@ -25,7 +25,6 @@ const STICK_KEY_ON: f32 = 0.5;
 const STICK_KEY_OFF: f32 = 0.3;
 /// SIL reports an analog trigger as a stick axis resting at -1.
 const TRIGGER_ON: f32 = 0.0;
-const EXIT_HOLD_S: f64 = 0.6;
 /// Frames between synthetic mouse moves that refresh the button zones.
 const BUTTON_REFRESH_FRAMES: u64 = 6;
 const LEFT_STICK: i32 = 0;
@@ -60,8 +59,6 @@ pub struct PadState {
     flick_armed: [bool; 2],
     prev_aiming: bool,
     prev_crew: Option<Obj>,
-    chord_since: Option<f64>,
-    exit_requested: bool,
     frame: u64,
     /// The active pad.
     pub index: Option<i32>,
@@ -92,8 +89,6 @@ impl Default for PadState {
             flick_armed: [true; 2],
             prev_aiming: false,
             prev_crew: None,
-            chord_since: None,
-            exit_requested: false,
             frame: 0,
             index: None,
             connected: 0,
@@ -403,7 +398,6 @@ impl Layer {
             self.move_pointers(&p, mode, t, dt);
         }
         self.follow_game_modes();
-        self.watch_exit_chord(t);
     }
 
     /// Each pointer source's mode this frame, after the mode toggle; the directions of a
@@ -535,20 +529,6 @@ impl Layer {
         }
         self.pad.prev_aiming = now_aiming;
         self.pad.prev_crew = now_crew;
-    }
-
-    /// Requests the exit once Select and Start are held together long enough.
-    fn watch_exit_chord(&mut self, t: f64) {
-        if self.pad.held[Input::Select as usize] && self.pad.held[Input::Start as usize] {
-            let since = *self.pad.chord_since.get_or_insert(t);
-            if !self.pad.exit_requested && t - since >= EXIT_HOLD_S {
-                self.pad.exit_requested = true;
-                log!("Select + Start: exit");
-                request_exit();
-            }
-        } else {
-            self.pad.chord_since = None;
-        }
     }
 }
 

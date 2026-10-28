@@ -111,11 +111,6 @@ pub fn mouse_button(button: MouseButton, down: bool, wx: i32, wy: i32) {
     unsafe { f(state::app_ptr(), wx, wy) }
 }
 
-pub fn request_exit() {
-    // SAFETY: the game's exit request on its CApp.
-    unsafe { (api().request_exit)(state::app_ptr()) }
-}
-
 impl Layer {
     /// Presses or releases a mouse button at the cursor.
     pub fn click(&mut self, button: MouseButton, down: bool) {

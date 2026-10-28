@@ -164,7 +164,6 @@ game_api! {
     rbutton_up: unsafe extern "C" fn(Ptr, c_int, c_int) = "_ZN4CApp11OnRButtonUpEii",
     key_down: unsafe extern "C" fn(Ptr, c_int) = "_ZN4CApp9OnKeyDownEi",
     key_up: unsafe extern "C" fn(Ptr, c_int) = "_ZN4CApp7OnKeyUpEi",
-    request_exit: unsafe extern "C" fn(Ptr) = "_ZN4CApp13OnRequestExitEv",
     draw_rect_outline: unsafe extern "C" fn(c_int, c_int, c_int, c_int, GlColor, f32) = "_ZN8CSurface18GL_DrawRectOutlineEiiii8GL_Colorf",
     selected_room: unsafe extern "C" fn(Ptr, c_int, c_int, bool) -> c_int = "_ZN4Ship17GetSelectedRoomIdEiib",
     draw_rect: unsafe extern "C" fn(f32, f32, f32, f32, GlColor) = "_ZN8CSurface11GL_DrawRectEffff8GL_Color",
