@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
+use crate::ui::overlay::{Notice, LAYOUT_NOTICE_S, LAYOUT_UPDATED_NOTICE};
 use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 use crate::ui::wheel::{Backdrop, BACKDROPS};
@@ -20,6 +21,11 @@ const ZOOM_KEY: &str = "zoom";
 const TEXT_SCALE_KEY: &str = "text_scale";
 const HELP_AT_START_KEY: &str = "help_at_start";
 const FILE_POLL_S: f64 = 1.0;
+/// The layout's format in its [config] section; a file with an older or no version gives way
+/// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
+const LAYOUT_VERSION_KEY: &str = "layout_version";
+const LAYOUT_VERSION: i32 = 1;
+const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
 const SPEED_LEVEL_MAX: f32 = 6.0;
@@ -202,6 +208,9 @@ impl Settings {
     /// Sets one option from a "key = value" line; unknown keys and unreadable values are
     /// logged and skipped.
     pub fn apply(&mut self, key: &str, value: &str) {
+        if key == LAYOUT_VERSION_KEY {
+            return;
+        }
         let Some((_, field)) = OPTIONS.iter().find(|(name, _)| *name == key) else {
             log!("config: unknown key {key}");
             return;
@@ -319,6 +328,38 @@ fn set_config(text: &str, values: &[(&str, String)]) -> String {
     lines.concat()
 }
 
+/// The `key = value` lines of `text`'s [config] section, as (key, the value as written)
+/// without comments.
+fn config_lines(text: &str) -> impl Iterator<Item = (&str, &str)> {
+    let mut in_config = false;
+    text.lines().filter_map(move |line| {
+        if let Some(name) = section_name(line) {
+            in_config = name == CONFIG_SECTION;
+            return None;
+        }
+        let (key, value) = line.split_once('=').filter(|_| in_config)?;
+        Some((key.trim(), value.split('#').next().unwrap_or_default().trim()))
+    })
+}
+
+/// The layout version `text` declares; 0 without one.
+fn layout_version(text: &str) -> i32 {
+    config_lines(text)
+        .find(|(key, _)| *key == LAYOUT_VERSION_KEY)
+        .and_then(|(_, value)| float_prefix(value))
+        .map_or(0, |v| v as i32)
+}
+
+/// The default layout holding the settings `old` sets.
+fn upgraded(old: &str) -> String {
+    let values: Vec<(&str, String)> = config_lines(old)
+        .filter_map(|(key, value)| {
+            OPTIONS.iter().find(|(name, _)| *name == key).map(|(name, _)| (*name, value.to_string()))
+        })
+        .collect();
+    set_config(DEFAULT_LAYOUT, &values)
+}
+
 /// Writes `text` to `path` through a file beside it, so a cut write leaves the old file.
 fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
     let part = path.with_extension("part");
@@ -406,6 +447,31 @@ impl Layer {
         }
     }
 
+    /// Replaces the layout file at `path`, holding `text`, with the upgraded default when its
+    /// version is older than LAYOUT_VERSION, the old file kept beside it; returns the text to
+    /// load, the old one when the replacement fails.
+    fn upgrade_layout(&mut self, path: &Path, text: String) -> String {
+        let version = layout_version(&text);
+        if version >= LAYOUT_VERSION {
+            return text;
+        }
+        let new = upgraded(&text);
+        let previous = path.with_extension(PREVIOUS_LAYOUT_EXT);
+        match write_whole(&previous, &text).and_then(|()| write_whole(path, &new)) {
+            Ok(()) => {
+                // The layer's own write is no edit to reload.
+                self.files.layout_mtime = mtime(path);
+                self.notice = Some(Notice::for_seconds(LAYOUT_UPDATED_NOTICE, LAYOUT_NOTICE_S));
+                log!("layout: version {version} replaced by the default, the old file kept as {}", previous.display());
+                new
+            }
+            Err(e) => {
+                log!("layout: cannot replace version {version} at {}: {e}", path.display());
+                text
+            }
+        }
+    }
+
     /// Re-reads the layout when its mtime changes, at most once per poll interval.
     pub fn poll_files(&mut self, t: f64) {
         if self.files.last_poll.is_some_and(|last| t - last < FILE_POLL_S) {
@@ -419,6 +485,7 @@ impl Layer {
                     // An empty file is a save caught midway; the current layout stays.
                     Ok(text) if text.is_empty() => {}
                     Ok(text) => {
+                        let text = self.upgrade_layout(Path::new(&path), text);
                         self.load_layout(&text, &path);
                         self.files.written = Some(self.tuned());
                     }
@@ -477,6 +544,42 @@ mod tests {
             set_config("[controls]\na = space", &[(ZOOM_KEY, "2".to_string())]),
             "[config]\nzoom = 2\n[controls]\na = space"
         );
+    }
+
+    #[test]
+    fn the_shipped_layout_declares_the_current_version() {
+        assert_eq!(layout_version(DEFAULT_LAYOUT), LAYOUT_VERSION);
+        assert_eq!(layout_version("[controls]\na = space\n"), 0);
+    }
+
+    #[test]
+    fn an_upgrade_takes_the_default_with_the_old_settings() {
+        let old = "[config]\nzoom = 2  # mine\ncursor_speed = 900\nbogus = 1\n[controls]\na = space\n";
+        let new = upgraded(old);
+        assert_eq!(layout_version(&new), LAYOUT_VERSION);
+        let (layout, cfg) = Layout::parse(&new);
+        assert_eq!((cfg.zoom, cfg.cursor_speed), (2.0, 900.0));
+        assert_eq!(layout.wheels.len(), Layout::parse(DEFAULT_LAYOUT).0.wheels.len());
+        assert!(!new.contains("bogus") && !new.contains("a = space"));
+    }
+
+    #[test]
+    fn an_old_layout_file_gives_way_and_stays_beside_it() {
+        let path = std::env::temp_dir().join(format!("ftlhelm-test-upgrade-{}.ini", std::process::id()));
+        let previous = path.with_extension(PREVIOUS_LAYOUT_EXT);
+        let old = "[config]\nzoom = 2\n";
+        std::fs::write(&path, old).expect("a writable temp dir");
+        let mut l = Layer::default();
+        let text = l.upgrade_layout(&path, old.to_string());
+        assert_eq!(text, upgraded(old));
+        assert_eq!(std::fs::read_to_string(&path).ok(), Some(text.clone()));
+        assert_eq!(std::fs::read_to_string(&previous).ok().as_deref(), Some(old));
+        assert!(l.notice.is_some());
+        l.notice = None;
+        assert_eq!(l.upgrade_layout(&path, text.clone()), text, "a current file stays");
+        assert!(l.notice.is_none());
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&previous);
     }
 
     #[test]

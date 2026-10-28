@@ -49,11 +49,15 @@ const TEXT_DY: f32 = 5.0;
 const PANEL_MARGIN: f32 = 8.0;
 
 pub const PAD_LOST_NOTICE: &[&str] = &["Pad disconnected"];
+pub const LAYOUT_UPDATED_NOTICE: &[&str] =
+    &["Controls and wheels reset to the new defaults", "The old layout is in ftlhelm.old.ini"];
+/// Seconds the layout notice stays on screen without a press: mouse clicks do not reach it.
+pub const LAYOUT_NOTICE_S: f32 = 10.0;
 
 /// A message over the frame, its lines centred.
 pub struct Notice {
     lines: &'static [&'static str],
-    /// Seconds it has left on screen; None while it waits for a button.
+    /// Seconds it has left on screen; None: no limit. A press or a touch closes it either way.
     left: Option<f32>,
 }
 
@@ -61,6 +65,11 @@ impl Notice {
     /// A notice that stays until a button is pressed.
     pub fn until_press(lines: &'static [&'static str]) -> Notice {
         Notice { lines, left: None }
+    }
+
+    /// A notice that stays `seconds` on screen, or until a button is pressed.
+    pub fn for_seconds(lines: &'static [&'static str], seconds: f32) -> Notice {
+        Notice { lines, left: Some(seconds) }
     }
 }
 
@@ -384,8 +393,8 @@ impl Layer {
         self.cursor.synced && !self.help_shown
     }
 
-    /// Counts the notice's time down while it is on screen; drops it when the time is up or,
-    /// for one waiting for a button, on a press.
+    /// Counts the notice's time down while it is on screen; drops it on a press or when its
+    /// time is up.
     pub fn age_notice(&mut self, dt: f32, pressed: bool) {
         let shown = self.notice_shown();
         let Some(notice) = &mut self.notice else {
@@ -396,7 +405,7 @@ impl Layer {
                 if shown {
                     *left -= dt;
                 }
-                *left <= 0.0
+                pressed || *left <= 0.0
             }
             None => pressed,
         };
@@ -468,6 +477,22 @@ mod tests {
         assert_eq!(panel_scale(1.0, HELP_W, h, frame), 1.0);
         assert_eq!(panel_scale(TEXT_SCALE_MAX, HELP_W, h, frame), fit);
         assert_eq!(panel_scale(TEXT_SCALE_MAX, 2.0 * frame.0, h, frame), 1.0);
+    }
+
+    #[test]
+    fn a_timed_notice_closes_when_its_time_is_up_or_on_a_press() {
+        let mut l = Layer::default();
+        l.notice = Some(Notice::for_seconds(PAD_LOST_NOTICE, 1.0));
+        l.age_notice(2.0, false);
+        assert!(l.notice.is_some(), "no time passes while it is not shown");
+        l.cursor.synced = true;
+        l.age_notice(0.6, false);
+        assert!(l.notice.is_some());
+        l.age_notice(0.6, false);
+        assert!(l.notice.is_none());
+        l.notice = Some(Notice::for_seconds(PAD_LOST_NOTICE, 1.0));
+        l.age_notice(0.1, true);
+        assert!(l.notice.is_none());
     }
 
     #[test]

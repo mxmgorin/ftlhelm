@@ -3,6 +3,10 @@
 `ftlhelm.ini` holds the settings, the button states and the wheels. `#` starts a comment
 outside quotes. The file is re-read within a second of saving it, while the game runs.
 Deleting it resets the layout and the settings: ftlhelm writes the default file in its place.
+`layout_version` in `[config]` is the file's format. A file with an older or no
+`layout_version` is replaced by the default holding its `[config]` values; the old file stays
+beside it as `ftlhelm.old.ini`, and a notice says so for 10 seconds, or until a button is
+pressed or the screen is touched.
 
 | Section | Contents |
 | --- | --- |
