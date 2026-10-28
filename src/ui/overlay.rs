@@ -4,6 +4,7 @@
 use super::draw::*;
 use super::text;
 use crate::config::layout::{key_name, truncate_label, Action, Binding, Builtin, SIL_BUTTONS};
+use crate::config::settings::option_name;
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, now_s};
 use crate::game::offsets::*;
@@ -108,7 +109,7 @@ const CREW_MARK_SCALE_MAX: f32 = 1.5;
 const KEY_TITLES: &[(i32, &str)] = &[
     (KEY_ESCAPE, "Menu"), (KEY_SPACE, "Pause"), ('j' as i32, "Jump"), ('u' as i32, "Upgrades"),
     (KEY_AUTOFIRE, "Autofire"), ('z' as i32, "Open doors"), ('x' as i32, "Close doors"), ('q' as i32, "All crew"),
-    (KEY_ENTER, "To stations"), ('/' as i32, "Save stations"),
+    (KEY_ENTER, "To stations"), ('/' as i32, "Save stations"), ('i' as i32, "Cargo"),
 ];
 
 fn builtin_title(b: Builtin) -> &'static str {
@@ -129,6 +130,7 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::DpadMode => "Mouse / zones",
         Builtin::Zoom => "Zoom",
         Builtin::TextSize => "Text size",
+        Builtin::Autopause => "Autopause",
     }
 }
 
@@ -321,6 +323,7 @@ impl Layer {
                 format!("{first}{} wheel", chars.as_str())
             }
             Action::Builtin(b) => builtin_title(b).to_string(),
+            Action::Set(i) => option_name(i).to_string(),
         }
     }
 

@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
+use crate::input::pad::RUMBLE_MAX;
 use crate::ui::overlay::{Notice, LAYOUT_NOTICE_S, LAYOUT_UPDATED_NOTICE};
 use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
@@ -16,10 +17,14 @@ use crate::ui::wheel::{Backdrop, BACKDROPS};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
 
 const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
-/// The keys the layer writes back.
+/// Keys named outside the options table.
 const ZOOM_KEY: &str = "zoom";
 const TEXT_SCALE_KEY: &str = "text_scale";
 const HELP_AT_START_KEY: &str = "help_at_start";
+pub const OVERLAY_KEY: &str = "overlay";
+pub const RUMBLE_KEY: &str = "rumble";
+pub const SHARPEN_KEY: &str = "sharpen";
+pub const SPEED_LEVEL_KEY: &str = "speed_level";
 const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
@@ -29,7 +34,8 @@ const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
 const SPEED_LEVEL_MAX: f32 = 6.0;
-const RUMBLE_STRENGTH: f32 = 0.4;
+/// Pulses at RUMBLE_STRENGTH by default.
+const RUMBLE: f32 = 1.0;
 const RUMBLE_S: f32 = 0.05;
 const RUMBLE_S_MIN: f32 = 0.01;
 const RUMBLE_S_MAX: f32 = 0.5;
@@ -69,6 +75,14 @@ const TOUCH_PX_MAX: f32 = 100.0;
 /// The most times its size the game's pointer is drawn by default, and the highest setting.
 const POINTER_SCALE_MAX: f32 = 2.0;
 const POINTER_SCALE_LIMIT: f32 = 4.0;
+/// The numbers `set` moves, by key, and their steps.
+const STEPS: &[(&str, f32)] =
+    &[(RUMBLE_KEY, RUMBLE_STEP), (SHARPEN_KEY, SHARPEN_STEP), (SPEED_LEVEL_KEY, SPEED_LEVEL_STEP)];
+const RUMBLE_STEP: f32 = 0.5;
+const SHARPEN_STEP: f32 = 0.25;
+const SPEED_LEVEL_STEP: f32 = 1.0;
+/// Room for float error when a value is matched to a step.
+const STEP_SLACK: f32 = 0.001;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -89,7 +103,8 @@ pub struct Settings {
     pub autopause_wheel: bool,
     pub autopause_aim: bool,
     pub speed_level: i32,
-    pub rumble: bool,
+    /// Pulse strength in times RUMBLE_STRENGTH; 0: no pulses.
+    pub rumble: f32,
     pub flick_threshold: f32,
     pub flick_repeat: f32,
     /// Which raw pairs to swap for the labels when no SDL mapping names the face buttons:
@@ -109,7 +124,6 @@ pub struct Settings {
     /// Wheels open only on the ship view.
     pub wheels_ship_only: bool,
     pub wheel_backdrop: Backdrop,
-    pub rumble_strength: f32,
     pub rumble_time: f32,
     /// How much larger event and tooltip text is drawn; TEXT_SCALE_AUTO picks by screen size.
     pub text_scale: f32,
@@ -152,7 +166,7 @@ impl Default for Settings {
             autopause_wheel: true,
             autopause_aim: false,
             speed_level: SPEED_LEVEL_MAX as i32,
-            rumble: true,
+            rumble: RUMBLE,
             flick_threshold: FLICK_ON,
             flick_repeat: FLICK_REPEAT_S,
             swap_ab: false,
@@ -166,7 +180,6 @@ impl Default for Settings {
             room_crew_pick: true,
             wheels_ship_only: true,
             wheel_backdrop: Backdrop::default(),
-            rumble_strength: RUMBLE_STRENGTH,
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
             zoom: ZOOM_AUTO,
@@ -197,7 +210,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("cursor_speed", Field::Float(|c| &mut c.cursor_speed, CURSOR_SPEED_MIN, f32::INFINITY)),
     ("cursor_deadzone", Field::Float(|c| &mut c.cursor_deadzone, 0.0, STICK_DEADZONE_MAX)),
     ("cursor_curve", Field::Float(|c| &mut c.cursor_curve, CURSOR_CURVE_MIN, CURSOR_CURVE_MAX)),
-    ("overlay", Field::Bool(|c| &mut c.overlay)),
+    (OVERLAY_KEY, Field::Bool(|c| &mut c.overlay)),
     ("badge", Field::Bool(|c| &mut c.badge)),
     ("focus_brackets", Field::Bool(|c| &mut c.focus_brackets)),
     ("crew_marker", Field::Bool(|c| &mut c.crew_marker)),
@@ -205,8 +218,8 @@ const OPTIONS: &[(&str, Field)] = &[
     ("snap_dpad", Field::Bool(|c| &mut c.snap_dpad)),
     ("autopause_wheel", Field::Bool(|c| &mut c.autopause_wheel)),
     ("autopause_aim", Field::Bool(|c| &mut c.autopause_aim)),
-    ("speed_level", Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
-    ("rumble", Field::Bool(|c| &mut c.rumble)),
+    (SPEED_LEVEL_KEY, Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
+    (RUMBLE_KEY, Field::Float(|c| &mut c.rumble, 0.0, RUMBLE_MAX)),
     ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
     ("swap_xy", Field::Bool(|c| &mut c.swap_xy)),
     ("flick_threshold", Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
@@ -220,13 +233,12 @@ const OPTIONS: &[(&str, Field)] = &[
     ("room_crew_pick", Field::Bool(|c| &mut c.room_crew_pick)),
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
     ("wheel_backdrop", Field::Backdrop(|c| &mut c.wheel_backdrop)),
-    ("rumble_strength", Field::Float(|c| &mut c.rumble_strength, 0.0, 1.0)),
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
     ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
-    ("sharpen", Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
+    (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
     ("touch", Field::Bool(|c| &mut c.touch)),
     ("touch_long_press", Field::Float(|c| &mut c.touch_long_press, HOLD_S_MIN, HOLD_S_MAX)),
     ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
@@ -235,6 +247,41 @@ const OPTIONS: &[(&str, Field)] = &[
     ("pause_button", Field::Bool(|c| &mut c.pause_button)),
     ("touch_marks", Field::Bool(|c| &mut c.touch_marks)),
 ];
+
+/// Settings as the layout file writes them, by key, in table order.
+pub type Values = Vec<(&'static str, String)>;
+
+/// A setting `set` changes, as it stands.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Tuning {
+    Switch(bool),
+    /// A number moved in `step`s up to `max`, from 0 or a step above it.
+    Steps {
+        value: f32,
+        step: f32,
+        max: f32,
+    },
+}
+
+/// The index of setting `key` when `set` may change it: a switch or a number with a step.
+pub fn tunable(key: &str) -> Option<usize> {
+    let i = OPTIONS.iter().position(|(name, _)| *name == key)?;
+    (is_switch(i) || step_of(i).is_some()).then_some(i)
+}
+
+/// Whether setting `i` is a switch.
+pub fn is_switch(i: usize) -> bool {
+    matches!(OPTIONS[i].1, Field::Bool(_))
+}
+
+/// The key of setting `i`.
+pub fn option_name(i: usize) -> &'static str {
+    OPTIONS[i].0
+}
+
+fn step_of(i: usize) -> Option<f32> {
+    STEPS.iter().find(|(key, _)| *key == OPTIONS[i].0).map(|&(_, step)| step)
+}
 
 impl Settings {
     /// Sets one option from a "key = value" line; unknown keys and unreadable values are
@@ -272,16 +319,88 @@ impl Settings {
         for (name, field) in OPTIONS {
             let value = match *field {
                 Field::Float(f, ..) => format!("{:.2}", *f(self)),
-                Field::Int(f, ..) => f(self).to_string(),
-                Field::Bool(f) => (*f(self) as i32).to_string(),
-                Field::Backdrop(f) => {
-                    let b = *f(self);
-                    BACKDROPS.iter().find(|(_, v)| *v == b).map_or("?", |(name, _)| name).to_string()
-                }
+                _ => self.value_text(field),
             };
             out.push_str(&format!(" {name}={value}"));
         }
         out
+    }
+
+    /// Every option's value as the layout file writes it.
+    pub fn values(&mut self) -> Values {
+        OPTIONS.iter().map(|(name, field)| (*name, self.value_text(field))).collect()
+    }
+
+    /// `field`'s value as the layout file writes it.
+    fn value_text(&mut self, field: &Field) -> String {
+        match *field {
+            Field::Float(f, ..) => f(self).to_string(),
+            Field::Int(f, ..) => f(self).to_string(),
+            Field::Bool(f) => (*f(self) as i32).to_string(),
+            Field::Backdrop(f) => {
+                let b = *f(self);
+                BACKDROPS.iter().find(|(_, v)| *v == b).map_or("?", |(name, _)| name).to_string()
+            }
+        }
+    }
+
+    /// A number field's value and range; None for other fields.
+    fn number(&mut self, field: &Field) -> Option<(f32, f32, f32)> {
+        match *field {
+            Field::Float(f, lo, hi) => Some((*f(self), lo, hi)),
+            Field::Int(f, lo, hi) => Some((*f(self) as f32, lo, hi)),
+            _ => None,
+        }
+    }
+
+    /// Sets a number field to `value` within its range.
+    fn set_number(&mut self, field: &Field, value: f32) {
+        match *field {
+            Field::Float(f, lo, hi) => *f(self) = clampf(value, lo, hi),
+            Field::Int(f, lo, hi) => *f(self) = clampf(value, lo, hi).round() as i32,
+            _ => {}
+        }
+    }
+
+    /// Tunable setting `i` as it stands.
+    pub fn tuning(&mut self, i: usize) -> Tuning {
+        let field = &OPTIONS[i].1;
+        if let Field::Bool(f) = *field {
+            return Tuning::Switch(*f(self));
+        }
+        let (value, _, max) = self.number(field).expect("tunable() admits switches and numbers only");
+        Tuning::Steps { value, step: step_of(i).expect("tunable() admits numbers with a step only"), max }
+    }
+
+    /// Moves tunable setting `i` to the step above or below its value, within its range; a
+    /// switch turns on or off.
+    pub fn step(&mut self, i: usize, up: bool) {
+        let field = &OPTIONS[i].1;
+        if let Field::Bool(f) = *field {
+            *f(self) = up;
+            return;
+        }
+        let (Some((value, ..)), Some(step)) = (self.number(field), step_of(i)) else {
+            return;
+        };
+        let at = value / step;
+        let next = if up { (at + STEP_SLACK).floor() + 1.0 } else { (at - STEP_SLACK).ceil() - 1.0 };
+        self.set_number(field, next * step);
+    }
+
+    /// Moves tunable setting `i` to its next value: a switch flips, a number steps up and
+    /// from its top back to its lowest.
+    pub fn cycle(&mut self, i: usize) {
+        let field = &OPTIONS[i].1;
+        if let Field::Bool(f) = *field {
+            let on = *f(self);
+            *f(self) = !on;
+            return;
+        }
+        match self.number(field) {
+            Some((value, lo, hi)) if value >= hi - STEP_SLACK => self.set_number(field, lo),
+            _ => self.step(i, true),
+        }
     }
 }
 
@@ -290,19 +409,10 @@ impl Settings {
 pub struct FileWatch {
     last_poll: Option<f64>,
     layout_mtime: Option<SystemTime>,
-    /// The layer's own values as the layout file holds them.
-    written: Option<Tuned>,
+    /// The settings as the layout file holds them.
+    written: Option<Values>,
     /// Writing the default layout failed; no retry until a file appears at the path.
     default_failed: bool,
-}
-
-/// The settings the layer itself changes and writes into the layout file: the settings
-/// wheel's values and whether the help shows at start.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Tuned {
-    pub zoom: f32,
-    pub text_scale: f32,
-    pub help_at_start: bool,
 }
 
 /// The section a "[NAME]" line opens, as the layout parser reads it.
@@ -392,6 +502,11 @@ fn upgraded(old: &str) -> String {
     set_config(DEFAULT_LAYOUT, &values)
 }
 
+/// The entries of `now` whose values differ from `before`'s, both in table order.
+fn differing(before: &Values, now: &Values) -> Values {
+    now.iter().zip(before).filter(|(n, b)| n != b).map(|(n, _)| n.clone()).collect()
+}
+
 /// Writes `text` to `path` through a file beside it, so a cut write leaves the old file.
 fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
     let part = path.with_extension("part");
@@ -424,36 +539,42 @@ fn changed(path: &Path, last: &mut Option<SystemTime>) -> bool {
 }
 
 impl Layer {
-    pub fn tuned(&self) -> Tuned {
-        Tuned { zoom: self.zoom.level, text_scale: self.cfg.text_scale, help_at_start: self.cfg.help_at_start }
+    /// The settings as the layer holds them, the zoom at its level, as the layout file writes
+    /// them.
+    pub fn tuned(&self) -> Values {
+        let mut cfg = self.cfg.clone();
+        cfg.zoom = self.zoom.level;
+        cfg.values()
     }
 
-    /// Writes the layer's own values into the layout file's [config] section when they differ
-    /// from what it holds.
+    /// Moves tunable setting `i` a step up or down, or without `up` to its next value.
+    pub fn tune(&mut self, i: usize, up: Option<bool>) {
+        match up {
+            Some(up) => self.cfg.step(i, up),
+            None => self.cfg.cycle(i),
+        }
+        log!("{} {}", option_name(i), self.cfg.value_text(&OPTIONS[i].1));
+    }
+
+    /// Writes the settings that differ from what the layout file holds into its [config]
+    /// section.
     pub fn save_tuned(&mut self) {
-        let (Ok(path), t) = (std::env::var(LAYOUT_ENV), self.tuned()) else {
+        let Ok(path) = std::env::var(LAYOUT_ENV) else {
             return;
         };
-        if self.files.written == Some(t) {
+        let now = self.tuned();
+        let before = self.files.written.clone().unwrap_or_else(|| Settings::default().values());
+        let changed = differing(&before, &now);
+        if changed.is_empty() {
             return;
         }
         let path = Path::new(&path);
-        let values = [
-            (ZOOM_KEY, t.zoom.to_string()),
-            (TEXT_SCALE_KEY, t.text_scale.to_string()),
-            (HELP_AT_START_KEY, (t.help_at_start as i32).to_string()),
-        ];
-        match std::fs::read_to_string(path).and_then(|text| write_whole(path, &set_config(&text, &values))) {
+        match std::fs::read_to_string(path).and_then(|text| write_whole(path, &set_config(&text, &changed))) {
             Ok(()) => {
-                self.files.written = Some(t);
+                self.files.written = Some(now);
                 // The layer's own write is no edit to reload.
                 self.files.layout_mtime = mtime(path);
-                log!(
-                    "saved: zoom {:.2}, text_scale {:.2}, help_at_start {}",
-                    t.zoom,
-                    t.text_scale,
-                    t.help_at_start as i32
-                );
+                log!("saved:{}", changed.iter().map(|(key, value)| format!(" {key}={value}")).collect::<String>());
             }
             Err(e) => log!("cannot save {}: {e}", path.display()),
         }
@@ -659,6 +780,46 @@ mod tests {
         assert_eq!(cfg.sharpen, SHARPEN_MAX);
         cfg.apply("sharpen", "-1");
         assert_eq!(cfg.sharpen, 0.0);
+    }
+
+    #[test]
+    fn tunable_numbers_step_on_their_grid_and_cycle_back() {
+        let mut cfg = Settings::default();
+        let rumble = tunable(RUMBLE_KEY).expect("rumble has a step");
+        assert_eq!(cfg.tuning(rumble), Tuning::Steps { value: RUMBLE, step: RUMBLE_STEP, max: RUMBLE_MAX });
+        cfg.step(rumble, true);
+        assert_eq!(cfg.rumble, RUMBLE + RUMBLE_STEP);
+        cfg.rumble = 0.3;
+        cfg.step(rumble, true);
+        assert_eq!(cfg.rumble, RUMBLE_STEP, "off the grid, the next step up");
+        cfg.rumble = 0.3;
+        cfg.step(rumble, false);
+        assert_eq!(cfg.rumble, 0.0);
+        cfg.step(rumble, false);
+        assert_eq!(cfg.rumble, 0.0, "the bottom holds");
+        cfg.rumble = RUMBLE_MAX;
+        cfg.cycle(rumble);
+        assert_eq!(cfg.rumble, 0.0, "the top cycles to the lowest");
+        let speed = tunable(SPEED_LEVEL_KEY).expect("speed_level has a step");
+        cfg.cycle(speed);
+        assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32);
+        cfg.cycle(speed);
+        assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32 + 1);
+        let overlay = tunable(OVERLAY_KEY).expect("a switch");
+        cfg.cycle(overlay);
+        assert_eq!(cfg.tuning(overlay), Tuning::Switch(false));
+        cfg.step(overlay, true);
+        assert!(cfg.overlay);
+        assert_eq!((tunable("cursor_speed"), tunable("bogus")), (None, None));
+    }
+
+    #[test]
+    fn only_the_changed_settings_are_written() {
+        let mut cfg = Settings::default();
+        let before = cfg.values();
+        (cfg.sharpen, cfg.overlay) = (0.75, false);
+        let changed = differing(&before, &cfg.values());
+        assert_eq!(changed, [(OVERLAY_KEY, "0".to_string()), (SHARPEN_KEY, "0.75".to_string())]);
     }
 
     #[test]

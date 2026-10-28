@@ -19,7 +19,8 @@ pressed or the screen is touched.
 
 One `key = value` per line. Switches take `0` (off) or `1` (on). A missing key takes its
 default; a value outside its range is clamped. When the settings wheel closes, it writes
-`zoom` and `text_scale` here; when the controls table first closes, `help_at_start = 0`.
+the settings changed in it here; a `set` button writes its setting at once; when the
+controls table first closes, `help_at_start = 0`.
 
 ### Cursor
 
@@ -58,8 +59,7 @@ default; a value outside its range is clamped. When the settings wheel closes, i
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `tap_hold` | 0.2 | 0.05 to 2 | seconds a press lasts to count as a hold on a button with a tap action |
-| `rumble` | 1 | switch | a pulse when the cursor jumps to a zone or the wheel selection changes |
-| `rumble_strength` | 0.4 | 0 to 1 | pulse strength |
+| `rumble` | 1 | 0 to 2.5 | strength of a pulse when the cursor jumps to a zone or the wheel selection changes, in times the default; 2.5: the pad's strongest; 0: none |
 | `rumble_time` | 0.05 | 0.01 to 0.5 | pulse length in seconds |
 | `swap_ab`, `swap_xy` | 0 | switch | swap the raw A/B, X/Y pairs to match the labels |
 
@@ -126,6 +126,7 @@ state.
 | `mouse_left`, `mouse_right` | click at the cursor |
 | `hold_state NAME` | push `[controls:NAME]` while held |
 | `wheel NAME` | open `[wheel:NAME]` |
+| `set KEY` | the next value of setting `KEY`: a switch flips; `rumble`, `sharpen` and `speed_level` go a step up, from the highest to the lowest |
 | a built-in | see below |
 | `HOLD \| TAP` | the tap action on a press shorter than `tap_hold`, the hold action past it |
 
@@ -146,6 +147,7 @@ state.
 | `help` | show the controls table; any button but the D-pad closes it |
 | `zoom` | the next zoom level, back to auto after the last |
 | `text_size` | the next text size, back to auto after the largest |
+| `autopause` | `autopause_wheel` and `autopause_aim` both off when either is on, else both on |
 
 ## Wheels
 
@@ -160,12 +162,22 @@ state.
 | `power` | from the section, with power pips; D-pad up and down add and take power |
 | `crew` | filled from the ship's crew |
 | `systems` | filled from the ship's systems |
-| `settings` | from the section; opens on any screen; D-pad up and down step `zoom` and `text_size` plates; other plates close the wheel after an action |
+| `settings` | from the section; opens on any screen; D-pad up and down step `zoom`, `text_size` and stepped `set` plates, and turn `autopause` and `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
 
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
 without one), and an optional icon: a game image path under `img/` in `ftl.dat`, with
-`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, and `zoom`, `text_size` and `help` plates show their own glyphs.
+`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, and `zoom`, `text_size`, `help`, `center_swap`, `autopause` and the `set` plates of `overlay`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
+
+| `set` step | Step |
+| --- | --- |
+| `rumble` | 0.5 |
+| `sharpen` | 0.25 |
+| `speed_level` | 1 |
+
+A `set` plate shows its setting's value: one pip for a switch, a pip per step for a number.
+A `sharpen` plate is greyed out while the screen shows the frame at 1280x720 or larger, or
+`frame_filter = 0`.
 
 ## Environment variables
 

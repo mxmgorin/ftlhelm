@@ -216,6 +216,35 @@ fn bracket_bars(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32) -> [(f32, 
     ]
 }
 
+/// A ring `thick` wide inside radius `r` around (`cx`, `cy`), out of one-line rows like a disc;
+/// a centre on whole pixels keeps it symmetric.
+pub fn draw_pixel_ring(cx: f32, cy: f32, r: f32, thick: f32, color: GlColor) {
+    let hole = r - thick;
+    let half_width = |radius: f32, dy: f32| (radius * radius - dy * dy).max(0.0).sqrt().round();
+    let mut top = -r;
+    while top < r {
+        let dy = top + OVERLAY_LINE / 2.0;
+        let outer = half_width(r, dy);
+        let inner = if dy.abs() < hole { half_width(hole, dy) } else { 0.0 };
+        draw_rect(cx - outer, cy + top, outer - inner, OVERLAY_LINE, color);
+        draw_rect(cx + inner, cy + top, outer - inner, OVERLAY_LINE, color);
+        top += OVERLAY_LINE;
+    }
+}
+
+/// A triangle pointing sideways, `h` tall, its base at `x` centred on `cy` and its tip `w` to the
+/// right, or to the left for a negative `w`; out of one-line rows like a disc.
+pub fn draw_side_triangle(x: f32, cy: f32, w: f32, h: f32, color: GlColor) {
+    let half = h / 2.0;
+    let mut top = -half;
+    while top < half {
+        let dy = top + OVERLAY_LINE / 2.0;
+        let len = (w.abs() * (1.0 - dy.abs() / half)).round();
+        draw_rect(if w < 0.0 { x - len } else { x }, cy + top, len, OVERLAY_LINE, color);
+        top += OVERLAY_LINE;
+    }
+}
+
 /// A triangle pointing down, `w` wide and `h` tall, its tip at (`cx`, `tip`), over a dark edge
 /// one line wider; out of one-line rows like a disc.
 pub fn draw_down_marker(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {

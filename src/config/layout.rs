@@ -1,7 +1,7 @@
 //! Layout parsing: gptokeyb2-style [controls] states, HOLD | TAP bindings, builtins, and
 //! [wheel:NAME] sections with plate labels and icons.
 
-use crate::config::settings::Settings;
+use crate::config::settings::{tunable, Settings};
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::offsets::{KEY_ENTER, KEY_ESCAPE, KEY_F1, KEY_F_COUNT, KEY_LSHIFT, KEY_SPACE};
@@ -97,24 +97,24 @@ pub enum SlotMode {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
     Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
-    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom, TextSize,
+    PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom, TextSize, Autopause,
 }
 
 impl Builtin {
     /// Counts through the last variant; a variant added after it takes its place here.
-    const COUNT: usize = Builtin::TextSize as usize + 1;
+    const COUNT: usize = Builtin::Autopause as usize + 1;
     #[rustfmt::skip]
     pub const ALL: [Builtin; Builtin::COUNT] = [
         Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
-        Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize,
+        Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Autopause,
     ];
     #[rustfmt::skip]
     const NAMES: [&'static str; Builtin::COUNT] = [
         "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
-        "fast_forward", "dpad_mode", "zoom", "text_size",
+        "fast_forward", "dpad_mode", "zoom", "text_size", "autopause",
     ];
 
     pub fn name(self) -> &'static str {
@@ -128,12 +128,17 @@ impl Builtin {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Action {
-    Key { code: i32, shift: bool },
+    Key {
+        code: i32,
+        shift: bool,
+    },
     LClick,
     RClick,
     State(usize),
     Wheel(usize),
     Builtin(Builtin),
+    /// The setting at this index among the options, one tunable() admits.
+    Set(usize),
 }
 
 /// A button's action, and the action a short press runs instead when there is one.
@@ -271,7 +276,7 @@ impl Layout {
     }
 
     /// Parses one action ("key [add_shift]", mouse_left, mouse_right, hold_state NAME,
-    /// wheel NAME, a builtin name) for the named input.
+    /// wheel NAME, set KEY, a builtin name) for the named input.
     fn parse_action(&mut self, key: &str, value: &str) -> Option<Action> {
         let mut toks = value.split_whitespace();
         let tok = toks.next()?;
@@ -293,6 +298,12 @@ impl Layout {
             } else {
                 Action::State(idx)
             }
+        } else if tok == "set" {
+            let Some(i) = toks.next().and_then(tunable) else {
+                log!("layout: set for {key} takes a switch or a stepped setting");
+                return None;
+            };
+            Action::Set(i)
         } else {
             let Some(code) = key_code(tok) else {
                 log!("layout: unknown key {tok} for {key}");
@@ -495,6 +506,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::{OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
 
     #[test]
     fn variant_lists_follow_declaration_order() {
@@ -577,8 +589,27 @@ mod tests {
         let settings = &l.wheels[settings];
         assert_eq!(settings.kind, WheelKind::Settings);
         let actions: Vec<Action> = settings.plates.iter().flatten().map(|p| p.action).collect();
-        for b in [Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Help] {
+        for b in [Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Help, Builtin::Autopause] {
             assert!(actions.contains(&Action::Builtin(b)));
         }
+        for key in [OVERLAY_KEY, RUMBLE_KEY, SPEED_LEVEL_KEY] {
+            assert!(actions.contains(&Action::Set(tunable(key).expect("a tunable key"))), "{key}");
+        }
+    }
+
+    #[test]
+    fn set_takes_switches_and_stepped_numbers() {
+        let (l, _) = Layout::parse(
+            "[controls]
+a = set overlay
+b = set sharpen
+x = set cursor_speed
+y = set
+",
+        );
+        let hold = |i: Input| l.states[0].bind[i as usize].map(|b| b.hold);
+        assert_eq!(hold(Input::FaceDown), tunable(OVERLAY_KEY).map(Action::Set));
+        assert_eq!(hold(Input::FaceRight), tunable(SHARPEN_KEY).map(Action::Set));
+        assert_eq!((hold(Input::FaceLeft), hold(Input::FaceUp)), (None, None), "no step, no key");
     }
 }

@@ -21,6 +21,9 @@ use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
 
 /// PortMaster's per-device SDL mapping.
 const SDL_MAP_ENV: &str = "SDL_GAMECONTROLLERCONFIG";
+/// The engine's pulse strength at `rumble` 1; `rumble` reaches the engine's full strength.
+pub const RUMBLE_STRENGTH: f32 = 0.4;
+pub const RUMBLE_MAX: f32 = 1.0 / RUMBLE_STRENGTH;
 const STICK_KEY_ON: f32 = 0.5;
 const STICK_KEY_OFF: f32 = 0.3;
 /// SIL reports an analog trigger as a stick axis resting at -1.
@@ -357,8 +360,8 @@ impl Layer {
     }
 
     pub fn buzz(&self) {
-        if let (true, Some(dev)) = (self.cfg.rumble, self.pad.index) {
-            let s = self.cfg.rumble_strength;
+        if let (true, Some(dev)) = (self.cfg.rumble > 0.0, self.pad.index) {
+            let s = self.cfg.rumble * RUMBLE_STRENGTH;
             // SAFETY: the engine's rumble on a connected pad.
             unsafe { (api().joy_rumble)(dev, s, s, self.cfg.rumble_time) };
         }

@@ -208,6 +208,7 @@ impl Layer {
             Builtin::DpadMode if down => self.bind.dpad_mouse = !self.bind.dpad_mouse,
             Builtin::Zoom if down => self.zoom_cycle(),
             Builtin::TextSize if down => self.text_size_cycle(),
+            Builtin::Autopause if down => self.set_autopause(!self.autopause()),
             Builtin::FastForward => {
                 if down && state::game_paused() {
                     toggle_pause();
@@ -251,12 +252,19 @@ impl Layer {
                 }
             }
             Action::Builtin(b) => self.builtin(b, source, down),
+            Action::Set(i) => {
+                if down {
+                    self.tune(i, None);
+                    self.save_tuned();
+                }
+            }
         }
         if self.debug && down {
             let what = match action {
                 Action::Key { .. } => "key",
                 Action::Builtin(b) => b.name(),
                 Action::Wheel(_) => "wheel",
+                Action::Set(_) => "set",
                 Action::State(_) => "state",
                 Action::LClick | Action::RClick => "click",
             };
@@ -344,6 +352,18 @@ impl Layer {
         for (input, b) in self.bind.take_due(t, self.cfg.tap_hold as f64) {
             self.start_hold(b.hold, input);
         }
+    }
+
+    /// Whether either autopause is on: while a wheel is open, or while the game waits for a
+    /// target.
+    pub fn autopause(&self) -> bool {
+        self.cfg.autopause_wheel || self.cfg.autopause_aim
+    }
+
+    /// Turns both autopauses on or off.
+    pub fn set_autopause(&mut self, on: bool) {
+        (self.cfg.autopause_wheel, self.cfg.autopause_aim) = (on, on);
+        log!("autopause {}", on as i32);
     }
 
     /// Runs a plate's builtin as a tap.

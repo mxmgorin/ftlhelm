@@ -1,12 +1,13 @@
 //! Wheels: plates built from the layout and the game, laid out around the cursor with
 //! icons and power pips, picked by the sticks and the D-pad, and acted on.
 
-use std::f32::consts::{PI, SQRT_2};
+use std::f32::consts::{FRAC_1_SQRT_2, PI, SQRT_2};
 
 use super::draw::*;
 use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
+use crate::config::settings::{is_switch, option_name, Tuning, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::{tap_key, toggle_pause, MouseButton};
@@ -70,24 +71,54 @@ const WINDOW_COLOR: GlColor = GlColor::new(0.47, 0.39, 0.38, 0.85);
 const DARK_COLOR: GlColor = GlColor::new(0.16, 0.14, 0.13, 0.85);
 const DIM_COLOR: GlColor = GlColor::new(0.0, 0.0, 0.0, 0.5);
 const POWER_COLOR: GlColor = GlColor::new(0.47, 0.95, 0.47, 1.0);
-/// Glyphs of built-ins without game art: text as wide as the icon box, up to GLYPH_TEXT_MAX
-/// times its size; the zoom's corner brackets round a plus, ZOOM_GLYPH_STROKE thick.
+/// Glyphs of plates without game art: text as wide as the icon box, up to GLYPH_TEXT_MAX
+/// times its size; drawn ones in GLYPH_STROKE lines, corner brackets GLYPH_W by GLYPH_H.
 const GLYPH_TEXT_MAX: f32 = 2.0;
-const TEXT_GLYPH: &str = "Aa";
-const HELP_GLYPH: &str = "?";
-const ZOOM_GLYPH_W: f32 = 32.0;
-const ZOOM_GLYPH_H: f32 = 26.0;
-const ZOOM_GLYPH_ARM: f32 = 9.0;
-const ZOOM_GLYPH_PLUS: f32 = 12.0;
-const ZOOM_GLYPH_STROKE: f32 = 3.0;
+const TEXT_GLYPH: TextGlyph = TextGlyph { text: "Aa", ink: (-0.5, 0.5) };
+const HELP_GLYPH: TextGlyph = TextGlyph { text: "?", ink: (1.0, 1.0) };
+const GLYPH_W: f32 = 32.0;
+const GLYPH_H: f32 = 26.0;
+const GLYPH_ARM: f32 = 9.0;
+const GLYPH_STROKE: f32 = 3.0;
+/// The zoom glyph: a lens ring round a plus, its handle running to the bottom right corner of a
+/// LENS_BOX square.
+const LENS_BOX: f32 = 28.0;
+const LENS_R: f32 = 10.0;
+const LENS_PLUS: f32 = 8.0;
+const LENS_PLUS_STROKE: f32 = 2.0;
+const LENS_HANDLE: f32 = 4.0;
+/// The fast forward glyph: two triangles pointing right, tip to base.
+const FORWARD_GLYPH_W: f32 = 13.0;
+const FORWARD_GLYPH_H: f32 = 20.0;
+/// The other ship glyph: two arrows passing each other, the upper one pointing right.
+const SWAP_GLYPH_W: f32 = 28.0;
+const SWAP_SHAFT: f32 = 4.0;
+const SWAP_HEAD_W: f32 = 8.0;
+const SWAP_HEAD_H: f32 = 12.0;
+/// The distance between the arrows' middle lines.
+const SWAP_SPACING: f32 = 10.0;
+/// The autopause glyph: the two bars of a pause sign.
+const PAUSE_GLYPH_BAR_W: f32 = 6.0;
+const PAUSE_GLYPH_BAR_H: f32 = 20.0;
+const PAUSE_GLYPH_GAP: f32 = 6.0;
+/// The overlay glyph's crew marker, inside its brackets.
+const MARKER_GLYPH_W: f32 = 14.0;
+const MARKER_GLYPH_H: f32 = 8.0;
+/// The sharpen glyph's square, its left half filled.
+const SHARPEN_GLYPH: f32 = 22.0;
+/// The rumble glyph: a pad body, and each side of it waves that shorten outward.
+const RUMBLE_BODY_W: f32 = 8.0;
+const RUMBLE_BODY_H: f32 = 20.0;
+const RUMBLE_WAVE_GAP: f32 = 3.0;
+const RUMBLE_WAVES_H: [f32; 2] = [14.0, 8.0];
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
 const ZOOM_OFF_BADGE: &str = "Whole frame";
 const AUTO_BADGE: &str = "Auto";
-const MOUSE_ON_BADGE: &str = "On";
+const ON_BADGE: &str = "On";
 /// A switch plate's one pip, lit while the switch is on.
 const SWITCH_PIPS: i32 = 1;
-const MOUSE_OFF_BADGE: &str = "Off";
+const OFF_BADGE: &str = "Off";
 
 /// What lies under a wheel's plates.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -130,13 +161,33 @@ fn draw_backdrop(backdrop: Backdrop, (ox, oy): (f32, f32)) {
     }
 }
 
-/// A plate's own glyph, for a built-in the game has no art for.
+/// Text as a glyph: the text, and how far the font's ink sits off the middle of its advance
+/// and line, in font pixels, as measured.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TextGlyph {
+    text: &'static str,
+    ink: (f32, f32),
+}
+
+/// A plate's own glyph, for a built-in or a setting the game has no art for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Glyph {
-    /// Text drawn large.
-    Text(&'static str),
-    /// Corner brackets round a plus.
+    /// Text drawn large, its ink centred.
+    Text(TextGlyph),
+    /// A magnifying glass with a plus.
     Zoom,
+    /// Two triangles pointing right.
+    FastForward,
+    /// Two arrows passing each other.
+    Swap,
+    /// The bars of a pause sign.
+    Pause,
+    /// Corner brackets round a crew marker.
+    Overlay,
+    /// A square, half filled.
+    Sharpen,
+    /// A pad body between waves.
+    Rumble,
 }
 
 /// Where a power wheel finds the item a slot key powers.
@@ -327,17 +378,72 @@ fn shows_label(pl: &Plate) -> bool {
 /// Draws `glyph` in slate centred at cx,cy, text fitted to `size` wide.
 fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
     match glyph {
-        Glyph::Text(text) => {
-            let k = (size / text_width(font, text)).min(GLYPH_TEXT_MAX);
+        Glyph::Text(g) => {
+            let k = (size / text_width(font, g.text)).min(GLYPH_TEXT_MAX);
             set_color(INK_COLOR);
-            draw_text_scaled(font, cx, cy, k, text);
+            draw_text_scaled(font, cx - g.ink.0 * k, cy - g.ink.1 * k, k, g.text);
             set_color(TEXT_COLOR);
         }
         Glyph::Zoom => {
-            let (w, h, t, p) = (ZOOM_GLYPH_W, ZOOM_GLYPH_H, ZOOM_GLYPH_STROKE, ZOOM_GLYPH_PLUS);
-            draw_corners(cx - w / 2.0, cy - h / 2.0, w, h, ZOOM_GLYPH_ARM, t, INK_COLOR);
-            draw_rect(cx - p / 2.0, cy - t / 2.0, p, t, INK_COLOR);
-            draw_rect(cx - t / 2.0, cy - p / 2.0, t, p, INK_COLOR);
+            // On whole pixels: the ring and the plus stay symmetric.
+            let (left, top) = ((cx - LENS_BOX / 2.0).round(), (cy - LENS_BOX / 2.0).round());
+            let (lx, ly) = (left + LENS_R, top + LENS_R);
+            draw_pixel_ring(lx, ly, LENS_R, GLYPH_STROKE, INK_COLOR);
+            let (p, t) = (LENS_PLUS, LENS_PLUS_STROKE);
+            draw_rect(lx - p / 2.0, ly - t / 2.0, p, t, INK_COLOR);
+            draw_rect(lx - t / 2.0, ly - p / 2.0, t, p, INK_COLOR);
+            // Squares a pixel apart down the diagonal, from the ring's middle to the corner.
+            let mut d = (LENS_R + (LENS_R - GLYPH_STROKE / 2.0) * FRAC_1_SQRT_2 - LENS_HANDLE / 2.0).round();
+            while d <= LENS_BOX - LENS_HANDLE {
+                draw_rect(left + d, top + d, LENS_HANDLE, LENS_HANDLE, INK_COLOR);
+                d += OVERLAY_LINE;
+            }
+        }
+        Glyph::FastForward => {
+            // On whole pixels: each row stays one line.
+            let (left, cy) = ((cx - FORWARD_GLYPH_W).round(), cy.round());
+            draw_side_triangle(left, cy, FORWARD_GLYPH_W, FORWARD_GLYPH_H, INK_COLOR);
+            draw_side_triangle(left + FORWARD_GLYPH_W, cy, FORWARD_GLYPH_W, FORWARD_GLYPH_H, INK_COLOR);
+        }
+        Glyph::Swap => {
+            // On whole pixels: each row stays one line.
+            let (left, cy) = ((cx - SWAP_GLYPH_W / 2.0).round(), cy.round());
+            let (upper, lower) = (cy - SWAP_SPACING / 2.0, cy + SWAP_SPACING / 2.0);
+            let (shaft_w, head_at) = (SWAP_GLYPH_W - SWAP_HEAD_W, left + SWAP_GLYPH_W - SWAP_HEAD_W);
+            draw_rect(left, upper - SWAP_SHAFT / 2.0, shaft_w, SWAP_SHAFT, INK_COLOR);
+            draw_side_triangle(head_at, upper, SWAP_HEAD_W, SWAP_HEAD_H, INK_COLOR);
+            draw_rect(left + SWAP_HEAD_W, lower - SWAP_SHAFT / 2.0, shaft_w, SWAP_SHAFT, INK_COLOR);
+            draw_side_triangle(left + SWAP_HEAD_W, lower, -SWAP_HEAD_W, SWAP_HEAD_H, INK_COLOR);
+        }
+        Glyph::Pause => {
+            let (w, h, gap) = (PAUSE_GLYPH_BAR_W, PAUSE_GLYPH_BAR_H, PAUSE_GLYPH_GAP);
+            // On whole pixels: both bars keep one width.
+            let (cx, top) = (cx.round(), (cy - h / 2.0).round());
+            draw_rect(cx - gap / 2.0 - w, top, w, h, INK_COLOR);
+            draw_rect(cx + gap / 2.0, top, w, h, INK_COLOR);
+        }
+        Glyph::Overlay => {
+            let t = GLYPH_STROKE;
+            draw_corners(cx - GLYPH_W / 2.0, cy - GLYPH_H / 2.0, GLYPH_W, GLYPH_H, GLYPH_ARM, t, INK_COLOR);
+            draw_down_marker(cx, cy + MARKER_GLYPH_H / 2.0, MARKER_GLYPH_W, MARKER_GLYPH_H, INK_COLOR);
+        }
+        Glyph::Sharpen => {
+            let (s, t) = (SHARPEN_GLYPH, GLYPH_STROKE);
+            let (x, y) = (cx - s / 2.0, cy - s / 2.0);
+            draw_rect(x, y, s, t, INK_COLOR);
+            draw_rect(x, y + s - t, s, t, INK_COLOR);
+            draw_rect(x + s - t, y, t, s, INK_COLOR);
+            draw_rect(x, y, s / 2.0, s, INK_COLOR);
+        }
+        Glyph::Rumble => {
+            let t = GLYPH_STROKE;
+            draw_rect(cx - RUMBLE_BODY_W / 2.0, cy - RUMBLE_BODY_H / 2.0, RUMBLE_BODY_W, RUMBLE_BODY_H, INK_COLOR);
+            let mut off = RUMBLE_BODY_W / 2.0 + RUMBLE_WAVE_GAP;
+            for h in RUMBLE_WAVES_H {
+                draw_rect(cx + off, cy - h / 2.0, t, h, INK_COLOR);
+                draw_rect(cx - off - t, cy - h / 2.0, t, h, INK_COLOR);
+                off += t + RUMBLE_WAVE_GAP;
+            }
         }
     }
 }
@@ -418,15 +524,52 @@ fn armament_plate(images: &mut Images, pl: &mut Plate, arm: &Armament, item: Obj
     pl.pips_on = if pl.powered { pl.pips } else { 0 };
 }
 
-/// A scale as a badge shows it: no trailing zeros, then "x".
-fn times(k: f32) -> String {
+/// A number as a badge shows it: two decimals at most, no trailing zeros.
+fn badge_number(k: f32) -> String {
     let digits = format!("{k:.2}");
-    format!("{}x", digits.trim_end_matches('0').trim_end_matches('.'))
+    digits.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-/// Whether a settings plate's builtin is a setting the D-pad steps, the wheel staying open.
-fn is_knob(b: Builtin) -> bool {
-    matches!(b, Builtin::Zoom | Builtin::TextSize)
+/// A scale as a badge shows it: the number, then "x".
+fn times(k: f32) -> String {
+    format!("{}x", badge_number(k))
+}
+
+/// Whether a settings plate's action steps a setting by the D-pad, the wheel staying open.
+fn is_knob(action: Action) -> bool {
+    match action {
+        Action::Builtin(b) => matches!(b, Builtin::Zoom | Builtin::TextSize),
+        Action::Set(i) => !is_switch(i),
+        _ => false,
+    }
+}
+
+/// Shows a setting on its plate: lit while on, a pip per step or the switch's one, and the
+/// value as the badge.
+fn show_tuning(pl: &mut Plate, tuning: Tuning) {
+    match tuning {
+        Tuning::Switch(on) => {
+            pl.powered = on;
+            (pl.pips, pl.pips_on) = (SWITCH_PIPS, on as i32);
+            pl.badge = if on { ON_BADGE } else { OFF_BADGE }.to_string();
+        }
+        Tuning::Steps { value, step, max } => {
+            pl.powered = value > 0.0;
+            (pl.pips, pl.pips_on) = ((max / step).round() as i32, (value / step).round() as i32);
+            pl.badge = if pl.powered { badge_number(value) } else { OFF_BADGE.to_string() };
+        }
+    }
+}
+
+/// The glyph of a `set` plate whose setting has a look of its own.
+fn setting_glyph(key: &str) -> Option<Glyph> {
+    match key {
+        OVERLAY_KEY => Some(Glyph::Overlay),
+        RUMBLE_KEY => Some(Glyph::Rumble),
+        SHARPEN_KEY => Some(Glyph::Sharpen),
+        SPEED_LEVEL_KEY => Some(Glyph::FastForward),
+        _ => None,
+    }
 }
 
 fn crew_plates() -> [Plate; WHEEL_SLOTS] {
@@ -498,6 +641,8 @@ fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
         Builtin::Zoom => pl.glyph = Some(Glyph::Zoom),
         Builtin::TextSize => pl.glyph = Some(Glyph::Text(TEXT_GLYPH)),
         Builtin::Help => pl.glyph = Some(Glyph::Text(HELP_GLYPH)),
+        Builtin::CenterSwap => pl.glyph = Some(Glyph::Swap),
+        Builtin::Autopause => pl.glyph = Some(Glyph::Pause),
         _ => {}
     }
 }
@@ -518,6 +663,11 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
             pl.icon_base = icon.region.is_some();
         } else if let Action::Builtin(b) = pdef.action {
             builtin_art(images, pl, b);
+        } else if let Action::Set(i) = pdef.action {
+            pl.glyph = setting_glyph(option_name(i));
+        }
+        if pdef.action == Action::Builtin(Builtin::CenterSwap) {
+            pl.available = state::enemy_ship().is_some();
         }
         let Action::Key { code, .. } = pdef.action else {
             continue;
@@ -649,20 +799,24 @@ impl Layer {
     }
 
     /// Fills the settings plates' state: lit while on or set by hand, pips for the setting or
-    /// the switch, and the value as the badge.
+    /// the switch, and the value as the badge; sharpening only where a shrunk frame is filtered.
     fn show_settings(&mut self) {
         let cursor = self.bind.dpad_mouse;
         let (zoom, text_scale) = (self.zoom.level, self.cfg.text_scale);
+        let filtered = self.cfg.frame_filter && self.frame_per_window() > 1.0;
+        let autopause = self.autopause();
         for pl in &mut self.wheel.plates {
+            if let Some(Action::Set(i)) = pl.action {
+                show_tuning(pl, self.cfg.tuning(i));
+                pl.available = option_name(i) != SHARPEN_KEY || filtered;
+                continue;
+            }
             let Some(Action::Builtin(b)) = pl.action else {
                 continue;
             };
             match b {
-                Builtin::DpadMode => {
-                    pl.powered = cursor;
-                    (pl.pips, pl.pips_on) = (SWITCH_PIPS, cursor as i32);
-                    pl.badge = if cursor { MOUSE_ON_BADGE } else { MOUSE_OFF_BADGE }.to_string();
-                }
+                Builtin::DpadMode => show_tuning(pl, Tuning::Switch(cursor)),
+                Builtin::Autopause => show_tuning(pl, Tuning::Switch(autopause)),
                 Builtin::Zoom => {
                     let level = zoom::resolved_level(zoom);
                     pl.powered = zoom != ZOOM_AUTO;
@@ -760,12 +914,16 @@ impl Layer {
             Some(Action::LClick) => self.click_tap(MouseButton::Left),
             Some(Action::RClick) => self.click_tap(MouseButton::Right),
             Some(Action::Builtin(b)) => self.builtin_tap(b),
+            Some(Action::Set(i)) => {
+                self.tune(i, None);
+                self.buzz();
+            }
             _ => {}
         }
         if self.debug {
             log!("wheel {}: {}", self.layout.wheels[w].name, self.wheel.plates[sel].label);
         }
-        let knob = matches!(action, Some(Action::Builtin(b)) if is_knob(b));
+        let knob = action.is_some_and(is_knob);
         if kind == WheelKind::Action || (kind == WheelKind::Settings && !knob) {
             self.close_wheel();
         } else if self.wheel.open.is_some() {
@@ -808,6 +966,11 @@ impl Layer {
             match action {
                 Action::Builtin(Builtin::Zoom) => self.zoom_step(dir > 0),
                 Action::Builtin(Builtin::TextSize) => self.text_size_step(dir > 0),
+                Action::Builtin(Builtin::Autopause) => self.set_autopause(dir > 0),
+                Action::Set(i) => {
+                    self.tune(i, Some(dir > 0));
+                    self.buzz();
+                }
                 _ => return,
             }
             self.refresh_wheel();
@@ -850,6 +1013,7 @@ mod tests {
     use super::*;
     use crate::config::layout::{Layout, LABEL_CHARS};
     use crate::game::fake::{with_game, Game};
+    use crate::ui::zoom::View;
     use std::mem::size_of;
 
     const ENEMY_SHIP_ID: i32 = PLAYER_SHIP_ID + 1;
@@ -1014,7 +1178,7 @@ mod tests {
                 "[wheel:settings]\nkind = settings\nup = dpad_mode\nright = zoom\nleft = text_size\ndown = help\n";
             let p = plates(&mut l, layout);
             let shown = |p: &Plate| (p.powered, p.pips, p.pips_on, p.badge.clone());
-            assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, MOUSE_ON_BADGE.to_string()));
+            assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, ON_BADGE.to_string()));
             // The stand-in screen has the whole frame and three levels above it; 2 is the third.
             assert_eq!(shown(&p[2]), (true, 4, 3, "2x".to_string()));
             assert_eq!(shown(&p[6]), (true, TEXT_SIZES, 3, "1.5x".to_string()));
@@ -1037,6 +1201,42 @@ mod tests {
     }
 
     #[test]
+    fn set_plates_show_and_step_their_settings() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[wheel:settings]\nkind = settings\nup = set overlay\nright = set rumble\n\
+                          down = set sharpen\nleft = set speed_level\n";
+            let p = plates(&mut l, layout);
+            let shown = |p: &Plate| (p.powered, p.pips, p.pips_on, p.badge.clone());
+            assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, ON_BADGE.to_string()));
+            assert_eq!(shown(&p[2]), (true, 5, 2, "1".to_string()));
+            assert_eq!(shown(&p[6]), (true, 6, 6, "6".to_string()));
+            let glyphs = [0, 2, 4, 6].map(|i| p[i].glyph);
+            assert_eq!(
+                glyphs,
+                [Some(Glyph::Overlay), Some(Glyph::Rumble), Some(Glyph::Sharpen), Some(Glyph::FastForward)]
+            );
+            assert!(!p[4].available, "the frame is shown whole");
+            l.zoom.view = Some(View { x: 0.0, y: 0.0, w: GAME_W as f32, h: GAME_H as f32, k: 0.5 });
+            l.refresh_wheel();
+            assert!(l.wheel.plates[4].available, "a shrunk frame is filtered");
+            l.wheel.sel = Some(2);
+            l.adjust_plate(1);
+            assert_eq!(shown(&l.wheel.plates[2]), (true, 5, 3, "1.5".to_string()));
+            for _ in 0..4 {
+                l.adjust_plate(-1);
+            }
+            assert_eq!(shown(&l.wheel.plates[2]), (false, 5, 0, OFF_BADGE.to_string()));
+            l.wheel.sel = Some(6);
+            l.act_on_plate();
+            assert_eq!((l.cfg.speed_level, l.wheel.open), (1, Some(0)), "the top cycles to the lowest");
+            l.wheel.sel = Some(0);
+            l.act_on_plate();
+            assert_eq!((l.cfg.overlay, l.wheel.open), (false, None));
+        });
+    }
+
+    #[test]
     fn settings_plates_take_the_pointer_and_glyphs_unless_given_an_icon() {
         with_game(|g| {
             let mut l = Layer::default();
@@ -1054,6 +1254,33 @@ mod tests {
             assert!(p.iter().all(|pl| !shows_label(pl)));
             assert_eq!((p[1].icon, p[1].icon_base, p[1].glyph), (Some(door.ptr()), true, None));
             assert!(!p[1].icon_native, "a layout icon is fitted");
+        });
+    }
+
+    #[test]
+    fn the_autopause_plate_switches_both_pauses() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let p = plates(&mut l, "[wheel:settings]\nkind = settings\nup = autopause\n");
+            let shown = (p[0].powered, p[0].badge.as_str(), p[0].glyph);
+            assert_eq!(shown, (true, ON_BADGE, Some(Glyph::Pause)), "the wheel's pause alone is on");
+            l.wheel.sel = Some(0);
+            l.adjust_plate(1);
+            assert!(l.cfg.autopause_wheel && l.cfg.autopause_aim);
+            l.act_on_plate();
+            assert!(!l.cfg.autopause_wheel && !l.cfg.autopause_aim && l.wheel.open.is_none());
+        });
+    }
+
+    #[test]
+    fn the_other_ship_plate_waits_for_an_enemy_ship() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let layout = "[wheel:ship]\nup = center_swap \"Other ship\"\n";
+            let p = plates(&mut l, layout);
+            assert_eq!((p[0].available, p[0].glyph), (false, Some(Glyph::Swap)));
+            g.enemy_manager();
+            assert!(plates(&mut l, layout)[0].available);
         });
     }
 

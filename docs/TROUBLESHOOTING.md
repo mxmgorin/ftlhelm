@@ -8,7 +8,7 @@ before. Attach `ftlhelm.log` to a bug report.
 | --- | --- |
 | no `ftlhelm.log`, no `ftlhelm:` lines | the library did not load, or the process is not the native FTL: check the path in the launch options and that no Steam Play compatibility tool is forced |
 | `unknown build, inactive` | an FTL build other than Steam 1.6.13 or GOG 1.6.12 |
-| `cannot save` | `ftlhelm.ini` or its directory is not writable; zoom and text size reset on the next run |
+| `cannot save` | `ftlhelm.ini` or its directory is not writable; settings changed in the game reset on the next run |
 | `cannot write the default` | `ftlhelm.ini` is missing and its directory is not writable; the default layout runs, nothing is saved |
 | `layout: version N replaced by the default` | `ftlhelm.ini` was from an older ftlhelm: its settings carried over, controls and wheels are the new defaults, the old file is `ftlhelm.old.ini` |
 | `layout: cannot replace version N` | `ftlhelm.ini` is from an older ftlhelm and its directory is not writable; the old layout runs |

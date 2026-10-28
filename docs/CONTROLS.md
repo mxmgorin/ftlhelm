@@ -81,7 +81,7 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | --- | --- |
 | either stick | point at a plate |
 | D-pad left, right | previous, next plate |
-| D-pad up, down | add, take power; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the zoom or text size |
+| D-pad up, down | add, take power; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the plate's setting |
 | A | act on the plate |
 | B, or the wheel's own button | close |
 | hold another wheel's button | switch to that wheel |
@@ -95,10 +95,15 @@ wheels over menus, screens and the map too.
 | --- | --- | --- |
 | Mouse | switch the D-pad and sticks between zones and mouse mode | |
 | Zoom | next zoom level, back to auto after the last | zoom in, out; auto below the whole frame |
-| Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
+| Autopause | both autopauses off when either is on, else both on: while a wheel is open, and while a weapon or ability waits for a target | on, off |
+| Fast speed | next fast forward speed, the slowest after the fastest | faster, slower |
 | Help | the controls table | |
+| Rumble | next rumble strength, off after the strongest; a pulse at the new strength | stronger, weaker |
+| Overlay | switch the badge, the zone brackets and the crew markers | on, off |
+| Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
 
-Zoom and text size are kept between runs, see [Configuration](CONFIGURATION.md#settings).
+Autopause is lit while `autopause_wheel` or `autopause_aim` is on. Mouse mode resets each
+run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
 
 ## Zoom
 

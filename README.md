@@ -55,6 +55,8 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 | Start | pause | whole frame while zoomed |
 | Select | settings wheel | game menu |
 
+<p align="center"><img src="docs/images/wheels.png" alt="The six wheels: weapons and drones with their power pips and autofire, crew with their portraits and stations, systems with their power, ship orders, abilities, and settings" width="800"></p>
+
 ## Install
 
 Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG, and glibc 2.35 or later. The Windows and macOS builds are not supported. On another Linux build, ftlhelm stays inactive and the game runs without it.
