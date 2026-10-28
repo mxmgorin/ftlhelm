@@ -27,6 +27,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
   - **Frame filter**: smoother, sharper picture
   - **Text size**: event boxes and tooltips 1 to 2 times the game's own
   - **Pointer size**: the mouse arrow drawn up to twice as large
+  - **HUD shift**: on screens narrower than 16:9, the HUD's edge panels move toward the middle as far as the player ship leaves room
 - **Fast forward** while a button is held
 - **Mouse mode**: the D-pad and sticks move the game's cursor freely
 - **Touch**: the touchscreen works as the mouse
@@ -52,7 +53,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 | L2 | toggle the room's doors | doors become the zones |
 | R2 | beacon map | fast forward |
 | L3, R3 | mouse mode on, off | |
-| Start | pause | whole frame while zoomed |
+| Start | pause | zoom out while zoomed |
 | Select | settings wheel | game menu |
 
 <p align="center"><img src="docs/images/wheels.png" alt="The six wheels: weapons and drones with their power pips and autofire, crew with their portraits and stations, systems with their power, ship orders, abilities, and settings" width="800"></p>

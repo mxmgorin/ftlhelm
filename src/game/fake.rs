@@ -10,7 +10,7 @@
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use super::actions::MouseButton;
@@ -29,7 +29,8 @@ const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
 const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
 const GUI_SIZE: usize = STAND_IN.gui_equip_screen + EQUIP_OVER_AUG_CAPACITY + size_of::<u8>();
-const MANAGER_SIZE: usize = SHIPMANAGER_SHIP + SHIP_AIRLOCKS + VECTOR_FIELDS;
+/// Reaches the hull image's x, the Ship field farthest in.
+const MANAGER_SIZE: usize = SHIPMANAGER_SHIP + SHIP_IMAGE + IMAGE_X + size_of::<i32>();
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
 /// Reaches the literal flag of the member's name, its field farthest in.
@@ -99,6 +100,10 @@ pub enum Call {
     MouseMove(i32, i32),
     /// CrewControl::ClearSelectedCrew on the control at this address.
     ClearCrew(usize),
+    /// CrewControl::ClearCrewBoxes on the control at this address.
+    ClearCrewBoxes(usize),
+    /// SystemControl::UpdateSubSystemBox on the control at this address.
+    UpdateSubBox(usize),
 }
 
 /// A pad the joystick functions report: connected at `index`, or not at all.
@@ -123,6 +128,8 @@ static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
 static PADS: Mutex<Vec<FakePad>> = Mutex::new(Vec::new());
 static LIVE_STRINGS: AtomicIsize = AtomicIsize::new(0);
+/// The ShipGraph ShipGraph::GetShipInfo returns for any ship.
+static SHIP_GRAPH: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy)]
 struct Statics {
@@ -156,6 +163,11 @@ fn leak_block(size: usize) -> usize {
 /// Takes the calls recorded since the last take.
 pub fn calls() -> Vec<Call> {
     std::mem::take(&mut CALLS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// Makes `graph` the ShipGraph of every ship.
+pub fn set_ship_graph(graph: Obj) {
+    SHIP_GRAPH.store(graph.addr(), Ordering::Relaxed);
 }
 
 pub fn set_pad(state: FakePad) {
@@ -222,6 +234,18 @@ extern "C" fn mouse_move(_app: Ptr, x: c_int, y: c_int, _dx: c_int, _dy: c_int, 
 
 extern "C" fn clear_crew(control: Ptr) {
     record(Call::ClearCrew(control as usize));
+}
+
+extern "C" fn clear_crew_boxes(control: Ptr) {
+    record(Call::ClearCrewBoxes(control as usize));
+}
+
+extern "C" fn update_sub_box(control: Ptr) {
+    record(Call::UpdateSubBox(control as usize));
+}
+
+extern "C" fn ship_info(_id: c_int) -> Ptr {
+    SHIP_GRAPH.load(Ordering::Relaxed) as Ptr
 }
 
 /// Stores a malloc'd copy of `chars` at `out` and counts it live.
@@ -324,6 +348,9 @@ fn install_api() -> Statics {
     stand_in.rbutton_up = rbutton_up;
     stand_in.mouse_move = mouse_move;
     stand_in.clear_crew = clear_crew;
+    stand_in.clear_crew_boxes = clear_crew_boxes;
+    stand_in.update_sub_box = update_sub_box;
+    stand_in.ship_info = ship_info;
     stand_in.string_ctor = string_ctor;
     stand_in.string_dtor = string_dtor;
     stand_in.get_text = get_text;
@@ -373,6 +400,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     calls();
     set_pads(Vec::new());
     LIVE_STRINGS.store(0, Ordering::Relaxed);
+    SHIP_GRAPH.store(0, Ordering::Relaxed);
     let _reset = AppReset;
     let mut arena = Arena::default();
     let app = arena.alloc(APP_SIZE);

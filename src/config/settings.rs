@@ -129,6 +129,8 @@ pub struct Settings {
     pub text_scale: f32,
     /// The ship view's zoom level; ZOOM_AUTO picks by screen size.
     pub zoom: f32,
+    /// The HUD's edge panels move toward the middle on a screen narrower than the frame.
+    pub hud_shift: bool,
     /// The help shows at start, until it is first closed.
     pub help_at_start: bool,
     /// A frame the screen shrinks is area-averaged; off, the game filters it.
@@ -183,6 +185,7 @@ impl Default for Settings {
             rumble_time: RUMBLE_S,
             text_scale: TEXT_SCALE_AUTO,
             zoom: ZOOM_AUTO,
+            hud_shift: true,
             help_at_start: true,
             frame_filter: true,
             sharpen: SHARPEN_DEFAULT,
@@ -236,6 +239,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
+    ("hud_shift", Field::Bool(|c| &mut c.hud_shift)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
     ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
     (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),

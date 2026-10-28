@@ -12,6 +12,8 @@
 //!   event boxes scaled;
 //! - MouseControl::MeasureTooltip and ResourceControl::GetFontData scale tooltip fonts;
 //! - CSurface::GL_BlitFrameBuffer shows the zoomed view and averages a shrunk frame;
+//! - CrewBox::CrewBox and ShipStatus::OnMouseMove build the crew boxes and hit-test the
+//!   status panel with the HUD's left shift;
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
 use std::ffi::{c_int, c_void};
@@ -31,7 +33,7 @@ use crate::game::api::{self, api, Api, FontData, GlColor, Point, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
 use crate::game::offsets::{build_by_id, install_layout, MOUSE_INVALID_POINTER, MOUSE_VALID_POINTER};
 use crate::game::zones::record_button;
-use crate::game::{sound, state};
+use crate::game::{hud, sound, state};
 use crate::input::touch::{self, TouchPhase};
 use crate::ui::{shrink, text, zoom};
 
@@ -65,6 +67,10 @@ const BUTTON_MOVE_PROLOGUE: [u8; 8] = [0x8b, 0x47, 0x10, 0x44, 0x0f, 0xb6, 0x47,
 const BLIT_PIXEL_PROLOGUE: [u8; 6] = [0x41, 0x54, 0x55, 0x48, 0x89, 0xfd];
 /// push %r15; mov %rsi,%r15
 const RENDER_TOOLTIP_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xf7];
+/// push %r15; mov %rsi,%rax
+const CREW_BOX_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x48, 0x89, 0xf0];
+/// lea -0x6(%rsi),%eax; push %rbx; mov %rdi,%rbx
+const STATUS_MOUSE_PROLOGUE: [u8; 7] = [0x8d, 0x46, 0xfa, 0x53, 0x48, 0x89, 0xfb];
 /// The game puts the pointer's tooltip this far below the pointer's tip.
 const POINTER_TOOLTIP_DROP: i32 = 22;
 /// repz ret, then the padding nop's first bytes: the empty handler is shorter than a jump.
@@ -84,6 +90,8 @@ static FRAME_DRAW_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BLIT_FRAME_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BLIT_PIXEL_ORIG: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
+static CREW_BOX_ORIG: AtomicUsize = AtomicUsize::new(0);
+static STATUS_MOUSE_ORIG: AtomicUsize = AtomicUsize::new(0);
 /// The plain pointer's textures while the game draws its pointer, else 0.
 static POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 static POINTER_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -115,6 +123,7 @@ extern "C" fn onloop_hook(app: Ptr) {
             crash::install(api().onloop);
         }
         l.poll_files(t);
+        l.update_hud();
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
         l.run_queued_clicks();
@@ -234,6 +243,17 @@ extern "C" fn render_tooltip_hook(this: Ptr, at: Point, fixed: bool) {
     };
     // SAFETY: the original MouseControl::RenderTooltip on its own object.
     unsafe { orig::<extern "C" fn(Ptr, Point, bool)>(&RENDER_TOOLTIP_ORIG)(this, at, fixed) };
+}
+
+extern "C" fn crew_box_hook(this: Ptr, at: Point, crew: Ptr, number: c_int) {
+    let at = Point { x: at.x + hud::left_shift(), ..at };
+    // SAFETY: the original CrewBox constructor on its own object.
+    unsafe { orig::<extern "C" fn(Ptr, Point, Ptr, c_int)>(&CREW_BOX_ORIG)(this, at, crew, number) };
+}
+
+extern "C" fn status_mouse_hook(this: Ptr, x: c_int, y: c_int) {
+    // SAFETY: the original ShipStatus::OnMouseMove on its own object, at a position in its layout.
+    unsafe { orig::<extern "C" fn(Ptr, c_int, c_int)>(&STATUS_MOUSE_ORIG)(this, x - hud::left_shift(), y) };
 }
 
 extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
@@ -420,14 +440,28 @@ pub extern "C" fn init() {
             &RENDER_TOOLTIP_ORIG,
         );
     POINTER_TOOLTIP.store(pointer_tooltip, Ordering::Relaxed);
+    let hud_left = install(
+        "CrewBox::CrewBox",
+        a.crew_box_ctor,
+        crew_box_hook as *const () as usize,
+        &CREW_BOX_PROLOGUE,
+        &CREW_BOX_ORIG,
+    ) && install(
+        "ShipStatus::OnMouseMove",
+        a.status_mouse_move,
+        status_mouse_hook as *const () as usize,
+        &STATUS_MOUSE_PROLOGUE,
+        &STATUS_MOUSE_ORIG,
+    );
+    hud::set_left_hooked(hud_left);
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
         "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \
-         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, step cap {}, pad scan {}, \
-         sound recovery {}",
+         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, step cap {}, \
+         pad scan {}, sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
@@ -439,6 +473,7 @@ pub extern "C" fn init() {
         on(event_text),
         on(tooltip_text),
         on(zoom),
+        on(hud_left),
         on(step_cap.is_some()),
         on(pad_scan),
         on(sound_recovery)

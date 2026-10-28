@@ -25,20 +25,18 @@ const HELP_VERSION: &str = concat!("ftlhelm ", env!("CARGO_PKG_VERSION"));
 const URL_SCHEME: &str = "https://";
 /// A held click drags: a selection box over the ship, an item on a screen.
 const CLICK_HOLD_TITLE: &str = "Drag select";
-/// A held pause shows the whole frame of a zoomed view.
-const PAUSE_HOLD_TITLE: &str = "Whole frame";
+/// A held pause shows a zoomed view at its lowest level.
+const PAUSE_HOLD_TITLE: &str = "Zoom out";
 const BADGE_H: f32 = 30.0;
 const BADGE_PAD: f32 = 14.0;
 const BADGE_SEPARATOR: &str = " / ";
 const BADGE_MARGIN: f32 = 8.0;
-/// The pause button in the frame's bottom right corner; the margin holds its glow and keeps its
-/// reach off the HUD's rightmost box, the battery's.
+/// The pause button in the bottom right corner of the ship view's columns; the margin holds its
+/// glow and keeps its reach off the HUD's rightmost box, the battery's.
 const PAUSE_BUTTON_SIZE: f32 = 56.0;
 const PAUSE_MARGIN: f32 = 8.0;
 /// A touch reaches the button this far past its edge: in the corner, up to the frame's edges.
 const PAUSE_HIT_PAD: f32 = PAUSE_MARGIN;
-const PAUSE_CORNER: (f32, f32) =
-    (GAME_W as f32 - PAUSE_MARGIN - PAUSE_BUTTON_SIZE, GAME_H as f32 - PAUSE_MARGIN - PAUSE_BUTTON_SIZE);
 /// Its glyph's two bars.
 const PAUSE_BAR_W: f32 = 7.0;
 const PAUSE_BAR_H: f32 = 22.0;
@@ -217,9 +215,15 @@ impl Layer {
         self.zoom.view.map_or((GAME_W as f32, 0.0), |v| (v.right(), v.y))
     }
 
+    /// The pause button's place in the bottom right corner of the ship view's columns.
+    fn pause_corner(&self) -> (f32, f32) {
+        let inset = PAUSE_MARGIN + PAUSE_BUTTON_SIZE;
+        (self.zoom.span.right - inset, GAME_H as f32 - inset)
+    }
+
     /// Whether the view shows the pause button's place in the frame's corner.
     fn corner_shown(&self) -> bool {
-        let (x, y) = PAUSE_CORNER;
+        let (x, y) = self.pause_corner();
         self.zoom.view.is_none_or(|v| x + PAUSE_BUTTON_SIZE <= v.right() && y + PAUSE_BUTTON_SIZE <= v.bottom())
     }
 
@@ -231,7 +235,7 @@ impl Layer {
             return None;
         }
         if self.corner_shown() {
-            return Some(PAUSE_CORNER);
+            return Some(self.pause_corner());
         }
         let (right, top) = self.top_right();
         Some((right - PAUSE_MARGIN - PAUSE_BUTTON_SIZE, top + PAUSE_MARGIN))

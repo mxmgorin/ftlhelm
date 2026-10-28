@@ -76,6 +76,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `crew_marker` | 1 | switch | a green marker over each selected crew member on the ship view |
 | `pointer_scale_max` | 2 | 1 to 4 | the most times its size the pointer is drawn on a screen that shows the frame smaller than 1280x720; 1: the game's size |
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
+| `hud_shift` | 1 | switch | on a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as the player ship leaves room, and the ship view keeps to the HUD; 0: the game's layout |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
 | `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
 | `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |

@@ -9,6 +9,7 @@ use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
 use crate::game::zones::ZoneKind;
+use crate::ui::zoom::Span;
 
 /// Frames a newly opened screen gets to show its items before the focus gives up; a
 /// dialog's choices wait for the jump animation.
@@ -173,7 +174,8 @@ impl Layer {
         }
         let k = clampf((mag - dz) / (1.0 - dz), 0.0, 1.0).powf(self.cfg.cursor_curve);
         let step = k * self.cfg.cursor_speed * dt;
-        self.cursor.x = clampf(self.cursor.x + rx / mag * step, 0.0, (GAME_W - 1) as f32);
+        let span = if state::ship_view() { self.zoom.span } else { Span::FRAME };
+        self.cursor.x = clampf(self.cursor.x + rx / mag * step, span.left, span.right - 1.0);
         self.cursor.y = clampf(self.cursor.y + ry / mag * step, 0.0, (GAME_H - 1) as f32);
         self.send_cursor();
     }

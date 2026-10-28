@@ -100,12 +100,24 @@ pub const CAPP_MAIN_MENU: usize = 32;
 /// The Shift flag CApp::OnLoop samples once a frame and hands to the hotkeys.
 pub const CAPP_SHIFT_HELD: usize = 9;
 
+/// CommandGui::shipStatus, the hull, shield and resource panel in the top left corner.
+pub const GUI_SHIP_STATUS: usize = 0;
+/// ShipStatus::location, the point it draws from.
+pub const STATUS_LOCATION: usize = 0;
 pub const GUI_CREW_CONTROL: usize = 616;
 pub const CREW_CONTROL_SIZE: usize = 552;
 /// The HUD's top row; with a screen open, buttons above it belong to the background.
 pub const HUD_TOP_HEIGHT: i32 = 90;
 /// The HUD's bottom bar starts here; the screens' own buttons end above it.
 pub const HUD_BOTTOM_TOP: i32 = 610;
+/// The HUD's columns as the game draws them on its own: the status panel's top row ends
+/// with the scrap counter, the jump, ship and menu buttons stand beside it at the enemy
+/// window's height, and the left column (the evasion and oxygen box, the crew boxes) ends
+/// before the player ship.
+pub const STATUS_TOP_ROW_RIGHT: i32 = 505;
+pub const TOP_BUTTONS_LEFT: i32 = 531;
+pub const TOP_BUTTONS_RIGHT: i32 = 750;
+pub const LEFT_COLUMN_RIGHT: i32 = 98;
 pub const GUI_SYS_CONTROL: usize = 1168;
 pub const GUI_COMBAT_CONTROL: usize = 1416;
 pub const GUI_STAR_MAP: usize = 6504;
@@ -165,6 +177,9 @@ pub const BUTTON_ACTIVE: usize = 72;
 pub const SYSCTRL_BOXES: usize = 16;
 /// SystemControl's position; its boxes' locations are relative to it.
 pub const SYSCTRL_POSITION: usize = 60;
+/// SystemControl::subSystemPosition, where the subsystem boxes and their frame start,
+/// relative to SYSCTRL_POSITION.
+pub const SYSCTRL_SUB_POSITION: usize = 76;
 pub const SYSBOX_LOCATION: usize = 8;
 /// A system box takes clicks strictly between these offsets from its location, on both axes.
 pub const SYSBOX_CLICK_FROM: i32 = 21;
@@ -181,6 +196,12 @@ pub const COMBAT_DRONE_CONTROL: usize = 1056;
 pub const COMBAT_CURRENT_TARGET: usize = 1984;
 pub const COMBAT_POSITION: usize = 2000;
 pub const COMBAT_TARGET_POSITION: usize = 2016;
+/// CombatControl::boss_visual: the flagship's window, wider and placed apart.
+pub const COMBAT_BOSS: usize = 4456;
+/// The enemy window's x from COMBAT_POSITION as AddEnemyShip places an ordinary enemy's,
+/// and the window image's clear columns left of its frame.
+pub const HOSTILE_BOX_X: i32 = 125;
+pub const HOSTILE_FRAME_INSET: i32 = 10;
 pub const WEAPONCTRL_ARMED: usize = 216;
 pub const WEAPONCTRL_AUTOFIRE: usize = 224;
 pub const ARMAMENT_BOXES: usize = 32;
@@ -232,6 +253,20 @@ pub const CREW_ANIM: usize = 192;
 pub const CREW_ROOM: usize = 156;
 pub const CREW_SHIP: usize = 396;
 pub const PLAYER_SHIP_ID: i32 = 0;
+/// ShipObject::iShipId, the ship's index in ShipGraph's table.
+pub const SHIP_ID: usize = 8;
+/// Ship::horizontal_shift, the layout's offset to the ship's place on screen.
+pub const SHIP_HORIZONTAL_SHIFT: usize = 372;
+/// The player ship's x on screen before SHIP_HORIZONTAL_SHIFT, as CommandGui::AddEnemyShip
+/// places it for an ordinary enemy.
+pub const COMBAT_SHIP_X: i32 = 200;
+/// Ship::shipImage, the hull image's ImageDesc: drawn at its x, y from the ship box's origin.
+pub const SHIP_IMAGE: usize = 200;
+pub const IMAGE_W: usize = 12;
+pub const IMAGE_X: usize = 20;
+/// ShipGraph::shipBox, whose origin the ship's images are drawn from, relative to the ship's
+/// position on screen.
+pub const SHIPGRAPH_BOX: usize = 104;
 /// CrewMember's position on the ship it is on, from the ship's origin.
 pub const CREW_X: usize = 12;
 pub const CREW_Y: usize = 16;
@@ -248,6 +283,9 @@ pub const CREW_BOXES: usize = 96;
 pub const CREWBOX_CREW: usize = 32;
 /// Crew hotkeys run F1 up to this many.
 pub const CREW_HOTKEYS: usize = 8;
+/// CrewControl::stationsLastY: the station buttons' backgrounds are rebuilt only when their y
+/// differs from it.
+pub const CREW_STATIONS_LAST_Y: usize = 544;
 
 pub const EQUIP_BOXES: usize = 472;
 /// The overflow boxes Equipment keeps in its box list, and the flags that show them.

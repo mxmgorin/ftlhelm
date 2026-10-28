@@ -115,12 +115,17 @@ levels where a game pixel takes a whole or half number of screen pixels, up to 3
 whole frame. Auto, the default, is one level in on screens smaller than 1280x720 and the
 whole frame on others.
 
+On a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as
+the player ship leaves room (`hud_shift`), and the ship view keeps to the columns the HUD
+covers: its lowest level shows the whole HUD in place of the whole frame.
+
 | Input, zoomed | Effect |
 | --- | --- |
 | D-pad or flick toward no zone | move the view half its size that way, until the cursor moves |
-| hold Start | the whole frame until release |
+| hold Start | the lowest level until release: the whole frame, or the whole HUD on a narrower screen |
 
-The view rests on the frame's edges while the cursor stays clear of the view's edges.
+The view rests on the frame's edges, or the HUD's, while the cursor stays clear of the
+view's edges.
 
 ## Text size
 

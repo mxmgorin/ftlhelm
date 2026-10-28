@@ -818,9 +818,9 @@ impl Layer {
                 Builtin::DpadMode => show_tuning(pl, Tuning::Switch(cursor)),
                 Builtin::Autopause => show_tuning(pl, Tuning::Switch(autopause)),
                 Builtin::Zoom => {
-                    let level = zoom::resolved_level(zoom);
+                    let level = zoom::resolved_level(zoom, self.zoom.span);
                     pl.powered = zoom != ZOOM_AUTO;
-                    (pl.pips, pl.pips_on) = zoom::setting_pips(zoom);
+                    (pl.pips, pl.pips_on) = zoom::setting_pips(zoom, self.zoom.span);
                     pl.badge = if !pl.powered {
                         format!("{AUTO_BADGE} {}", times(level))
                     } else if level > ZOOM_MIN {

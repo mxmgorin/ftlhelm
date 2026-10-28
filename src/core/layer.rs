@@ -7,6 +7,7 @@ use crate::config::layout::Layout;
 use crate::config::settings::{FileWatch, Settings};
 use crate::debug::commands::Commands;
 use crate::game::actions::Actions;
+use crate::game::hud::Hud;
 use crate::game::zones::Zones;
 use crate::input::bindings::Bindings;
 use crate::input::cursor::{Cursor, FirstFocus};
@@ -33,6 +34,7 @@ pub struct Layer {
     pub touch: Touch,
     pub wheel: WheelUi,
     pub zoom: Zoom,
+    pub hud: Hud,
     pub images: Images,
     /// The font of the wheel's text.
     pub plate_font: i32,
@@ -58,6 +60,7 @@ impl Default for Layer {
             touch: Touch::default(),
             wheel: WheelUi::default(),
             zoom: Zoom::default(),
+            hud: Hud::default(),
             images: Images::default(),
             plate_font: WHEEL_FONT,
             help_shown: false,

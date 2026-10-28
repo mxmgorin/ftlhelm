@@ -7,11 +7,12 @@
 //!
 //! A level is a magnification of the whole frame as the game fits it to the screen. Each
 //! frame the layer eases the shown level and the camera toward their goals and publishes
-//! the view for the blit. The camera goal keeps the cursor, or the open wheel, inside the
-//! view's inner part, resting on a frame edge where that does. A pan moves the goal by hand
-//! and holds it until the focus moves; a peek shows the whole frame while it lasts. While
-//! zoomed, a window over the ship view is shown whole, as large as the screen allows.
-//! A frame shown smaller than it is drawn is area-averaged.
+//! the view for the blit. The ship view keeps to the frame columns the HUD covers, its span:
+//! its lowest level shows the span whole. The camera goal keeps the cursor, or the open
+//! wheel, inside the view's inner part, resting on an edge of the span where that does. A
+//! pan moves the goal by hand and holds it until the focus moves; a peek shows the span whole
+//! while it lasts. While zoomed, a window over the ship view is shown whole, as large
+//! as the screen allows. A frame shown smaller than it is drawn is area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -49,6 +50,27 @@ static BLITS: AtomicU32 = AtomicU32::new(0);
 /// What the next frame blit shows; None shows the whole frame as the game fits it.
 static SHOWN: Mutex<Option<Blit>> = Mutex::new(None);
 
+/// The frame columns the ship view keeps to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Span {
+    pub left: f32,
+    pub right: f32,
+}
+
+impl Span {
+    pub const FRAME: Span = Span { left: 0.0, right: GAME_W as f32 };
+
+    fn width(self) -> f32 {
+        self.right - self.left
+    }
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Span::FRAME
+    }
+}
+
 /// A part of the frame as the screen shows it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
@@ -68,12 +90,12 @@ fn fit_scale((sw, sh): (f32, f32)) -> f32 {
 
 impl View {
     /// The view at `level` on a screen of `screen` pixels, centred as near `center` as the
-    /// frame allows; its origin on whole screen pixels.
-    pub fn at(screen: (f32, f32), level: f32, (cx, cy): (f32, f32)) -> View {
+    /// frame's rows and `span`'s columns allow; its origin on whole screen pixels.
+    pub fn at(screen: (f32, f32), level: f32, (cx, cy): (f32, f32), span: Span) -> View {
         let k = fit_scale(screen) * level;
-        let w = (screen.0 / k).min(GAME_W as f32);
+        let w = (screen.0 / k).min(span.width());
         let h = (screen.1 / k).min(GAME_H as f32);
-        let x = (clampf(cx - w / 2.0, 0.0, GAME_W as f32 - w) * k).floor() / k;
+        let x = (clampf(cx - w / 2.0, span.left, span.right - w) * k).floor() / k;
         let y = (clampf(cy - h / 2.0, 0.0, GAME_H as f32 - h) * k).floor() / k;
         View { x, y, w, h, k }
     }
@@ -118,18 +140,25 @@ fn same_level(a: f32, b: f32) -> bool {
     a.max(b) / a.min(b) < LEVEL_MERGE
 }
 
-/// The levels zoom steps through on a screen of `screen` pixels, rising: the whole frame,
-/// the pixel-exact levels, and the level that fills the screen unless an exact one is as
-/// good as it.
-fn levels(screen: (f32, f32)) -> Vec<f32> {
+/// The level that shows `span` whole on a screen of `screen` pixels; ZOOM_MIN for the
+/// whole frame's columns.
+fn span_level(screen: (f32, f32), span: Span) -> f32 {
+    ((screen.0 / span.width()).min(screen.1 / GAME_H as f32) / fit_scale(screen)).max(ZOOM_MIN)
+}
+
+/// The levels zoom steps through on a screen of `screen` pixels over `span`, rising: the one
+/// that shows the span whole, the pixel-exact levels past it, and the level that fills the
+/// screen unless an exact one is as good as it.
+fn levels(screen: (f32, f32), span: Span) -> Vec<f32> {
     let fit = fit_scale(screen);
-    let mut out = vec![ZOOM_MIN];
-    let mut k = (fit / EXACT_STEP).floor() * EXACT_STEP + EXACT_STEP;
+    let lowest = span_level(screen, span);
+    let mut out = vec![lowest];
+    let mut k = (fit * lowest / EXACT_STEP).floor() * EXACT_STEP + EXACT_STEP;
     while k / fit <= ZOOM_MAX {
         out.push(k / fit);
         k += EXACT_STEP;
     }
-    let fill = (screen.0 / GAME_W as f32).max(screen.1 / GAME_H as f32) / fit;
+    let fill = (screen.0 / span.width()).max(screen.1 / GAME_H as f32) / fit;
     if fill <= ZOOM_MAX && !out.iter().any(|&l| same_level(l, fill)) {
         out.push(fill);
     }
@@ -138,13 +167,13 @@ fn levels(screen: (f32, f32)) -> Vec<f32> {
     out
 }
 
-/// The level next to `level` among `levels`, up or down; the top stays, the bottom is
+/// The level next to `level` among `levels`, up or down; the top stays, the lowest is
 /// ZOOM_MIN.
 fn step(levels: &[f32], level: f32, up: bool) -> f32 {
     if up {
         levels.iter().copied().find(|&l| l > level && !same_level(l, level)).unwrap_or(level)
     } else {
-        levels.iter().rev().copied().find(|&l| l < level && !same_level(l, level)).unwrap_or(ZOOM_MIN)
+        levels.iter().skip(1).rev().copied().find(|&l| l < level && !same_level(l, level)).unwrap_or(ZOOM_MIN)
     }
 }
 
@@ -164,34 +193,35 @@ fn hull(rect: Rect, [left, top, right, bottom]: [f32; 4]) -> Rect {
     Rect { x, y, w: right - x, h: bottom - y }
 }
 
-/// The level ZOOM_AUTO takes on a screen of `screen` pixels: the first past the whole
-/// frame where the screen shrinks the frame, else the whole frame.
-fn auto_level(screen: (f32, f32)) -> f32 {
-    if fit_scale(screen) >= 1.0 {
-        return ZOOM_MIN;
+/// The level ZOOM_AUTO takes on a screen of `screen` pixels over `span`: the first past the
+/// lowest where the screen shows the frame shrunk there, else the lowest.
+fn auto_level(screen: (f32, f32), span: Span) -> f32 {
+    let all = levels(screen, span);
+    if fit_scale(screen) * all[0] >= 1.0 {
+        return all[0];
     }
-    step(&levels(screen), ZOOM_MIN, true)
+    step(&all, all[0], true)
 }
 
-/// The level the `zoom` setting `level` takes on a screen of `screen` pixels.
-fn resolve(level: f32, screen: (f32, f32)) -> f32 {
+/// The level the `zoom` setting `level` takes on a screen of `screen` pixels over `span`.
+fn resolve(level: f32, screen: (f32, f32), span: Span) -> f32 {
     if level == ZOOM_AUTO {
-        auto_level(screen)
+        auto_level(screen, span)
     } else {
-        clampf(level, ZOOM_MIN, ZOOM_MAX)
+        clampf(level, span_level(screen, span), ZOOM_MAX)
     }
 }
 
-/// The level the `zoom` setting `level` takes on the current screen; ZOOM_MIN before the
-/// game has one.
-pub fn resolved_level(level: f32) -> f32 {
-    screen_size().map_or(ZOOM_MIN, |screen| resolve(level, screen))
+/// The level the `zoom` setting `level` takes on the current screen over `span`; ZOOM_MIN
+/// before the game has a screen.
+pub fn resolved_level(level: f32, span: Span) -> f32 {
+    screen_size().map_or(ZOOM_MIN, |screen| resolve(level, screen, span))
 }
 
 /// The `zoom` setting a step up or down from `setting` among `levels`, from `shown`, the
-/// level it takes; a step below the whole frame is auto.
+/// level it takes; a step below the lowest is auto.
 fn step_setting(levels: &[f32], setting: f32, shown: f32, up: bool) -> f32 {
-    if !up && setting != ZOOM_AUTO && same_level(shown, ZOOM_MIN) {
+    if !up && setting != ZOOM_AUTO && same_level(shown, levels[0]) {
         ZOOM_AUTO
     } else {
         step(levels, shown, up)
@@ -212,28 +242,28 @@ fn cycle_setting(levels: &[f32], setting: f32, shown: f32) -> f32 {
     }
 }
 
-/// The zoom plate's pips for the `zoom` setting on the current screen: one per level, the
-/// whole frame included, and how many the setting reaches; none for auto.
-pub fn setting_pips(setting: f32) -> (i32, i32) {
+/// The zoom plate's pips for the `zoom` setting on the current screen over `span`: one per
+/// level, the lowest included, and how many the setting reaches; none for auto.
+pub fn setting_pips(setting: f32, span: Span) -> (i32, i32) {
     let Some(screen) = screen_size() else {
         return (0, 0);
     };
-    let all = levels(screen);
-    let level = resolve(setting, screen);
+    let all = levels(screen, span);
+    let level = resolve(setting, screen, span);
     let reached = all.iter().filter(|&&l| l <= level || same_level(l, level)).count();
     (all.len() as i32, if setting == ZOOM_AUTO { 0 } else { reached as i32 })
 }
 
-/// The centre along one axis for a view of `size` over `frame` that holds `lo..hi` inside
-/// its inner part: on a frame edge where that does, the nearer to `center` of two, else the
-/// nearest to `center`; the middle of `lo..hi` when the inner part is too small. A view on a
-/// frame edge keeps no margin on that side.
-fn follow_axis(center: f32, size: f32, lo: f32, hi: f32, frame: f32) -> f32 {
+/// The centre along one axis for a view of `size` within `from..to` that holds `lo..hi`
+/// inside its inner part: on an edge where that does, the nearer to `center` of two, else
+/// the nearest to `center`; the middle of `lo..hi` when the inner part is too small. A view
+/// on an edge keeps no margin on that side.
+fn follow_axis(center: f32, size: f32, lo: f32, hi: f32, (from, to): (f32, f32)) -> f32 {
     let half_inner = size * (0.5 - EDGE);
     if hi - lo > 2.0 * half_inner {
         return (lo + hi) / 2.0;
     }
-    let (low_edge, high_edge) = (size / 2.0, frame - size / 2.0);
+    let (low_edge, high_edge) = (from + size / 2.0, to - size / 2.0);
     [(low_edge, hi <= low_edge + half_inner), (high_edge, lo >= high_edge - half_inner)]
         .into_iter()
         .filter(|&(_, holds)| holds)
@@ -250,6 +280,12 @@ fn ease(from: f32, to: f32, dt: f32, snap: f32) -> f32 {
     } else {
         next
     }
+}
+
+/// Whether the screen is narrower than the frame, so a view that fills its height crops the
+/// frame's sides.
+pub fn narrower_than_frame() -> bool {
+    screen_size().is_some_and(|(w, h)| w * (GAME_H as f32) < h * GAME_W as f32)
 }
 
 /// The screen's size in pixels; None before the game has a display.
@@ -307,6 +343,8 @@ enum Scene {
     Ship,
     /// A window, whole and as large as the screen allows.
     Window(Rect),
+    /// The ship view at its lowest level: the span whole.
+    Span,
     Whole,
 }
 
@@ -314,6 +352,8 @@ enum Scene {
 pub struct Zoom {
     /// The ship view's level as the `zoom` setting gives it, ZOOM_AUTO included.
     pub level: f32,
+    /// The frame columns the ship view keeps to.
+    pub span: Span,
     /// The level the current screen takes: `level` on the ship view, else ZOOM_MIN.
     pub target: f32,
     /// The point the camera aims to centre.
@@ -336,6 +376,7 @@ impl Default for Zoom {
         let middle = (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0);
         Zoom {
             level: ZOOM_MIN,
+            span: Span::FRAME,
             target: ZOOM_MIN,
             goal: middle,
             pin: None,
@@ -354,26 +395,30 @@ impl Zoom {
     /// to show, None for the whole frame.
     fn advance(&mut self, screen: (f32, f32), scene: Scene, focus: [f32; 4], dt: f32) -> Option<View> {
         let middle = (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0);
-        let toward = match scene {
+        let (toward, span) = match scene {
             Scene::Ship => {
-                self.target = resolve(self.level, screen);
+                self.target = resolve(self.level, screen, self.span);
                 self.follow(screen, focus);
-                self.goal
+                (self.goal, self.span)
             }
             Scene::Window(rect) => {
                 self.target = fit_level(screen, rect);
-                rect.center()
+                (rect.center(), Span::FRAME)
+            }
+            Scene::Span => {
+                self.target = span_level(screen, self.span);
+                (((self.span.left + self.span.right) / 2.0, middle.1), self.span)
             }
             Scene::Whole => {
                 self.target = ZOOM_MIN;
-                middle
+                (middle, Span::FRAME)
             }
         };
-        let (tx, ty) = View::at(screen, self.target, toward).center();
+        let (tx, ty) = View::at(screen, self.target, toward, span).center();
         self.shown_level = ease(self.shown_level, self.target, dt, SNAP_LEVEL);
         let (cx, cy) = self.shown_center;
         self.shown_center = (ease(cx, tx, dt, SNAP_PX), ease(cy, ty, dt, SNAP_PX));
-        (self.shown_level > ZOOM_MIN).then(|| View::at(screen, self.shown_level, self.shown_center))
+        (self.shown_level > ZOOM_MIN).then(|| View::at(screen, self.shown_level, self.shown_center, span))
     }
 
     /// Moves the ship view's camera goal to keep `focus` in view, unless a pan holds it.
@@ -382,17 +427,17 @@ impl Zoom {
         if self.target <= ZOOM_MIN {
             return;
         }
-        let goal = View::at(screen, self.target, self.goal);
+        let goal = View::at(screen, self.target, self.goal, self.span);
         let (gx, gy) = goal.center();
         let [left, top, right, bottom] = focus;
         let aim = if self.pin == Some(focus) {
             (gx, gy)
         } else {
             self.pin = None;
-            let (fw, fh) = (GAME_W as f32, GAME_H as f32);
-            (follow_axis(gx, goal.w, left, right, fw), follow_axis(gy, goal.h, top, bottom, fh))
+            let (columns, rows) = ((self.span.left, self.span.right), (0.0, GAME_H as f32));
+            (follow_axis(gx, goal.w, left, right, columns), follow_axis(gy, goal.h, top, bottom, rows))
         };
-        self.goal = View::at(screen, self.target, aim).center();
+        self.goal = View::at(screen, self.target, aim, self.span).center();
     }
 
     /// Drops to the whole frame at once.
@@ -410,8 +455,8 @@ impl Layer {
         let Some(screen) = screen_size() else {
             return;
         };
-        let setting = self.zoom.level;
-        self.zoom.level = step_setting(&levels(screen), setting, resolve(setting, screen), up);
+        let (setting, span) = (self.zoom.level, self.zoom.span);
+        self.zoom.level = step_setting(&levels(screen, span), setting, resolve(setting, screen, span), up);
         log!("zoom {:.2}", self.zoom.level);
     }
 
@@ -421,8 +466,8 @@ impl Layer {
         let Some(screen) = screen_size() else {
             return;
         };
-        let setting = self.zoom.level;
-        self.zoom.level = cycle_setting(&levels(screen), setting, resolve(setting, screen));
+        let (setting, span) = (self.zoom.level, self.zoom.span);
+        self.zoom.level = cycle_setting(&levels(screen, span), setting, resolve(setting, screen, span));
         log!("zoom {:.2}", self.zoom.level);
     }
 
@@ -438,7 +483,7 @@ impl Layer {
         } else {
             y += dy.signum() * view.h * PAN_STEP;
         }
-        self.zoom.goal = View::at(screen, self.zoom.target, (x, y)).center();
+        self.zoom.goal = View::at(screen, self.zoom.target, (x, y), self.zoom.span).center();
         self.zoom.pin = Some(self.zoom_focus());
         true
     }
@@ -496,9 +541,11 @@ impl Layer {
         };
         let peeking = self.zoom.peek_from.is_some_and(|t| now_s() - t >= self.cfg.tap_hold as f64);
         let focus = self.zoom_focus();
-        let window = state::window_rect().filter(|_| resolve(self.zoom.level, screen) > ZOOM_MIN);
-        let scene = if self.help_shown || peeking {
+        let window = state::window_rect().filter(|_| resolve(self.zoom.level, screen, self.zoom.span) > ZOOM_MIN);
+        let scene = if self.help_shown {
             Scene::Whole
+        } else if peeking {
+            Scene::Span
         } else if state::ship_view() {
             Scene::Ship
         } else if let Some(rect) = window {
@@ -529,14 +576,14 @@ mod tests {
 
     #[test]
     fn levels_are_the_whole_frame_the_fill_and_the_pixel_exact_ones() {
-        assert!(close(&levels(SMALL), &[1.0, 1.333, 2.0, 3.0]));
-        assert!(close(&levels(SQUARE), &[1.0, 1.778, 2.667]));
-        assert!(close(&levels(WIDE), &[1.0, 1.5, 2.0, 2.5, 3.0]));
+        assert!(close(&levels(SMALL, Span::FRAME), &[1.0, 1.333, 2.0, 3.0]));
+        assert!(close(&levels(SQUARE, Span::FRAME), &[1.0, 1.778, 2.667]));
+        assert!(close(&levels(WIDE, Span::FRAME), &[1.0, 1.5, 2.0, 2.5, 3.0]));
     }
 
     #[test]
     fn steps_stop_at_the_ends() {
-        let l = levels(SMALL);
+        let l = levels(SMALL, Span::FRAME);
         assert_eq!(step(&l, ZOOM_MIN, true), l[1]);
         assert_eq!(step(&l, l[1], false), ZOOM_MIN);
         assert_eq!(step(&l, ZOOM_MIN, false), ZOOM_MIN);
@@ -546,15 +593,18 @@ mod tests {
 
     #[test]
     fn auto_zooms_one_level_in_where_the_screen_shrinks_the_frame() {
-        assert!(close(&[auto_level(SMALL), auto_level(SQUARE), auto_level((854.0, 480.0))], &[1.333, 1.778, 1.5]));
-        assert_eq!(auto_level(WIDE), ZOOM_MIN);
-        assert_eq!(resolve(ZOOM_AUTO, WIDE), ZOOM_MIN);
-        assert_eq!(resolve(2.0, SMALL), 2.0);
+        assert!(close(
+            &[auto_level(SMALL, Span::FRAME), auto_level(SQUARE, Span::FRAME), auto_level((854.0, 480.0), Span::FRAME)],
+            &[1.333, 1.778, 1.5]
+        ));
+        assert_eq!(auto_level(WIDE, Span::FRAME), ZOOM_MIN);
+        assert_eq!(resolve(ZOOM_AUTO, WIDE, Span::FRAME), ZOOM_MIN);
+        assert_eq!(resolve(2.0, SMALL, Span::FRAME), 2.0);
     }
 
     #[test]
     fn settings_step_from_what_auto_shows_and_back_to_auto_below_the_whole_frame() {
-        let (l, auto) = (levels(SMALL), auto_level(SMALL));
+        let (l, auto) = (levels(SMALL, Span::FRAME), auto_level(SMALL, Span::FRAME));
         assert_eq!(step_setting(&l, ZOOM_AUTO, auto, true), step(&l, auto, true));
         assert_eq!(step_setting(&l, ZOOM_AUTO, auto, false), ZOOM_MIN);
         assert_eq!(step_setting(&l, ZOOM_MIN, ZOOM_MIN, false), ZOOM_AUTO);
@@ -564,8 +614,8 @@ mod tests {
 
     #[test]
     fn a_cycle_runs_from_auto_through_the_levels_back_to_auto() {
-        let l = levels(SMALL);
-        assert_eq!(cycle_setting(&l, ZOOM_AUTO, auto_level(SMALL)), ZOOM_MIN);
+        let l = levels(SMALL, Span::FRAME);
+        assert_eq!(cycle_setting(&l, ZOOM_AUTO, auto_level(SMALL, Span::FRAME)), ZOOM_MIN);
         assert_eq!(cycle_setting(&l, ZOOM_MIN, ZOOM_MIN), l[1]);
         assert_eq!(cycle_setting(&l, l[2], l[2]), l[3]);
         assert_eq!(cycle_setting(&l, ZOOM_MAX, ZOOM_MAX), ZOOM_AUTO);
@@ -573,13 +623,13 @@ mod tests {
 
     #[test]
     fn a_view_fills_the_screen_inside_the_frame() {
-        let v = View::at(SMALL, 2.0, (0.0, 0.0));
+        let v = View::at(SMALL, 2.0, (0.0, 0.0), Span::FRAME);
         assert_eq!(v, View { x: 0.0, y: 0.0, w: 640.0, h: 480.0, k: 1.0 });
-        let v = View::at(SMALL, 2.0, (GAME_W as f32, GAME_H as f32));
+        let v = View::at(SMALL, 2.0, (GAME_W as f32, GAME_H as f32), Span::FRAME);
         assert_eq!((v.right(), v.y + v.h), (GAME_W as f32, GAME_H as f32));
-        let whole = View::at(SMALL, ZOOM_MIN, (100.0, 100.0));
+        let whole = View::at(SMALL, ZOOM_MIN, (100.0, 100.0), Span::FRAME);
         assert_eq!((whole.x, whole.y, whole.w, whole.h), (0.0, 0.0, GAME_W as f32, GAME_H as f32));
-        let b = Blit::new(View::at(SQUARE, 1.2, (640.0, 360.0)), SQUARE);
+        let b = Blit::new(View::at(SQUARE, 1.2, (640.0, 360.0), Span::FRAME), SQUARE);
         assert_eq!(b.viewport[2], SQUARE.0 as i32);
         assert!(b.viewport[1] > 0 && b.viewport[1] * 2 + b.viewport[3] == SQUARE.1 as i32);
     }
@@ -587,20 +637,20 @@ mod tests {
     #[test]
     fn the_camera_rests_on_a_frame_edge_that_holds_the_focus() {
         let frame = GAME_W as f32;
-        let at = |center, size, x| follow_axis(center, size, x, x, frame);
+        let at = |center, size, x| follow_axis(center, size, x, x, (0.0, frame));
         // A square screen's view: the left half of the frame, the right, or between them.
         assert_eq!(at(640.0, 720.0, 232.0), 360.0);
         assert_eq!(at(360.0, 720.0, 1000.0), frame - 360.0);
         assert_eq!(at(360.0, 720.0, 640.0), 640.0 - 720.0 * (0.5 - EDGE));
         // Both edges hold it: the nearer one.
         assert_eq!(at(700.0, 960.0, 600.0), frame - 480.0);
-        assert_eq!(follow_axis(500.0, 100.0, 0.0, 400.0, frame), 200.0);
+        assert_eq!(follow_axis(500.0, 100.0, 0.0, 400.0, (0.0, frame)), 200.0);
     }
 
     #[test]
     fn a_screen_pixel_maps_back_to_the_frame_point_the_view_shows_there() {
         for (screen, level) in [(SMALL, 2.0), (SQUARE, 1.2), (WIDE, 1.5)] {
-            let b = Blit::new(View::at(screen, level, (900.0, 500.0)), screen);
+            let b = Blit::new(View::at(screen, level, (900.0, 500.0), Span::FRAME), screen);
             let [x, y, w, h] = b.viewport.map(|v| v as f32);
             assert_eq!(b.to_frame(x, y), (b.view.x, b.view.y));
             let (rx, by) = b.to_frame(x + w, y + h);
@@ -658,5 +708,56 @@ mod tests {
         }
         assert_eq!((view, z.target), (None, ZOOM_MIN));
         assert_eq!(z.goal, v.center());
+    }
+
+    /// The Kestrel's HUD moved in on a narrow screen.
+    const HUD: Span = Span { left: 20.0, right: 1169.0 };
+
+    #[test]
+    fn the_lowest_level_shows_the_hud_whole_and_auto_magnifies_as_before() {
+        assert!(close(&levels(SMALL, HUD), &[1.114, 1.333, 2.0, 3.0]));
+        assert!(close(&levels(SQUARE, HUD), &[1.114, 1.778, 2.667]));
+        assert!(close(&[auto_level(SMALL, HUD), auto_level(SQUARE, HUD)], &[1.333, 1.778]));
+        assert!(close(&[resolve(ZOOM_MIN, SMALL, HUD), resolve(2.0, SMALL, HUD)], &[1.114, 2.0]));
+        let v = View::at(SMALL, resolve(ZOOM_MIN, SMALL, HUD), (0.0, 0.0), HUD);
+        assert!((v.x - HUD.left).abs() < 1.0 && (v.right() - HUD.right).abs() < 1.0);
+    }
+
+    #[test]
+    fn the_lowest_level_is_stored_as_the_whole_frame() {
+        let l = levels(SMALL, HUD);
+        assert_eq!(step(&l, l[1], false), ZOOM_MIN);
+        assert_eq!(step_setting(&l, ZOOM_MIN, l[0], false), ZOOM_AUTO);
+        assert_eq!(cycle_setting(&l, ZOOM_MIN, l[0]), l[1]);
+    }
+
+    #[test]
+    fn a_peek_shows_the_hud_whole_or_the_whole_frame() {
+        let mut z = Zoom { level: 2.0, span: HUD, ..Zoom::default() };
+        let mut view = None;
+        for _ in 0..120 {
+            view = z.advance(SMALL, Scene::Span, [300.0; 4], DT);
+        }
+        let v = view.expect("the HUD's columns are narrower than the frame");
+        assert!((v.x - HUD.left).abs() < 1.0 && (v.right() - HUD.right).abs() < 1.0);
+        z.span = Span::FRAME;
+        for _ in 0..120 {
+            view = z.advance(SMALL, Scene::Span, [300.0; 4], DT);
+        }
+        assert_eq!(view, None);
+    }
+
+    #[test]
+    fn the_camera_rests_on_the_hud_edges() {
+        let mut z = Zoom { level: 2.0, span: HUD, ..Zoom::default() };
+        let mut view = None;
+        for cursor in [[30.0, 300.0, 30.0, 300.0], [1160.0, 300.0, 1160.0, 300.0]] {
+            for _ in 0..120 {
+                view = z.advance(SMALL, Scene::Ship, cursor, DT);
+            }
+            let v = view.expect("zoomed on the ship view");
+            assert!(v.x >= HUD.left - 1.0 && v.right() <= HUD.right + 1.0);
+            assert!((v.x - HUD.left).abs() < 1.0 || (v.right() - HUD.right).abs() < 1.0);
+        }
     }
 }
