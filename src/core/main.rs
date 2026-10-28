@@ -14,9 +14,10 @@
 //! - CSurface::GL_BlitFrameBuffer shows the zoomed view and averages a shrunk frame;
 //! - CrewBox::CrewBox and ShipStatus::OnMouseMove build the crew boxes and hit-test the
 //!   status panel with the HUD's left shift;
+//! - ResourceControl::GetImageId hands the game the iPad art of the sets switched on;
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::{c_char, c_int, c_void, CStr};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
@@ -32,8 +33,9 @@ use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, FontData, GlColor, Point, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
 use crate::game::offsets::{build_by_id, install_layout, MOUSE_INVALID_POINTER, MOUSE_VALID_POINTER};
+use crate::game::string::GameString;
 use crate::game::zones::record_button;
-use crate::game::{hud, sound, state};
+use crate::game::{hud, ipad_art, sound, state};
 use crate::input::touch::{self, TouchPhase};
 use crate::ui::{shrink, text, zoom};
 
@@ -71,6 +73,8 @@ const RENDER_TOOLTIP_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xf7];
 const CREW_BOX_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x48, 0x89, 0xf0];
 /// lea -0x6(%rsi),%eax; push %rbx; mov %rdi,%rbx
 const STATUS_MOUSE_PROLOGUE: [u8; 7] = [0x8d, 0x46, 0xfa, 0x53, 0x48, 0x89, 0xfb];
+/// push %r12; push %rbp; mov %rsi,%rbp
+const IMAGE_ID_PROLOGUE: [u8; 6] = [0x41, 0x54, 0x55, 0x48, 0x89, 0xf5];
 /// The game puts the pointer's tooltip this far below the pointer's tip.
 const POINTER_TOOLTIP_DROP: i32 = 22;
 /// repz ret, then the padding nop's first bytes: the empty handler is shorter than a jump.
@@ -92,6 +96,7 @@ static BLIT_PIXEL_ORIG: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CREW_BOX_ORIG: AtomicUsize = AtomicUsize::new(0);
 static STATUS_MOUSE_ORIG: AtomicUsize = AtomicUsize::new(0);
+static IMAGE_ID_ORIG: AtomicUsize = AtomicUsize::new(0);
 /// The plain pointer's textures while the game draws its pointer, else 0.
 static POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 static POINTER_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -124,6 +129,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         }
         l.poll_files(t);
         l.update_hud();
+        l.update_ipad_art();
         text::keep_boxes_to(l.zoom.span);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
@@ -255,6 +261,20 @@ extern "C" fn crew_box_hook(this: Ptr, at: Point, crew: Ptr, number: c_int) {
 extern "C" fn status_mouse_hook(this: Ptr, x: c_int, y: c_int) {
     // SAFETY: the original ShipStatus::OnMouseMove on its own object, at a position in its layout.
     unsafe { orig::<extern "C" fn(Ptr, c_int, c_int)>(&STATUS_MOUSE_ORIG)(this, x - hud::left_shift(), y) };
+}
+
+extern "C" fn image_id_hook(resources: Ptr, name: *const Ptr) -> Ptr {
+    // SAFETY: the original ResourceControl::GetImageId on its own object and a std::string.
+    let lookup =
+        |name: *const Ptr| unsafe { orig::<extern "C" fn(Ptr, *const Ptr) -> Ptr>(&IMAGE_ID_ORIG)(resources, name) };
+    // SAFETY: the game passes a constructed std::string, whose characters end with a NUL.
+    let swap = ipad_art::swapped(unsafe { CStr::from_ptr(*name as *const c_char) });
+    let texture = swap.map_or(std::ptr::null_mut(), |ipad| lookup(GameString::new(&ipad).as_ptr()));
+    if texture.is_null() {
+        lookup(name)
+    } else {
+        texture
+    }
 }
 
 extern "C" fn blit_frame_hook(fb: Ptr, w: f32, h: f32, smooth: bool) {
@@ -455,14 +475,22 @@ pub extern "C" fn init() {
         &STATUS_MOUSE_ORIG,
     );
     hud::set_left_hooked(hud_left);
+    let ipad = install(
+        "ResourceControl::GetImageId",
+        a.image_id as usize,
+        image_id_hook as *const () as usize,
+        &IMAGE_ID_PROLOGUE,
+        &IMAGE_ID_ORIG,
+    );
+    ipad_art::set_hooked(ipad);
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install();
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
         "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \
-         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, step cap {}, \
-         pad scan {}, sound recovery {}",
+         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, ipad art {}, \
+         step cap {}, pad scan {}, sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
@@ -475,6 +503,7 @@ pub extern "C" fn init() {
         on(tooltip_text),
         on(zoom),
         on(hud_left),
+        on(ipad),
         on(step_cap.is_some()),
         on(pad_scan),
         on(sound_recovery)

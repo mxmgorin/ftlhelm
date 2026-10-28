@@ -159,6 +159,12 @@ pub const STARMAP_TRANSLATION: usize = 184;
 pub const STARMAP_CHOOSING_SECTOR: usize = 2232;
 pub const STARMAP_SECTOR_OFFSET: usize = 3240;
 pub const STARMAP_SECTOR_HITBOXES: usize = 3256;
+/// StarMap's beacon icons, primitives it builds once: unexplored, explored, hostile and
+/// hazard beacons.
+pub const STARMAP_UNEXPLORED: usize = 1424;
+pub const STARMAP_EXPLORED: usize = 1432;
+pub const STARMAP_WARNING: usize = 1448;
+pub const STARMAP_YELLOW_WARNING: usize = 1456;
 pub const LOCATION_LOC: usize = 0;
 
 /// ChoiceBox::box, the WindowFrame its OnRender builds and draws.
@@ -283,6 +289,9 @@ pub const CREW_BOXES: usize = 96;
 pub const CREWBOX_CREW: usize = 32;
 /// Crew hotkeys run F1 up to this many.
 pub const CREW_HOTKEYS: usize = 8;
+/// CrewControl's buttons that save the crew's stations and send them back to them.
+pub const CREW_SAVE_STATIONS: usize = 240;
+pub const CREW_RETURN_STATIONS: usize = 384;
 /// CrewControl::stationsLastY: the station buttons' backgrounds are rebuilt only when their y
 /// differs from it.
 pub const CREW_STATIONS_LAST_Y: usize = 544;

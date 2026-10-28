@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use super::actions::MouseButton;
-use super::api::{self, Api, Point, Ptr, Rect, SYMBOLS};
+use super::api::{self, Api, GlColor, Point, Ptr, Rect, SYMBOLS};
 use super::mem::Obj;
 use super::offsets::*;
 use super::state;
@@ -104,7 +104,16 @@ pub enum Call {
     ClearCrewBoxes(usize),
     /// SystemControl::UpdateSubSystemBox on the control at this address.
     UpdateSubBox(usize),
+    /// ResourceControl::CreateImagePrimitive at this offset from the drawing point.
+    CreatePrimitive(i32, i32),
+    /// CSurface::GL_DestroyPrimitive on the primitive at this address.
+    DestroyPrimitive(usize),
+    /// Button::OnInit on the button at this address, with this hit box size.
+    ButtonInit(usize, i32, i32),
 }
+
+/// The size of every image ResourceControl::GetImageId finds.
+pub const TEXTURE_SIZE: (i32, i32) = (40, 50);
 
 /// A pad the joystick functions report: connected at `index`, or not at all.
 #[derive(Clone, Default)]
@@ -130,6 +139,10 @@ static PADS: Mutex<Vec<FakePad>> = Mutex::new(Vec::new());
 static LIVE_STRINGS: AtomicIsize = AtomicIsize::new(0);
 /// The ShipGraph ShipGraph::GetShipInfo returns for any ship.
 static SHIP_GRAPH: AtomicUsize = AtomicUsize::new(0);
+/// The texture of every image, TEXTURE_SIZE large.
+static TEXTURE: OnceLock<usize> = OnceLock::new();
+/// The last primitive handed out; each is a distinct non-null address.
+static PRIMITIVES: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy)]
 struct Statics {
@@ -248,6 +261,43 @@ extern "C" fn ship_info(_id: c_int) -> Ptr {
     SHIP_GRAPH.load(Ordering::Relaxed) as Ptr
 }
 
+extern "C" fn image_id(_resources: Ptr, _name: *const Ptr) -> Ptr {
+    let texture = *TEXTURE.get_or_init(|| {
+        let block = leak_block(TEXTURE_H + size_of::<i32>());
+        // SAFETY: the leaked block just made, large enough for both fields.
+        let texture = unsafe { Obj::from_addr(block) }.expect("a leaked block is non-null");
+        texture.set(TEXTURE_W, TEXTURE_SIZE.0);
+        texture.set(TEXTURE_H, TEXTURE_SIZE.1);
+        block
+    });
+    texture as Ptr
+}
+
+#[allow(clippy::too_many_arguments)]
+extern "C" fn create_image_primitive(
+    _resources: Ptr,
+    _name: *const Ptr,
+    x: c_int,
+    y: c_int,
+    _turn: c_int,
+    _color: GlColor,
+    _alpha: f32,
+    _mirror: bool,
+) -> Ptr {
+    record(Call::CreatePrimitive(x, y));
+    (PRIMITIVES.fetch_add(1, Ordering::Relaxed) + 1) as Ptr
+}
+
+extern "C" fn destroy_primitive(primitive: Ptr) {
+    record(Call::DestroyPrimitive(primitive as usize));
+}
+
+extern "C" fn button_init(button: Ptr, _name: *const Ptr, hit: *const Rect, _image: *const Rect, _mirror: bool) {
+    // SAFETY: the caller passes a valid hit box.
+    let hit = unsafe { *hit };
+    record(Call::ButtonInit(button as usize, hit.w, hit.h));
+}
+
 /// Stores a malloc'd copy of `chars` at `out` and counts it live.
 /// # Safety
 /// `chars` must be NUL-terminated and `out` writable.
@@ -351,6 +401,10 @@ fn install_api() -> Statics {
     stand_in.clear_crew_boxes = clear_crew_boxes;
     stand_in.update_sub_box = update_sub_box;
     stand_in.ship_info = ship_info;
+    stand_in.image_id = image_id;
+    stand_in.create_image_primitive = create_image_primitive;
+    stand_in.destroy_primitive = destroy_primitive;
+    stand_in.button_init = button_init;
     stand_in.string_ctor = string_ctor;
     stand_in.string_dtor = string_dtor;
     stand_in.get_text = get_text;

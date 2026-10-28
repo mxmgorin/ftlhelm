@@ -222,6 +222,8 @@ game_api! {
     clear_crew_boxes: unsafe extern "C" fn(Ptr) = "_ZN11CrewControl14ClearCrewBoxesEv",
     update_sub_box: unsafe extern "C" fn(Ptr) = "_ZN13SystemControl18UpdateSubSystemBoxEv",
     ship_info: unsafe extern "C" fn(c_int) -> Ptr = "_ZN9ShipGraph11GetShipInfoEi",
+    create_image_primitive: unsafe extern "C" fn(Ptr, *const Ptr, c_int, c_int, c_int, GlColor, f32, bool) -> Ptr = "_ZN15ResourceControl20CreateImagePrimitiveERKSsiii8GL_Colorfb",
+    button_init: unsafe extern "C" fn(Ptr, *const Ptr, *const Rect, *const Rect, bool) = "_ZN6Button6OnInitERKSsRKN7Globals4RectES5_b",
 }
 
 static API: OnceLock<Api> = OnceLock::new();

@@ -16,6 +16,7 @@ use std::sync::Mutex;
 
 use crate::core::util::log;
 use crate::game::api::{api, CppVector, GlColor, Ptr, Rect};
+use crate::game::ipad_art;
 use crate::game::string::GameString;
 
 pub const OVERLAY_LINE: f32 = 1.0;
@@ -593,7 +594,7 @@ impl Images {
             let s = GameString::new(path);
             let a = api();
             // SAFETY: ResourceControl::GetImageId on the global resources and a std::string.
-            let texture = unsafe { (a.image_id)(a.resources as Ptr, s.as_ptr()) } as usize;
+            let texture = ipad_art::own_lookup(|| unsafe { (a.image_id)(a.resources as Ptr, s.as_ptr()) }) as usize;
             if texture == 0 {
                 log!("image missing: {path}");
             }

@@ -131,6 +131,9 @@ pub struct Settings {
     pub zoom: f32,
     /// The HUD's edge panels move toward the middle on a screen narrower than the frame.
     pub hud_shift: bool,
+    /// The map's beacon icons and the crew station buttons in the iPad's larger art.
+    pub ipad_beacons: bool,
+    pub ipad_station_buttons: bool,
     /// The help shows at start, until it is first closed.
     pub help_at_start: bool,
     /// A frame the screen shrinks is area-averaged; off, the game filters it.
@@ -186,6 +189,8 @@ impl Default for Settings {
             text_scale: TEXT_SCALE_AUTO,
             zoom: ZOOM_AUTO,
             hud_shift: true,
+            ipad_beacons: true,
+            ipad_station_buttons: true,
             help_at_start: true,
             frame_filter: true,
             sharpen: SHARPEN_DEFAULT,
@@ -240,6 +245,8 @@ const OPTIONS: &[(&str, Field)] = &[
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
     ("hud_shift", Field::Bool(|c| &mut c.hud_shift)),
+    ("ipad_beacons", Field::Bool(|c| &mut c.ipad_beacons)),
+    ("ipad_station_buttons", Field::Bool(|c| &mut c.ipad_station_buttons)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
     ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
     (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
