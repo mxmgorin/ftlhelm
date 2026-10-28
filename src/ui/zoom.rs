@@ -11,8 +11,9 @@
 //! its lowest level shows the span whole. The camera goal keeps the cursor, or the open
 //! wheel, inside the view's inner part, resting on an edge of the span where that does. A
 //! pan moves the goal by hand and holds it until the focus moves; a peek shows the span whole
-//! while it lasts. While zoomed, a window over the ship view is shown whole, as large
-//! as the screen allows. A frame shown smaller than it is drawn is area-averaged.
+//! while it lasts, as does an event dialog. While zoomed, a window over the ship view is
+//! shown whole, as large as the screen allows. A frame shown smaller than it is drawn is
+//! area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -60,7 +61,7 @@ pub struct Span {
 impl Span {
     pub const FRAME: Span = Span { left: 0.0, right: GAME_W as f32 };
 
-    fn width(self) -> f32 {
+    pub fn width(self) -> f32 {
         self.right - self.left
     }
 }
@@ -551,6 +552,8 @@ impl Layer {
         } else if let Some(rect) = window {
             // An open wheel shows whole beside the window.
             Scene::Window(if self.wheel.open.is_some() { hull(rect, focus) } else { rect })
+        } else if state::choice_open() {
+            Scene::Span
         } else {
             Scene::Whole
         };

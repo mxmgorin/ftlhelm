@@ -116,7 +116,8 @@ whole frame on others.
 
 On a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as
 the player ship leaves room (`hud_shift`), and the ship view keeps to the columns the HUD
-covers: its lowest level shows the whole HUD in place of the whole frame.
+covers: its lowest level shows the whole HUD in place of the whole frame, and so do event
+dialogs, which keep within those columns.
 
 | Input, zoomed | Effect |
 | --- | --- |

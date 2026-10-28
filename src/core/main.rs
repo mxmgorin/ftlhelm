@@ -124,6 +124,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         }
         l.poll_files(t);
         l.update_hud();
+        text::keep_boxes_to(l.zoom.span);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
         l.run_queued_clicks();

@@ -19,8 +19,9 @@ use crate::core::util::{clampf, log};
 use crate::game::api::{api, FontData, Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::{
-    layout, BODY_FONTS, CHOICE_FRAME, FRAME_RECT, GAME_H, GAME_W, TOOLTIP_BOTTOM, TOOLTIP_PAD_H, TOOLTIP_TITLE_PAD_H,
+    layout, BODY_FONTS, CHOICE_FRAME, FRAME_RECT, GAME_H, TOOLTIP_BOTTOM, TOOLTIP_PAD_H, TOOLTIP_TITLE_PAD_H,
 };
+use crate::ui::zoom::Span;
 
 /// The `text_scale` value that leaves the scale to the screen.
 pub const TEXT_SCALE_AUTO: f32 = 0.0;
@@ -46,6 +47,9 @@ static TOOLTIP_SCALE: AtomicU32 = AtomicU32::new(UNSCALED.to_bits());
 static RENDERING_BOX: AtomicUsize = AtomicUsize::new(0);
 /// The transform each event box last drew its frame with.
 static ZOOMS: Mutex<Vec<(usize, Option<BoxZoom>)>> = Mutex::new(Vec::new());
+/// The frame columns event boxes keep to, left then right, as f32 bits.
+static COLUMNS: [AtomicU32; 2] =
+    [AtomicU32::new(Span::FRAME.left.to_bits()), AtomicU32::new(Span::FRAME.right.to_bits())];
 
 /// The scaled copies handed to the game, one per body text font id.
 struct Slots(UnsafeCell<[FontData; SLOTS]>);
@@ -58,6 +62,18 @@ static SCALED: Slots = Slots(UnsafeCell::new([FontData::EMPTY; SLOTS]));
 /// The scale event and tooltip text is drawn at.
 pub fn scale() -> f32 {
     f32::from_bits(SCALE.load(Ordering::Relaxed))
+}
+
+/// Keeps event boxes drawn from now on within `span`'s columns.
+pub fn keep_boxes_to(span: Span) {
+    COLUMNS[0].store(span.left.to_bits(), Ordering::Relaxed);
+    COLUMNS[1].store(span.right.to_bits(), Ordering::Relaxed);
+}
+
+/// The frame columns event boxes keep to.
+fn columns() -> Span {
+    let [left, right] = COLUMNS.each_ref().map(|c| f32::from_bits(c.load(Ordering::Relaxed)));
+    Span { left, right }
 }
 
 /// The number of fixed text sizes, auto aside.
@@ -190,22 +206,23 @@ pub struct BoxZoom {
 }
 
 impl BoxZoom {
+    const IDENTITY: BoxZoom = BoxZoom { k: UNSCALED, tx: 0.0, ty: 0.0 };
+
     /// The transform that scales `frame` by up to `scale` about its centre and keeps it on
-    /// the game's screen; None when that leaves it unscaled.
-    fn fit(frame: Rect, scale: f32) -> Option<BoxZoom> {
+    /// the game's screen within `columns`; None when that leaves it as the game draws it.
+    fn fit(frame: Rect, scale: f32, columns: Span) -> Option<BoxZoom> {
         if frame.w <= 0 || frame.h <= 0 {
             return None;
         }
-        let k = scale.min(GAME_W as f32 / frame.w as f32).min(GAME_H as f32 / frame.h as f32);
-        if k <= UNSCALED {
-            return None;
-        }
+        let k = scale.min(columns.width() / frame.w as f32).min(GAME_H as f32 / frame.h as f32).max(UNSCALED);
         let (cx, cy) = frame.center();
         let half_w = frame.w as f32 * k / 2.0;
         let half_h = frame.h as f32 * k / 2.0;
-        let x = clampf(cx, half_w, GAME_W as f32 - half_w);
-        let y = clampf(cy, half_h, GAME_H as f32 - half_h);
-        Some(BoxZoom { k, tx: x - cx * k, ty: y - cy * k })
+        let x = clampf(cx, columns.left + half_w, columns.right - half_w);
+        // Unscaled, a box keeps the rows the game gives it.
+        let y = if k > UNSCALED { clampf(cy, half_h, GAME_H as f32 - half_h) } else { cy };
+        let zoom = BoxZoom { k, tx: x - cx * k, ty: y - cy * k };
+        (zoom != BoxZoom::IDENTITY).then_some(zoom)
     }
 
     pub fn to_layout(self, x: i32, y: i32) -> (i32, i32) {
@@ -254,7 +271,7 @@ pub fn frame_drawn(frame: usize, x: i32, y: i32) {
         return;
     };
     let r: Rect = own.get(FRAME_RECT);
-    let zoom = BoxZoom::fit(Rect { x: x + r.x, y: y + r.y, ..r }, scale());
+    let zoom = BoxZoom::fit(Rect { x: x + r.x, y: y + r.y, ..r }, scale(), columns());
     record(choice.addr(), zoom);
     if let Some(z) = zoom {
         // SAFETY: the game's matrix calls, inside the matrix BoxRender pushed.
@@ -282,6 +299,7 @@ pub fn box_zoom(choice: usize) -> Option<BoxZoom> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::offsets::GAME_W;
 
     /// Serialises the tests that set the scale, which is process-wide.
     static SCALE_LOCK: Mutex<()> = Mutex::new(());
@@ -351,12 +369,24 @@ mod tests {
     #[test]
     fn a_zoomed_box_stays_on_screen_and_maps_back() {
         let frame = Rect { x: 335, y: 147, w: 602, h: 377 };
-        let z = BoxZoom::fit(frame, 1.5).expect("room to scale");
+        let z = BoxZoom::fit(frame, 1.5, Span::FRAME).expect("room to scale");
         let s = z.to_screen(frame);
         assert!(s.x >= 0 && s.y >= 0 && s.x + s.w <= GAME_W && s.y + s.h <= GAME_H);
         assert_eq!(z.to_layout(s.x, s.y), (frame.x, frame.y));
-        let tall = BoxZoom::fit(Rect { h: 600, ..frame }, 1.5).expect("room to scale");
+        let tall = BoxZoom::fit(Rect { h: 600, ..frame }, 1.5, Span::FRAME).expect("room to scale");
         assert_eq!(tall.k, GAME_H as f32 / 600.0);
-        assert_eq!(BoxZoom::fit(Rect { h: GAME_H, ..frame }, 1.5), None);
+        assert_eq!(BoxZoom::fit(Rect { h: GAME_H, ..frame }, 1.5, Span::FRAME), None);
+    }
+
+    #[test]
+    fn a_box_keeps_to_the_columns_scaled_or_not() {
+        let hud = Span { left: 20.0, right: 1169.0 };
+        let frame = Rect { x: 8, y: 147, w: 602, h: 377 };
+        let z = BoxZoom::fit(frame, 1.75, hud).expect("room to scale");
+        let s = z.to_screen(frame);
+        assert!(s.x >= hud.left as i32 && s.x + s.w <= hud.right as i32 + 1);
+        let unscaled = BoxZoom::fit(frame, UNSCALED, hud).expect("off the columns");
+        assert_eq!((unscaled.k, unscaled.tx, unscaled.ty), (UNSCALED, hud.left - frame.x as f32, 0.0));
+        assert_eq!(BoxZoom::fit(Rect { x: 335, ..frame }, UNSCALED, hud), None);
     }
 }
