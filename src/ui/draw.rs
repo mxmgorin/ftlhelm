@@ -5,8 +5,9 @@
 //! none overlaps another, so a see-through fill shows nothing of them. Each ring is built once
 //! as a game primitive at the origin and drawn moved and tinted.
 //!
-//! Corner brackets are layers of rects the same way, one primitive per corner and layer: the
-//! band, a dark edge around it, then a glow ring per pixel out, none overlapping another.
+//! Marks (corner brackets, the down marker) are layers of rects the same way, one primitive
+//! per layer and corner: the band, a dark edge around it, then a glow ring per pixel out, none
+//! overlapping another.
 
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::SQRT_2;
@@ -89,28 +90,46 @@ pub struct Bracket {
     pub cut: i32,
 }
 
-/// One layer of a bracket's corner with the corner's point at the origin, its arms to the
-/// right and down unless flipped: the band, the edge, then each glow ring.
+/// A triangle pointing down, `w` wide and `h` tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Corner {
-    bracket: Bracket,
+pub struct Marker {
+    pub w: i32,
+    pub h: i32,
+}
+
+/// A band in a mark's colour over a dark edge, in a glow of its colour: a bracket's corner with
+/// its point at the origin and its arms to the right and down, or a marker in the box from the
+/// origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Mark {
+    Corner(Bracket),
+    Down(Marker),
+}
+
+/// One layer of a mark, mirrored across the axes at the origin as asked: the band, the edge,
+/// then each glow ring.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct MarkLayer {
+    mark: Mark,
     flip_x: bool,
     flip_y: bool,
     layer: usize,
 }
 
-const CORNER_BAND: usize = 0;
-const CORNER_EDGE: usize = 1;
-const CORNER_GLOW: usize = 2;
-const CORNER_LAYERS: usize = CORNER_GLOW + FRAME_GLOW.len();
-/// How far a corner's layers reach past its band: the edge's line, then the glow.
-const CORNER_REACH: i32 = OVERLAY_LINE as i32 + FRAME_GLOW.len() as i32;
+const MARK_BAND: usize = 0;
+const MARK_EDGE: usize = 1;
+const MARK_GLOW: usize = 2;
+const MARK_LAYERS: usize = MARK_GLOW + FRAME_GLOW.len();
+/// How far a mark's layers reach past its band: the edge's line, then the glow.
+const MARK_REACH: i32 = OVERLAY_LINE as i32 + FRAME_GLOW.len() as i32;
+const NO_FLIP: [(bool, bool); 1] = [(false, false)];
+const ALL_FLIPS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
 
 /// What a cached primitive draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Shape {
     Ring(Ring),
-    Corner(Corner),
+    Mark(MarkLayer),
 }
 
 /// Primitives by shape, as addresses.
@@ -227,11 +246,23 @@ pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, bracket: Bracket, k: f32, c
         (left, bottom, false, true),
         (right, bottom, true, true),
     ];
-    let colors = [CORNER_BAND, CORNER_EDGE].into_iter().zip([color, PLATE_BEVEL_COLOR]);
-    let glow = FRAME_GLOW.iter().enumerate().map(|(i, &alpha)| (CORNER_GLOW + i, faded(color, alpha)));
+    draw_mark(&corners, Mark::Corner(bracket), k, color);
+}
+
+/// A triangle pointing down in the game's style, its tip at (`cx`, `tip`), `k` times its size:
+/// `color` over a dark edge, in a glow of its colour.
+pub fn draw_marker(cx: f32, tip: f32, marker: Marker, k: f32, color: GlColor) {
+    let at = ((cx - marker.w as f32 * k / 2.0).round(), (tip - marker.h as f32 * k).round(), false, false);
+    draw_mark(&[at], Mark::Down(marker), k, color);
+}
+
+/// Draws `mark` at each (x, y, flip_x, flip_y), `k` times its size, its band in `color`.
+fn draw_mark(at: &[(f32, f32, bool, bool)], mark: Mark, k: f32, color: GlColor) {
+    let colors = [MARK_BAND, MARK_EDGE].into_iter().zip([color, PLATE_BEVEL_COLOR]);
+    let glow = FRAME_GLOW.iter().enumerate().map(|(i, &alpha)| (MARK_GLOW + i, faded(color, alpha)));
     for (layer, shade) in colors.chain(glow) {
-        for (cx, cy, flip_x, flip_y) in corners {
-            draw_shape(cx, cy, k, Shape::Corner(Corner { bracket, flip_x, flip_y, layer }), shade);
+        for &(x, y, flip_x, flip_y) in at {
+            draw_shape(x, y, k, Shape::Mark(MarkLayer { mark, flip_x, flip_y, layer }), shade);
         }
     }
     reset_fixed_color();
@@ -343,34 +374,65 @@ fn ring_rects(r: Ring) -> Vec<Rect> {
     rects
 }
 
-/// The rects of each layer of a bracket's corner, unflipped, row by row.
-fn corner_layers(b: Bracket) -> [Vec<Rect>; CORNER_LAYERS] {
-    let Bracket { arm, thick, cut } = b;
-    let inner_cut = cut_at(cut, thick).max(0);
-    let band = |x: i32, y: i32| {
-        let outer = (0..arm).contains(&x) && (0..arm).contains(&y) && x + y >= cut;
-        let inner = x >= thick && y >= thick && x + y - 2 * thick >= inner_cut;
-        outer && !inner
-    };
+impl Mark {
+    /// The size of the box from the origin that holds the band.
+    fn size(self) -> (i32, i32) {
+        match self {
+            Mark::Corner(b) => (b.arm, b.arm),
+            Mark::Down(m) => (m.w, m.h),
+        }
+    }
+
+    /// Whether the band covers pixel (`x`, `y`).
+    fn covers(self, x: i32, y: i32) -> bool {
+        let (w, h) = self.size();
+        if !(0..w).contains(&x) || !(0..h).contains(&y) {
+            return false;
+        }
+        match self {
+            Mark::Corner(Bracket { thick, cut, .. }) => {
+                let inner = x >= thick && y >= thick && x + y - 2 * thick >= cut_at(cut, thick).max(0);
+                x + y >= cut && !inner
+            }
+            Mark::Down(_) => {
+                let half = w as f32 / 2.0;
+                (x as f32 + 0.5 - half).abs() <= half * (1.0 - (y as f32 + 0.5) / h as f32)
+            }
+        }
+    }
+
+    /// The mirrored copies it is drawn in.
+    fn flips(self) -> &'static [(bool, bool)] {
+        match self {
+            Mark::Corner(_) => &ALL_FLIPS,
+            Mark::Down(_) => &NO_FLIP,
+        }
+    }
+}
+
+/// The rects of each layer of a mark, unflipped, row by row.
+fn mark_layers(mark: Mark) -> [Vec<Rect>; MARK_LAYERS] {
+    let (w, h) = mark.size();
+    let band = |x: i32, y: i32| mark.covers(x, y);
     let band_pixels: Vec<(i32, i32)> =
-        (0..arm).flat_map(|y| (0..arm).map(move |x| (x, y))).filter(|&(x, y)| band(x, y)).collect();
+        (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).filter(|&(x, y)| band(x, y)).collect();
     // The edge takes the pixels next to the band, diagonally too; glow ring `i` the rest past
     // `i + 1` and up to `i + 2` away.
     let layer_of = |x: i32, y: i32| -> Option<usize> {
         if band(x, y) {
-            return Some(CORNER_BAND);
+            return Some(MARK_BAND);
         }
         let near = |&(bx, by): &(i32, i32)| (bx - x).abs().max((by - y).abs());
         if band_pixels.iter().map(near).min() == Some(1) {
-            return Some(CORNER_EDGE);
+            return Some(MARK_EDGE);
         }
         let dist = |&(bx, by): &(i32, i32)| (((bx - x).pow(2) + (by - y).pow(2)) as f32).sqrt();
         let ring = band_pixels.iter().map(dist).fold(f32::INFINITY, f32::min).ceil() as usize;
-        (ring >= 2 && ring - 2 < FRAME_GLOW.len()).then(|| CORNER_GLOW + ring - 2)
+        (ring >= 2 && ring - 2 < FRAME_GLOW.len()).then(|| MARK_GLOW + ring - 2)
     };
-    let mut layers: [Vec<Rect>; CORNER_LAYERS] = Default::default();
-    let span = -CORNER_REACH..arm + CORNER_REACH;
-    for y in span.clone() {
+    let mut layers: [Vec<Rect>; MARK_LAYERS] = Default::default();
+    let span = -MARK_REACH..w + MARK_REACH;
+    for y in -MARK_REACH..h + MARK_REACH {
         let mut run: Option<(i32, usize)> = None;
         for x in span.start..=span.end {
             let layer = span.contains(&x).then(|| layer_of(x, y)).flatten();
@@ -399,7 +461,7 @@ fn build_primitive(rects: &[Rect]) -> Option<usize> {
 }
 
 /// The game primitive of a shape, built white on first use; None when the game builds none.
-/// A corner's layers and flips are all built with it.
+/// A mark's layers and flips are all built with it.
 fn shape_primitive(shape: Shape) -> Option<Ptr> {
     let mut shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(&p) = shapes.get(&shape) {
@@ -417,11 +479,11 @@ fn shape_primitive(shape: Shape) -> Option<Ptr> {
                 shapes.insert(shape, p);
             }
         }
-        Shape::Corner(c) => {
-            for (layer, rects) in corner_layers(c.bracket).iter().enumerate() {
-                for (flip_x, flip_y) in [(false, false), (true, false), (false, true), (true, true)] {
+        Shape::Mark(m) => {
+            for (layer, rects) in mark_layers(m.mark).iter().enumerate() {
+                for &(flip_x, flip_y) in m.mark.flips() {
                     if let Some(p) = build_primitive(&flipped(rects, flip_x, flip_y)) {
-                        shapes.insert(Shape::Corner(Corner { layer, flip_x, flip_y, ..c }), p);
+                        shapes.insert(Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..m }), p);
                     }
                 }
             }
@@ -607,14 +669,14 @@ mod tests {
         rects.iter().flat_map(|r| (r.x..r.x + r.w).flat_map(move |x| (r.y..r.y + r.h).map(move |y| (x, y))))
     }
 
-    /// The pixels of each layer of a bracket's corner, each in one layer once.
-    fn corner_pixels(b: Bracket) -> Vec<BTreeSet<(i32, i32)>> {
+    /// The pixels of each layer of a mark, each in one layer once.
+    fn mark_pixels(mark: Mark) -> Vec<BTreeSet<(i32, i32)>> {
         let mut seen = BTreeSet::new();
-        let layers = corner_layers(b);
+        let layers = mark_layers(mark);
         let layer_set = |rects: &Vec<Rect>| {
             let mut layer = BTreeSet::new();
             for p in rect_pixels(rects) {
-                assert!(seen.insert(p), "{b:?} covers {p:?} twice");
+                assert!(seen.insert(p), "{mark:?} covers {p:?} twice");
                 layer.insert(p);
             }
             layer
@@ -629,8 +691,8 @@ mod tests {
             Bracket { arm: 9, thick: 2, cut: 4 },
             Bracket { arm: 8, thick: 2, cut: 4 },
         ] {
-            let layers = corner_pixels(b);
-            let band = &layers[CORNER_BAND];
+            let layers = mark_pixels(Mark::Corner(b));
+            let band = &layers[MARK_BAND];
             for along in b.cut + b.thick..b.arm {
                 assert_eq!(band.iter().filter(|&&(x, _)| x == along).count(), b.thick as usize, "{b:?} column {along}");
                 assert_eq!(band.iter().filter(|&&(_, y)| y == along).count(), b.thick as usize, "{b:?} row {along}");
@@ -639,17 +701,34 @@ mod tests {
             assert!(band.contains(&(b.arm - 1, 0)) && !band.contains(&(b.arm, 0)), "{b:?}: the arm");
             for &(x, y) in band {
                 for p in (-1..=1).flat_map(|dx| (-1..=1).map(move |dy| (x + dx, y + dy))) {
-                    assert!(band.contains(&p) || layers[CORNER_EDGE].contains(&p), "{b:?}: no edge at {p:?}");
+                    assert!(band.contains(&p) || layers[MARK_EDGE].contains(&p), "{b:?}: no edge at {p:?}");
                 }
             }
-            assert!(layers[CORNER_GLOW..].iter().all(|ring| !ring.is_empty()), "{b:?}");
+            assert!(layers[MARK_GLOW..].iter().all(|ring| !ring.is_empty()), "{b:?}");
+        }
+    }
+
+    #[test]
+    fn a_down_marker_is_a_triangle_mirrored_about_its_middle() {
+        let marker = Marker { w: 16, h: 9 };
+        let layers = mark_pixels(Mark::Down(marker));
+        let band = &layers[MARK_BAND];
+        let row = |y: i32| band.iter().filter(|&&(_, by)| by == y).count();
+        assert_eq!(row(0), marker.w as usize, "the base");
+        assert!((1..marker.h).all(|y| row(y) <= row(y - 1)), "narrowing to the tip");
+        let tip = (0..marker.h).rev().find(|&y| row(y) > 0).expect("the base row is full");
+        let middle = marker.w / 2;
+        assert_eq!(band.iter().filter(|&&(_, y)| y == tip).count(), 2, "a two-pixel tip");
+        assert!(band.contains(&(middle - 1, tip)) && band.contains(&(middle, tip)), "the tip in the middle");
+        for layer in &layers {
+            assert_eq!(layer.iter().map(|&(x, y)| (marker.w - 1 - x, y)).collect::<BTreeSet<_>>(), *layer);
         }
     }
 
     #[test]
     fn a_flipped_corner_mirrors_across_its_point() {
         let b = Bracket { arm: 10, thick: 2, cut: 4 };
-        for rects in corner_layers(b) {
+        for rects in mark_layers(Mark::Corner(b)) {
             let plain: BTreeSet<_> = rect_pixels(&rects).collect();
             let both: BTreeSet<_> = rect_pixels(&flipped(&rects, true, true)).collect();
             assert_eq!(both, plain.iter().map(|&(x, y)| (-x - 1, -y - 1)).collect());

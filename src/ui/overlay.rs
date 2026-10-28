@@ -99,8 +99,7 @@ const FOCUS_SLIDE: f32 = 6.0;
 const FOCUS_SETTLE_S: f64 = 0.12;
 /// The marker over a selected crew member, in frame pixels above its position; it bobs
 /// CREW_MARK_BOB_PX up and down once every CREW_MARK_BOB_S.
-const CREW_MARK_W: f32 = 16.0;
-const CREW_MARK_H: f32 = 9.0;
+const CREW_MARK: Marker = Marker { w: 16, h: 9 };
 const CREW_MARK_RISE: f32 = 24.0;
 const CREW_MARK_BOB_PX: f32 = 2.0;
 const CREW_MARK_BOB_S: f64 = 1.0;
@@ -301,7 +300,7 @@ impl Layer {
             let origin = if player { state::player_origin(gui) } else { state::enemy_origin(gui) };
             let x = origin.x as f32 + member.f32(CREW_X);
             let tip = origin.y as f32 + member.f32(CREW_Y) - CREW_MARK_RISE + bob;
-            draw_down_marker(x, tip, CREW_MARK_W * k, CREW_MARK_H * k, CREW_SELECTED_COLOR);
+            draw_marker(x, tip, CREW_MARK, k, CREW_SELECTED_COLOR);
         }
     }
 
