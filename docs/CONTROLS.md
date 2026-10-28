@@ -10,7 +10,7 @@ The controls table shows at the first start, once a pad is connected; any button
 
 ftlhelm reads one pad: the first connected, then whichever pad presses a button while the
 active one has none down. When the active pad disconnects, the ship view pauses and
-"Pad disconnected" shows until a button is pressed.
+"Pad disconnected" shows until a button is pressed or the screen is touched.
 
 ## Zones
 

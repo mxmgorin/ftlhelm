@@ -380,7 +380,7 @@ impl Layer {
     }
 
     /// Whether the notice is on screen: the help covers it.
-    fn notice_shown(&self) -> bool {
+    pub fn notice_shown(&self) -> bool {
         self.cursor.synced && !self.help_shown
     }
 

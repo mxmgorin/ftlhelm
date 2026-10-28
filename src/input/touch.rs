@@ -534,12 +534,14 @@ impl Layer {
         draw_ring_timer(x, y, HOLD_RING_R * k, HOLD_RING_W * k, lit, color, 1.0);
     }
 
-    /// Lets the help, an open wheel or the pause button take a touch landing at frame point
-    /// `at`: the help closes, a wheel acts on the plate there, the button pauses or resumes.
-    /// Returns whether one took it.
+    /// Lets the help, a notice, an open wheel or the pause button take a touch landing at
+    /// frame point `at`: the help or the notice closes, a wheel acts on the plate there, the
+    /// button pauses or resumes. Returns whether one took it.
     fn overlay_takes_touch(&mut self, (x, y): (f32, f32)) -> bool {
         if self.help_shown {
             self.show_help(false);
+        } else if self.notice.is_some() && self.notice_shown() {
+            self.notice = None;
         } else if self.wheel.open.is_some() {
             self.touch_wheel(x, y);
         } else if self.pause_button_hit((x, y)) {
@@ -630,6 +632,7 @@ mod tests {
     };
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;
+    use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
     use crate::ui::zoom::View;
 
     const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0 };
@@ -1047,6 +1050,17 @@ mod tests {
             l.help_shown = true;
             assert!(tap(&mut l, 120, 110).is_empty());
             assert!(!l.help_shown);
+        });
+    }
+
+    #[test]
+    fn a_touch_closes_a_notice_and_clicks_nothing() {
+        with_game(|_| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            l.cursor.synced = true;
+            l.notice = Some(Notice::until_press(PAD_LOST_NOTICE));
+            assert!(tap(&mut l, 120, 110).is_empty());
+            assert!(l.notice.is_none());
         });
     }
 
