@@ -66,13 +66,25 @@ const TOUCH_SNAP: f32 = 32.0;
 /// Window pixels a finger on a power box travels per bar.
 const TOUCH_STEP: f32 = 16.0;
 const TOUCH_PX_MAX: f32 = 100.0;
+/// The most times its size the game's pointer is drawn by default, and the highest setting.
+const POINTER_SCALE_MAX: f32 = 2.0;
+const POINTER_SCALE_LIMIT: f32 = 4.0;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub cursor_speed: f32,
     pub cursor_deadzone: f32,
     pub cursor_curve: f32,
+    /// The badge, the focus brackets and the crew markers show, each as its own switch allows.
     pub overlay: bool,
+    /// The mode badge in the top right corner.
+    pub badge: bool,
+    /// A zone a focus move lands on is framed with brackets in place of the pointer.
+    pub focus_brackets: bool,
+    /// Selected crew are marked on the ship view.
+    pub crew_marker: bool,
+    /// The most times its size the game's pointer is drawn where the frame is shown smaller.
+    pub pointer_scale_max: f32,
     pub snap_dpad: bool,
     pub autopause_wheel: bool,
     pub autopause_aim: bool,
@@ -92,6 +104,8 @@ pub struct Settings {
     pub focus_first: bool,
     /// The cursor moves to the room of a newly selected crew member.
     pub crew_follow: bool,
+    /// A click on a room steps the selection through its crew, unless crew is selected elsewhere.
+    pub room_crew_pick: bool,
     /// Wheels open only on the ship view.
     pub wheels_ship_only: bool,
     pub wheel_backdrop: Backdrop,
@@ -117,6 +131,10 @@ pub struct Settings {
     pub touch_snap: f32,
     /// Window pixels a finger moving up or down on a power box travels per bar; 0: none.
     pub touch_step: f32,
+    /// The ship view shows a pause button while touch is in use.
+    pub pause_button: bool,
+    /// Rings mark a finger held toward a right click and the point a touch clicked.
+    pub touch_marks: bool,
 }
 
 impl Default for Settings {
@@ -126,6 +144,10 @@ impl Default for Settings {
             cursor_deadzone: STICK_DEADZONE,
             cursor_curve: CURSOR_CURVE,
             overlay: true,
+            badge: true,
+            focus_brackets: true,
+            crew_marker: true,
+            pointer_scale_max: POINTER_SCALE_MAX,
             snap_dpad: true,
             autopause_wheel: true,
             autopause_aim: false,
@@ -141,6 +163,7 @@ impl Default for Settings {
             focus_side_weight: FOCUS_SIDE_WEIGHT,
             focus_first: true,
             crew_follow: false,
+            room_crew_pick: true,
             wheels_ship_only: true,
             wheel_backdrop: Backdrop::default(),
             rumble_strength: RUMBLE_STRENGTH,
@@ -155,6 +178,8 @@ impl Default for Settings {
             touch_slop: TOUCH_SLOP,
             touch_snap: TOUCH_SNAP,
             touch_step: TOUCH_STEP,
+            pause_button: true,
+            touch_marks: true,
         }
     }
 }
@@ -173,6 +198,10 @@ const OPTIONS: &[(&str, Field)] = &[
     ("cursor_deadzone", Field::Float(|c| &mut c.cursor_deadzone, 0.0, STICK_DEADZONE_MAX)),
     ("cursor_curve", Field::Float(|c| &mut c.cursor_curve, CURSOR_CURVE_MIN, CURSOR_CURVE_MAX)),
     ("overlay", Field::Bool(|c| &mut c.overlay)),
+    ("badge", Field::Bool(|c| &mut c.badge)),
+    ("focus_brackets", Field::Bool(|c| &mut c.focus_brackets)),
+    ("crew_marker", Field::Bool(|c| &mut c.crew_marker)),
+    ("pointer_scale_max", Field::Float(|c| &mut c.pointer_scale_max, 1.0, POINTER_SCALE_LIMIT)),
     ("snap_dpad", Field::Bool(|c| &mut c.snap_dpad)),
     ("autopause_wheel", Field::Bool(|c| &mut c.autopause_wheel)),
     ("autopause_aim", Field::Bool(|c| &mut c.autopause_aim)),
@@ -188,6 +217,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("focus_side_weight", Field::Float(|c| &mut c.focus_side_weight, 0.0, FOCUS_SIDE_WEIGHT_MAX)),
     ("focus_first", Field::Bool(|c| &mut c.focus_first)),
     ("crew_follow", Field::Bool(|c| &mut c.crew_follow)),
+    ("room_crew_pick", Field::Bool(|c| &mut c.room_crew_pick)),
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
     ("wheel_backdrop", Field::Backdrop(|c| &mut c.wheel_backdrop)),
     ("rumble_strength", Field::Float(|c| &mut c.rumble_strength, 0.0, 1.0)),
@@ -202,6 +232,8 @@ const OPTIONS: &[(&str, Field)] = &[
     ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
     ("touch_snap", Field::Float(|c| &mut c.touch_snap, 0.0, TOUCH_PX_MAX)),
     ("touch_step", Field::Float(|c| &mut c.touch_step, 0.0, TOUCH_PX_MAX)),
+    ("pause_button", Field::Bool(|c| &mut c.pause_button)),
+    ("touch_marks", Field::Bool(|c| &mut c.touch_marks)),
 ];
 
 impl Settings {

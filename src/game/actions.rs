@@ -172,8 +172,11 @@ impl Layer {
     }
 
     /// Steps the selection through the crew of the room under the cursor unless crew is
-    /// selected elsewhere; returns whether it did.
+    /// selected elsewhere or `room_crew_pick` is off; returns whether it did.
     pub fn pick_room_crew(&mut self) -> bool {
+        if !self.cfg.room_crew_pick {
+            return false;
+        }
         let Some(zone) = self.zone_under_cursor().map(|i| self.zones.list[i]) else {
             return false;
         };
@@ -463,6 +466,9 @@ mod tests {
             l.zones.list = vec![zone(ROOM)];
             (l.cursor.last_x, l.cursor.last_y) = (50, 50);
             let (f_first, f_second) = (KEY_F1 + 1, KEY_F1 + 2);
+            l.cfg.room_crew_pick = false;
+            assert!(!l.pick_room_crew(), "switched off");
+            l.cfg.room_crew_pick = true;
             assert!(l.pick_room_crew());
             assert_eq!(calls(), [Call::KeyDown(f_first), Call::KeyUp(f_first)]);
             select(g, &[first]);

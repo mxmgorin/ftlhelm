@@ -15,8 +15,8 @@ active one has none down. When the active pad disconnects, the ship view pauses 
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick
-moves it once per push past `flick_threshold`. The zone the cursor lands on shows corner
-brackets in place of the pointer arrow until the cursor moves on.
+moves it once per push past `flick_threshold`. With `focus_brackets`, the zone the cursor
+lands on shows corner brackets in place of the pointer arrow until the cursor moves on.
 
 | Screen | Zones |
 | --- | --- |
@@ -29,8 +29,8 @@ brackets in place of the pointer arrow until the cursor moves on.
 With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item.
 
 Y selects the next crew member; A on a room orders the selected crew there; B clears the
-selection. With no crew selected in another room, A on a room with crew selects its members
-one at a time, then all of them. A green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member and brackets it.
+selection. With `room_crew_pick` and no crew selected in another room, A on a room with crew
+selects its members one at a time, then all of them. With `crew_marker`, a green marker shows over each selected crew member on the ship. With `crew_follow`, the cursor moves to the room of a newly selected member and brackets it.
 
 ## Doors
 
@@ -46,7 +46,8 @@ with `cursor_deadzone` and `cursor_curve` for the sticks.
 
 The badge in the top right corner names the selected crew member, or counts several, and the
 active modes: Mouse, Doors, Fast (fast forward), Target with the armed weapon, and Paused on
-a zoomed ship view. `overlay = 0` hides it, the zone brackets and the crew markers.
+a zoomed ship view. `badge = 0` hides it; `overlay = 0` hides it, the zone brackets and the
+crew markers.
 
 ## Touch
 
@@ -62,10 +63,11 @@ button, beacon, choice, slot, system icon or weapon box within `touch_snap`.
 | drag | drag with the left button: a selection box, an item, a slider; also after a hold |
 | tap with two fingers | pause or resume |
 
-After a touch, the pointer arrow hides and the ship view shows a pause button in the bottom
-right corner, lit yellow while the game is paused, until a pad or the mouse is used;
-tooltips and the targeting pointers stay. A zoomed view without that corner shows the button
-in its top right corner. A touch's click leaves a small ring that fades.
+After a touch, the pointer arrow hides and, with `pause_button`, the ship view shows a pause
+button in the bottom right corner, lit yellow while the game is paused, until a pad or the
+mouse is used; tooltips and the targeting pointers stay. A zoomed view without that corner
+shows the button in its top right corner. A touch's click leaves a small ring that fades.
+`touch_marks = 0` hides both rings.
 
 A tap closes the controls table. With a wheel open, a tap on a plate acts on it; a tap
 elsewhere closes the wheel.
@@ -122,5 +124,5 @@ enlarges them on screens smaller than 1280x720, less at higher zoom levels. The 
 table and notices take the same size, as far as the frame holds them.
 
 On a screen that shows the frame smaller than 1280x720, the pointer is drawn larger, up to
-twice its size, the crew markers up to one and a half times, and the zone brackets keep
-their size.
+`pointer_scale_max` times its size, the crew markers up to one and a half times, and the
+zone brackets keep their size.

@@ -181,7 +181,9 @@ impl Layer {
         if self.wheel.open.is_some() {
             self.draw_wheel();
         } else if !self.help_shown && self.cfg.overlay {
-            self.draw_crew_marks();
+            if self.cfg.crew_marker {
+                self.draw_crew_marks();
+            }
             self.draw_focus();
         }
         self.draw_touch();
@@ -189,7 +191,7 @@ impl Layer {
         if let Some((x, y)) = pause {
             draw_pause_button(x, y);
         }
-        if self.cursor.synced && self.cfg.overlay && state::gui().is_some() {
+        if self.cursor.synced && self.cfg.overlay && self.cfg.badge && state::gui().is_some() {
             let text = self.badge_text();
             if !text.is_empty() {
                 let w = text_width(WHEEL_FONT, &text) + 2.0 * BADGE_PAD;
@@ -219,10 +221,11 @@ impl Layer {
         self.zoom.view.is_none_or(|v| x + PAUSE_BUTTON_SIZE <= v.right() && y + PAUSE_BUTTON_SIZE <= v.bottom())
     }
 
-    /// Where the pause button sits while touch is in use, on the ship view with nothing over it:
-    /// in the frame's corner, else in the top right of the view.
+    /// Where the pause button sits while it is on and touch is in use, on the ship view with
+    /// nothing over it: in the frame's corner, else in the top right of the view.
     fn pause_button(&self) -> Option<(f32, f32)> {
-        if !self.touch_in_use() || !state::ship_view() || self.wheel.open.is_some() || self.help_shown {
+        let shown = self.cfg.pause_button && self.touch_in_use() && state::ship_view();
+        if !shown || self.wheel.open.is_some() || self.help_shown {
             return None;
         }
         if self.corner_shown() {
@@ -243,7 +246,7 @@ impl Layer {
     /// The zone focus brackets frame while the overlay shows them, and the seconds since its
     /// focus move.
     fn shown_focus(&self, now: f64) -> Option<(usize, f64)> {
-        let shown = self.cfg.overlay && self.wheel.open.is_none() && !self.help_shown;
+        let shown = self.cfg.overlay && self.cfg.focus_brackets && self.wheel.open.is_none() && !self.help_shown;
         shown.then(|| self.focused_zone(now)).flatten()
     }
 
@@ -518,6 +521,9 @@ mod tests {
             l.cfg.overlay = false;
             assert!(!l.pointer_hidden(), "no brackets drawn");
             l.cfg.overlay = true;
+            l.cfg.focus_brackets = false;
+            assert!(!l.pointer_hidden(), "brackets switched off");
+            l.cfg.focus_brackets = true;
             (l.cursor.x, l.cursor.y) = (300.0, 300.0);
             l.send_cursor();
             assert!(!l.pointer_hidden(), "the cursor moved on");

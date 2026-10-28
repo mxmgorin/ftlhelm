@@ -41,6 +41,7 @@ default; a value outside its range is clamped. When the settings wheel closes, i
 | `focus_side_weight` | 2 | 0 to 10 | how many times sideways distance counts over forward |
 | `focus_first` | 1 | switch | the cursor on the first item when a menu, a dialog or the map opens |
 | `crew_follow` | 0 | switch | the cursor to the room of a newly selected crew member |
+| `room_crew_pick` | 1 | switch | `context_click` on a room with crew selects its members one at a time, then all of them, unless crew is selected in another room; 0: it clicks |
 
 ### Game
 
@@ -69,7 +70,11 @@ them; without it, `swap_ab` and `swap_xy` apply.
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `overlay` | 1 | switch | the badge in the top right corner, the brackets of the focused zone and the markers over selected crew |
+| `overlay` | 1 | switch | the badge, the focus brackets and the crew markers, each as its own key allows; 0: none of them |
+| `badge` | 1 | switch | the badge in the top right corner: the selected crew and the active modes |
+| `focus_brackets` | 1 | switch | corner brackets in place of the pointer arrow on the zone the cursor jumped to |
+| `crew_marker` | 1 | switch | a green marker over each selected crew member on the ship view |
+| `pointer_scale_max` | 2 | 1 to 4 | the most times its size the pointer is drawn on a screen that shows the frame smaller than 1280x720; 1: the game's size |
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
 | `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
@@ -85,6 +90,8 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `touch_slop` | 12 | 0 to 100 | screen pixels a finger may move and still tap; past them, it drags |
 | `touch_snap` | 32 | 0 to 100 | screen pixels a touch beside every target reaches for the nearest one; 0: none |
 | `touch_step` | 16 | 0 to 100 | screen pixels a finger moving up or down on a system icon or a weapon box travels per bar of power; 0: such a move drags |
+| `pause_button` | 1 | switch | the pause button on the ship view after a touch, see [Touch](CONTROLS.md#touch) |
+| `touch_marks` | 1 | switch | the ring around a finger held toward a right click and the fading ring where a touch clicked |
 
 ## Bindings
 

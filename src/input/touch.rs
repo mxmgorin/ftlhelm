@@ -516,6 +516,9 @@ impl Layer {
     /// the long press nears, and all turn white once it is reached. A touch's click leaves a
     /// small ring that fades.
     pub fn draw_touch(&self) {
+        if !self.cfg.touch_marks {
+            return;
+        }
         let now = now_s();
         let k = self.frame_per_window();
         if let Some(m) = self.touch.mark.filter(|m| now - m.since < MARK_S) {
@@ -1113,6 +1116,9 @@ mod tests {
             assert!(l.pause_button_hit(at));
             assert!(l.pause_button_hit(((GAME_W - 1) as f32, (GAME_H - 1) as f32)), "the corner's edge");
             assert!(!l.pause_button_hit(((GAME_W - 30) as f32, 25.0)), "the top right");
+            l.cfg.pause_button = false;
+            assert!(!l.pause_button_hit(at), "switched off");
+            l.cfg.pause_button = true;
             l.queue_touch(TouchPhase::Down, 0, button.0, button.1);
             l.queue_touch(TouchPhase::Up, 0, button.0, button.1);
             for _ in 0..TAP_FRAMES {
