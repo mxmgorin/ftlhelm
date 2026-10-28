@@ -4,6 +4,9 @@
 //! A frame is rings of cut rects: a glow ring per pixel out, the band, a line, then the fill;
 //! none overlaps another, so a see-through fill shows nothing of them. Each ring is built once
 //! as a game primitive at the origin and drawn moved and tinted.
+//!
+//! Corner brackets are layers of rects the same way, one primitive per corner and layer: the
+//! band, a dark edge around it, then a glow ring per pixel out, none overlapping another.
 
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::SQRT_2;
@@ -20,8 +23,7 @@ pub const WHEEL_FONT: i32 = 62;
 /// The height of a WHEEL_FONT line.
 pub const WHEEL_FONT_H: f32 = 18.0;
 
-/// Marks over the game: pale green on a dark edge.
-pub const PLATE_EDGE_COLOR: GlColor = GlColor::new(0.63, 0.9, 0.76, 0.95);
+/// The dark edge of marks over the game.
 const PLATE_BEVEL_COLOR: GlColor = GlColor::new(0.0, 0.05, 0.05, 0.9);
 pub const TEXT_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
 pub const TEXT_DISABLED_COLOR: GlColor = GlColor::new(0.42, 0.46, 0.45, 1.0);
@@ -46,8 +48,8 @@ const FRAME_GLOW: [f32; 7] = [0.345, 0.259, 0.184, 0.122, 0.075, 0.039, 0.012];
 /// Rows of cut a frame's layer loses per pixel inward: a band stays as thick across its cut
 /// as along its sides.
 const CUT_PER_INSET: f32 = 2.0 - SQRT_2;
-/// Ring primitives kept; past it they are all freed and built anew.
-const RINGS_MAX: usize = 256;
+/// Primitives kept; past it they are all freed and built anew.
+const SHAPES_MAX: usize = 512;
 const WHITE: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
 
 /// A frame's look: its corners cut `cut` rows deep, a `band` wide band, a `line` wide slate
@@ -79,8 +81,40 @@ struct Ring {
     hole: Option<(i32, i32)>,
 }
 
-/// Ring primitives by shape, as addresses.
-static RINGS: Mutex<BTreeMap<Ring, usize>> = Mutex::new(BTreeMap::new());
+/// Corner brackets: `thick` wide arms `arm` long from the corner, which is cut `cut` rows deep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Bracket {
+    pub arm: i32,
+    pub thick: i32,
+    pub cut: i32,
+}
+
+/// One layer of a bracket's corner with the corner's point at the origin, its arms to the
+/// right and down unless flipped: the band, the edge, then each glow ring.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Corner {
+    bracket: Bracket,
+    flip_x: bool,
+    flip_y: bool,
+    layer: usize,
+}
+
+const CORNER_BAND: usize = 0;
+const CORNER_EDGE: usize = 1;
+const CORNER_GLOW: usize = 2;
+const CORNER_LAYERS: usize = CORNER_GLOW + FRAME_GLOW.len();
+/// How far a corner's layers reach past its band: the edge's line, then the glow.
+const CORNER_REACH: i32 = OVERLAY_LINE as i32 + FRAME_GLOW.len() as i32;
+
+/// What a cached primitive draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Shape {
+    Ring(Ring),
+    Corner(Corner),
+}
+
+/// Primitives by shape, as addresses.
+static SHAPES: Mutex<BTreeMap<Shape, usize>> = Mutex::new(BTreeMap::new());
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
@@ -183,15 +217,24 @@ fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color:
     }
 }
 
-/// Corner brackets `thick` wide and `arm` long on the corners of `x, y, w, h`, each over a dark
-/// edge one line wider.
-pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32, color: GlColor) {
-    let bars = bracket_bars(x, y, w, h, arm, thick);
-    let e = OVERLAY_LINE;
-    for (bx, by, bw, bh) in bars {
-        draw_rect(bx - e, by - e, bw + 2.0 * e, bh + 2.0 * e, PLATE_BEVEL_COLOR);
+/// Corner brackets in the game's style on the corners of `x, y, w, h`, `k` times their size:
+/// `color` arms with cut corners over a dark edge, in a glow of their colour.
+pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, bracket: Bracket, k: f32, color: GlColor) {
+    let (left, top, right, bottom) = (x.round(), y.round(), (x + w).round(), (y + h).round());
+    let corners = [
+        (left, top, false, false),
+        (right, top, true, false),
+        (left, bottom, false, true),
+        (right, bottom, true, true),
+    ];
+    let colors = [CORNER_BAND, CORNER_EDGE].into_iter().zip([color, PLATE_BEVEL_COLOR]);
+    let glow = FRAME_GLOW.iter().enumerate().map(|(i, &alpha)| (CORNER_GLOW + i, faded(color, alpha)));
+    for (layer, shade) in colors.chain(glow) {
+        for (cx, cy, flip_x, flip_y) in corners {
+            draw_shape(cx, cy, k, Shape::Corner(Corner { bracket, flip_x, flip_y, layer }), shade);
+        }
     }
-    draw_corners(x, y, w, h, arm, thick, color);
+    reset_fixed_color();
 }
 
 /// Corner brackets `thick` wide and `arm` long on the corners of `x, y, w, h`.
@@ -300,44 +343,116 @@ fn ring_rects(r: Ring) -> Vec<Rect> {
     rects
 }
 
-/// The game primitive of a ring, built white on first use; None when the game builds none.
-fn ring_primitive(r: Ring) -> Option<Ptr> {
-    let mut rings = RINGS.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(&p) = rings.get(&r) {
-        return Some(p as Ptr);
-    }
-    let a = api();
-    if rings.len() >= RINGS_MAX {
-        for (_, p) in std::mem::take(&mut *rings) {
-            // SAFETY: a primitive built below and drawn no more.
-            unsafe { (a.destroy_primitive)(p as Ptr) };
+/// The rects of each layer of a bracket's corner, unflipped, row by row.
+fn corner_layers(b: Bracket) -> [Vec<Rect>; CORNER_LAYERS] {
+    let Bracket { arm, thick, cut } = b;
+    let inner_cut = cut_at(cut, thick).max(0);
+    let band = |x: i32, y: i32| {
+        let outer = (0..arm).contains(&x) && (0..arm).contains(&y) && x + y >= cut;
+        let inner = x >= thick && y >= thick && x + y - 2 * thick >= inner_cut;
+        outer && !inner
+    };
+    let band_pixels: Vec<(i32, i32)> =
+        (0..arm).flat_map(|y| (0..arm).map(move |x| (x, y))).filter(|&(x, y)| band(x, y)).collect();
+    // The edge takes the pixels next to the band, diagonally too; glow ring `i` the rest past
+    // `i + 1` and up to `i + 2` away.
+    let layer_of = |x: i32, y: i32| -> Option<usize> {
+        if band(x, y) {
+            return Some(CORNER_BAND);
+        }
+        let near = |&(bx, by): &(i32, i32)| (bx - x).abs().max((by - y).abs());
+        if band_pixels.iter().map(near).min() == Some(1) {
+            return Some(CORNER_EDGE);
+        }
+        let dist = |&(bx, by): &(i32, i32)| (((bx - x).pow(2) + (by - y).pow(2)) as f32).sqrt();
+        let ring = band_pixels.iter().map(dist).fold(f32::INFINITY, f32::min).ceil() as usize;
+        (ring >= 2 && ring - 2 < FRAME_GLOW.len()).then(|| CORNER_GLOW + ring - 2)
+    };
+    let mut layers: [Vec<Rect>; CORNER_LAYERS] = Default::default();
+    let span = -CORNER_REACH..arm + CORNER_REACH;
+    for y in span.clone() {
+        let mut run: Option<(i32, usize)> = None;
+        for x in span.start..=span.end {
+            let layer = span.contains(&x).then(|| layer_of(x, y)).flatten();
+            match run {
+                Some((_, l)) if Some(l) == layer => continue,
+                Some((from, l)) => layers[l].push(Rect { x: from, y, w: x - from, h: 1 }),
+                None => {}
+            }
+            run = layer.map(|l| (x, l));
         }
     }
-    let rects = ring_rects(r);
-    // SAFETY: the renderer reads the rects, alive for the call, into a primitive of its own.
-    let p = unsafe { (a.multi_rect)(&CppVector::of(&rects), WHITE) };
-    if p.is_null() {
-        return None;
-    }
-    rings.insert(r, p as usize);
-    Some(p)
+    layers
 }
 
-/// Draws ring `r` with its top left corner at (`x`, `y`).
-fn draw_ring(x: i32, y: i32, r: Ring, color: GlColor) {
-    if r.w <= 0 || r.h <= 0 || color.a <= 0.0 {
+/// `rects` mirrored across the axes at the origin as asked.
+fn flipped(rects: &[Rect], flip_x: bool, flip_y: bool) -> Vec<Rect> {
+    let flip = |at: i32, len: i32, on: bool| if on { -at - len } else { at };
+    rects.iter().map(|r| Rect { x: flip(r.x, r.w, flip_x), y: flip(r.y, r.h, flip_y), ..*r }).collect()
+}
+
+/// A game primitive of `rects`, white; None when the game builds none.
+fn build_primitive(rects: &[Rect]) -> Option<usize> {
+    // SAFETY: the renderer reads the rects, alive for the call, into a primitive of its own.
+    let p = unsafe { (api().multi_rect)(&CppVector::of(rects), WHITE) };
+    (!p.is_null()).then_some(p as usize)
+}
+
+/// The game primitive of a shape, built white on first use; None when the game builds none.
+/// A corner's layers and flips are all built with it.
+fn shape_primitive(shape: Shape) -> Option<Ptr> {
+    let mut shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(&p) = shapes.get(&shape) {
+        return Some(p as Ptr);
+    }
+    if shapes.len() >= SHAPES_MAX {
+        for (_, p) in std::mem::take(&mut *shapes) {
+            // SAFETY: a primitive built below and drawn no more.
+            unsafe { (api().destroy_primitive)(p as Ptr) };
+        }
+    }
+    match shape {
+        Shape::Ring(r) => {
+            if let Some(p) = build_primitive(&ring_rects(r)) {
+                shapes.insert(shape, p);
+            }
+        }
+        Shape::Corner(c) => {
+            for (layer, rects) in corner_layers(c.bracket).iter().enumerate() {
+                for (flip_x, flip_y) in [(false, false), (true, false), (false, true), (true, true)] {
+                    if let Some(p) = build_primitive(&flipped(rects, flip_x, flip_y)) {
+                        shapes.insert(Shape::Corner(Corner { layer, flip_x, flip_y, ..c }), p);
+                    }
+                }
+            }
+        }
+    }
+    shapes.get(&shape).map(|&p| p as Ptr)
+}
+
+/// Draws `shape` with its origin at (`x`, `y`), `k` times its size.
+fn draw_shape(x: f32, y: f32, k: f32, shape: Shape, color: GlColor) {
+    if color.a <= 0.0 {
         return;
     }
-    let Some(p) = ring_primitive(r) else {
+    let Some(p) = shape_primitive(shape) else {
         return;
     };
     let a = api();
     // SAFETY: the renderer's matrix stack around one of its primitives, popped below.
     unsafe {
         (a.push_matrix)();
-        (a.translate)(x as f32, y as f32, 0.0);
+        (a.translate)(x, y, 0.0);
+        (a.scale)(k, k, 1.0);
         (a.render_primitive_color)(p, color);
         (a.pop_matrix)();
+    }
+}
+
+/// Draws ring `r` with its top left corner at (`x`, `y`).
+fn draw_ring(x: i32, y: i32, r: Ring, color: GlColor) {
+    if r.w > 0 && r.h > 0 {
+        draw_shape(x as f32, y as f32, 1.0, Shape::Ring(r), color);
     }
 }
 
@@ -367,6 +482,11 @@ pub fn draw_frame(x: f32, y: f32, w: f32, h: f32, style: &FrameStyle, fill: GlCo
         layer(style.band, Some(style.line), INK_COLOR);
     }
     layer(style.band + style.line, None, fill);
+    reset_fixed_color();
+}
+
+/// Sets the engine's fixed colour back to white after tinted primitives.
+fn reset_fixed_color() {
     // The game's draws leave the engine's fixed colour white, which untinted text relies on.
     // SAFETY: the engine's colour state, set from a colour alive for the call.
     unsafe { (api().set_fixed_color)(&WHITE) };
@@ -479,6 +599,60 @@ mod tests {
             for y in t..cut.min(hole_cut + t) {
                 assert!((run(y) - t as f32 * SQRT_2).abs() < 1.0, "cut {cut}, band {t}, row {y}: {}", run(y));
             }
+        }
+    }
+
+    /// The pixels `rects` cover.
+    fn rect_pixels(rects: &[Rect]) -> impl Iterator<Item = (i32, i32)> + '_ {
+        rects.iter().flat_map(|r| (r.x..r.x + r.w).flat_map(move |x| (r.y..r.y + r.h).map(move |y| (x, y))))
+    }
+
+    /// The pixels of each layer of a bracket's corner, each in one layer once.
+    fn corner_pixels(b: Bracket) -> Vec<BTreeSet<(i32, i32)>> {
+        let mut seen = BTreeSet::new();
+        let layers = corner_layers(b);
+        let layer_set = |rects: &Vec<Rect>| {
+            let mut layer = BTreeSet::new();
+            for p in rect_pixels(rects) {
+                assert!(seen.insert(p), "{b:?} covers {p:?} twice");
+                layer.insert(p);
+            }
+            layer
+        };
+        layers.iter().map(layer_set).collect()
+    }
+
+    #[test]
+    fn a_bracket_corner_is_a_cut_band_in_an_edge_and_a_glow() {
+        for b in [
+            Bracket { arm: 14, thick: 2, cut: 4 },
+            Bracket { arm: 9, thick: 2, cut: 4 },
+            Bracket { arm: 8, thick: 2, cut: 4 },
+        ] {
+            let layers = corner_pixels(b);
+            let band = &layers[CORNER_BAND];
+            for along in b.cut + b.thick..b.arm {
+                assert_eq!(band.iter().filter(|&&(x, _)| x == along).count(), b.thick as usize, "{b:?} column {along}");
+                assert_eq!(band.iter().filter(|&&(_, y)| y == along).count(), b.thick as usize, "{b:?} row {along}");
+            }
+            assert!(!band.contains(&(0, 0)), "{b:?}: the cut");
+            assert!(band.contains(&(b.arm - 1, 0)) && !band.contains(&(b.arm, 0)), "{b:?}: the arm");
+            for &(x, y) in band {
+                for p in (-1..=1).flat_map(|dx| (-1..=1).map(move |dy| (x + dx, y + dy))) {
+                    assert!(band.contains(&p) || layers[CORNER_EDGE].contains(&p), "{b:?}: no edge at {p:?}");
+                }
+            }
+            assert!(layers[CORNER_GLOW..].iter().all(|ring| !ring.is_empty()), "{b:?}");
+        }
+    }
+
+    #[test]
+    fn a_flipped_corner_mirrors_across_its_point() {
+        let b = Bracket { arm: 10, thick: 2, cut: 4 };
+        for rects in corner_layers(b) {
+            let plain: BTreeSet<_> = rect_pixels(&rects).collect();
+            let both: BTreeSet<_> = rect_pixels(&flipped(&rects, true, true)).collect();
+            assert_eq!(both, plain.iter().map(|&(x, y)| (-x - 1, -y - 1)).collect());
         }
     }
 

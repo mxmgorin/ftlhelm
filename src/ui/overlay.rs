@@ -9,6 +9,7 @@ use crate::core::layer::Layer;
 use crate::core::util::{clampf, now_s};
 use crate::game::offsets::*;
 use crate::game::state;
+use crate::game::zones::ZoneKind;
 
 const HELP_FONT: i32 = WHEEL_FONT;
 const HELP_LINE: f32 = 30.0;
@@ -86,10 +87,14 @@ const CREW_TITLE: &str = "Crew";
 /// A focused zone's corner brackets, in frame pixels: their arms take a share of the zone's
 /// shorter side within bounds, and they slide in from further out as the focus lands.
 const FOCUS_ARM_SHARE: f32 = 0.25;
-const FOCUS_ARM_MIN: f32 = 6.0;
+const FOCUS_ARM_MIN: f32 = 2.0 * FOCUS_CUT as f32;
 const FOCUS_ARM_MAX: f32 = 14.0;
-const FOCUS_THICK: f32 = 2.0;
+const FOCUS_THICK: i32 = 2;
+/// The cut of the game's selection boxes, half the shortest arm.
+const FOCUS_CUT: i32 = 4;
 const FOCUS_GAP: f32 = 1.0;
+/// An event choice's zone ends at its text: its brackets keep this much further out sideways.
+const FOCUS_TEXT_PAD: f32 = 4.0;
 const FOCUS_SLIDE: f32 = 6.0;
 const FOCUS_SETTLE_S: f64 = 0.12;
 /// The marker over a selected crew member, in frame pixels above its position; it bobs
@@ -267,14 +272,17 @@ impl Layer {
         let Some((i, age)) = self.shown_focus(now) else {
             return;
         };
-        let r = self.zones.list[i].rect;
+        let zone = &self.zones.list[i];
+        let r = zone.rect;
         let (w, h) = (r.w as f32, r.h as f32);
         let k = self.mark_scale();
-        let arm = clampf(w.min(h) * FOCUS_ARM_SHARE, FOCUS_ARM_MIN, FOCUS_ARM_MAX) * k;
+        let arm = clampf(w.min(h) * FOCUS_ARM_SHARE, FOCUS_ARM_MIN, FOCUS_ARM_MAX).round() as i32;
+        let bracket = Bracket { arm, thick: FOCUS_THICK, cut: FOCUS_CUT };
         let settle = (age / FOCUS_SETTLE_S).min(1.0) as f32;
-        let out = (FOCUS_GAP + FOCUS_THICK + FOCUS_SLIDE * (1.0 - settle)) * k;
-        let (x, y) = (r.x as f32 - out, r.y as f32 - out);
-        draw_brackets(x, y, w + 2.0 * out, h + 2.0 * out, arm, FOCUS_THICK * k, PLATE_EDGE_COLOR);
+        let out = (FOCUS_GAP + FOCUS_THICK as f32 + FOCUS_SLIDE * (1.0 - settle)) * k;
+        let pad = if zone.kind == ZoneKind::Choice { FOCUS_TEXT_PAD * k } else { 0.0 };
+        let (x, y) = (r.x as f32 - out - pad, r.y as f32 - out);
+        draw_brackets(x, y, w + 2.0 * (out + pad), h + 2.0 * out, bracket, k, BUTTON_SELECTED_COLOR);
     }
 
     /// Marks each selected crew member on the ship view with a triangle over it.
