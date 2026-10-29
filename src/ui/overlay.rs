@@ -3,7 +3,7 @@
 
 use super::draw::*;
 use super::text;
-use crate::config::layout::{key_name, truncate_label, Action, Binding, Builtin, SIL_BUTTONS};
+use crate::config::layout::{key_name, Action, Binding, Builtin, SIL_BUTTONS};
 use crate::config::settings::option_name;
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, now_s};
@@ -28,10 +28,6 @@ const URL_SCHEME: &str = "https://";
 const CLICK_HOLD_TITLE: &str = "Drag select";
 /// A held pause shows a zoomed view at its lowest level.
 const PAUSE_HOLD_TITLE: &str = "Zoom out";
-const BADGE_H: f32 = 30.0;
-const BADGE_PAD: f32 = 14.0;
-const BADGE_SEPARATOR: &str = " / ";
-const BADGE_MARGIN: f32 = 8.0;
 /// The pause button in the bottom right corner of the ship view's columns; the margin holds its
 /// glow and keeps its reach off the HUD's rightmost box, the battery's.
 const PAUSE_BUTTON_SIZE: f32 = 56.0;
@@ -82,7 +78,6 @@ fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
 
 const INPUT_TITLES: [&str; SIL_BUTTONS] =
     ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
-const CREW_TITLE: &str = "Crew";
 /// A focused zone's corner brackets, in frame pixels: their arms take a share of the zone's
 /// shorter side within bounds, and they slide in from further out as the focus lands.
 const FOCUS_ARM_SHARE: f32 = 0.25;
@@ -152,21 +147,6 @@ fn draw_window(cx: f32, cy: f32, w: f32, h: f32) {
     draw_frame(cx - w / 2.0, cy - h / 2.0, w, h, &WINDOW_FRAME, BUTTON_PALE_COLOR);
 }
 
-/// The badge's crew part on the ship view: the selected crew member's name, or how many are
-/// selected.
-fn crew_part() -> Option<String> {
-    let count = state::selected_count();
-    if count == 0 || !state::ship_view() {
-        return None;
-    }
-    if count > 1 {
-        return Some(format!("{count} {CREW_TITLE}"));
-    }
-    let member = state::first_selected_crew()?;
-    let name = truncate_label(&state::display_text(member.at(CREW_BLUEPRINT + CREWBP_NAME)));
-    Some(format!("{CREW_TITLE}: {name}"))
-}
-
 /// The top of a line of text centred between `top` and `bottom`.
 fn band_text_top(top: f32, bottom: f32) -> f32 {
     (top + bottom - WHEEL_FONT_H) / 2.0
@@ -191,23 +171,10 @@ impl Layer {
             self.draw_wheel();
         }
         self.draw_touch();
-        let pause = self.pause_button();
-        if let Some((x, y)) = pause {
+        if let Some((x, y)) = self.pause_button() {
             draw_pause_button(x, y);
         }
-        if self.cursor.synced && self.cfg.overlay && self.cfg.badge && state::gui().is_some() {
-            let text = self.badge_text();
-            if !text.is_empty() {
-                let w = text_width(WHEEL_FONT, &text) + 2.0 * BADGE_PAD;
-                let (right, top) = self.top_right();
-                let right = pause.filter(|_| !self.corner_shown()).map_or(right, |(x, _)| x);
-                let (x, y) = (right - BADGE_MARGIN - w, top + BADGE_MARGIN);
-                draw_frame(x, y, w, BADGE_H, &BOX_FRAME, BUTTON_PALE_COLOR);
-                set_color(INK_COLOR);
-                draw_text_center(WHEEL_FONT, x + w / 2.0, y + TEXT_DY, &text);
-                set_color(TEXT_COLOR);
-            }
-        }
+        self.draw_badge();
         if self.help_shown && self.cursor.synced {
             self.draw_help();
         }
@@ -448,39 +415,15 @@ impl Layer {
             set_color(TEXT_COLOR);
         });
     }
-
-    /// The mode badge text, empty in the plain state: the pause on a zoomed ship view, the weapon
-    /// waiting for a target and the layer's own modes, which the game does not show.
-    pub fn badge_text(&self) -> String {
-        if self.wheel.open.is_some() {
-            return String::new();
-        }
-        let mut parts = Vec::new();
-        if state::mouse().i32(MOUSE_AIMING) != 0 {
-            let weapon = state::weapon_control()
-                .and_then(|c| c.obj(WEAPONCTRL_ARMED))
-                .and_then(|w| w.obj(WEAPON_BLUEPRINT))
-                .map(|bp| truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE))))
-                .unwrap_or_default();
-            parts.push(if weapon.is_empty() { "Target".to_string() } else { format!("Target: {weapon}") });
-        }
-        parts.extend(crew_part());
-        let modes =
-            [(self.bind.precision, "Doors"), (self.actions.fast_forward, "Fast"), (self.bind.dpad_mouse, "Mouse")];
-        parts.extend(modes.iter().filter(|(on, _)| *on).map(|(_, name)| name.to_string()));
-        parts.join(BADGE_SEPARATOR).to_ascii_uppercase()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::layout::LABEL_CHARS;
     use crate::game::api::Rect;
     use crate::game::fake::with_game;
     use crate::game::zones::{Zone, ZoneKind};
     use crate::ui::text::TEXT_SCALE_MAX;
-    use std::mem::size_of;
 
     #[test]
     fn a_panel_grows_with_the_text_as_far_as_it_fits() {
@@ -537,41 +480,6 @@ mod tests {
             (l.cursor.x, l.cursor.y) = (300.0, 300.0);
             l.send_cursor();
             assert!(!l.pointer_hidden(), "the cursor moved on");
-        });
-    }
-
-    #[test]
-    fn the_badge_names_the_selected_crew_on_the_ship_view() {
-        with_game(|g| {
-            let l = Layer::default();
-            let ann = g.crew("Ann", "human", PLAYER_SHIP_ID, false);
-            let bob = g.crew("Bob", "human", PLAYER_SHIP_ID, false);
-            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(ann)]);
-            assert_eq!(l.badge_text(), "", "not on the ship view");
-            g.player_manager();
-            assert_eq!(l.badge_text(), "CREW: ANN");
-            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(ann), Some(bob)]);
-            assert_eq!(l.badge_text(), "2 CREW");
-        });
-    }
-
-    #[test]
-    fn the_badge_names_the_armed_weapon_and_the_layer_modes() {
-        with_game(|g| {
-            let mut l = Layer::default();
-            assert_eq!(l.badge_text(), "");
-            (l.bind.precision, l.bind.dpad_mouse) = (true, true);
-            assert_eq!(l.badge_text(), "DOORS / MOUSE");
-            g.mouse.set(MOUSE_AIMING, 1i32);
-            assert_eq!(l.badge_text(), "TARGET / DOORS / MOUSE");
-            let title = "Heavy Laser Mark Two Prototype";
-            let bp = g.arena.alloc(BLUEPRINT_SHORT_TITLE + TEXTSTRING_LITERAL + size_of::<u8>());
-            g.literal(bp, BLUEPRINT_SHORT_TITLE, title);
-            let weapon = g.arena.alloc(WEAPON_BLUEPRINT + size_of::<usize>());
-            weapon.set(WEAPON_BLUEPRINT, bp.addr());
-            g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL).set(WEAPONCTRL_ARMED, weapon.addr());
-            let name: String = title.chars().take(LABEL_CHARS).collect();
-            assert_eq!(l.badge_text(), format!("TARGET: {} / DOORS / MOUSE", name.to_ascii_uppercase()));
         });
     }
 }

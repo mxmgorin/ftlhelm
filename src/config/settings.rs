@@ -96,7 +96,7 @@ pub struct Settings {
     pub cursor_curve: f32,
     /// The badge, the focus brackets and the crew markers show, each as its own switch allows.
     pub overlay: bool,
-    /// The mode badge in the top right corner.
+    /// The mode badge on the game's pause row.
     pub badge: bool,
     /// A zone a focus move lands on is framed with brackets in place of the pointer.
     pub focus_brackets: bool,

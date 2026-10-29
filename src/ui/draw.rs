@@ -1,5 +1,6 @@
-//! Drawing over the game's renderer: text through its fonts on its own std::string, frames in
-//! the game's style, discs, ring timers, game images by path, and the shared palette.
+//! Drawing over the game's renderer: text through its fonts on its own std::string, plain or
+//! in the look of the game's pause banners, frames in the game's style, discs, ring timers,
+//! game images by path, and the shared palette.
 //!
 //! A frame is rings of cut rects: a glow ring per pixel out, the band, a line, then the fill;
 //! none overlaps another, so a see-through fill shows nothing of them. Each ring is built once
@@ -17,6 +18,8 @@ use std::sync::Mutex;
 use crate::core::util::log;
 use crate::game::api::{api, CppVector, GlColor, Ptr, Rect};
 use crate::game::ipad_art;
+use crate::game::mem::Obj;
+use crate::game::offsets::{TEXTURE_H, TEXTURE_W};
 use crate::game::string::GameString;
 
 pub const OVERLAY_LINE: f32 = 1.0;
@@ -53,6 +56,17 @@ const CUT_PER_INSET: f32 = 2.0 - SQRT_2;
 /// Primitives kept; past it they are all freed and built anew.
 const SHAPES_MAX: usize = 512;
 const WHITE: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
+/// The dark edge of the game's pause banners' letters.
+const BANNER_EDGE_COLOR: GlColor = GlColor::new(0.2, 0.33, 0.37, 0.75);
+/// The rings of a banner-look glow, outermost first: offset and alpha.
+const GLOW_RINGS: [(f32, f32); 2] = [(3.0, 0.2), (2.0, 0.45)];
+/// How far a banner-look glow reaches past its letters.
+pub const GLOW_REACH: f32 = GLOW_RINGS[0].0;
+/// Unit offsets a glow ring is printed at.
+const RING_STEPS: [(f32, f32); 8] =
+    [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
+/// Unit offsets the dark edge is printed at.
+const EDGE_STEPS: [(f32, f32); 4] = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)];
 
 /// A frame's look: its corners cut `cut` rows deep, a `band` wide band, a `line` wide slate
 /// line inside it, none when 0, and a glow when given.
@@ -159,6 +173,24 @@ pub fn draw_text_center(font: i32, x: f32, y: f32, text: &str) {
     let s = GameString::new(text);
     // SAFETY: as above.
     unsafe { (api().print_center)(font, x, y, s.as_ptr()) };
+}
+
+/// Prints text centred at x with its top at y in the look of the game's pause banners: pale
+/// over a dark edge, in a `glow` halo.
+pub fn draw_text_glow(font: i32, x: f32, y: f32, text: &str, glow: GlColor) {
+    for (r, a) in GLOW_RINGS {
+        set_color(GlColor { a, ..glow });
+        for (dx, dy) in RING_STEPS {
+            draw_text_center(font, x + dx * r, y + dy * r, text);
+        }
+    }
+    set_color(BANNER_EDGE_COLOR);
+    for (dx, dy) in EDGE_STEPS {
+        draw_text_center(font, x + dx, y + dy, text);
+    }
+    set_color(BUTTON_PALE_COLOR);
+    draw_text_center(font, x, y, text);
+    set_color(TEXT_COLOR);
 }
 
 /// Prints a WHEEL_FONT_H line centred on (cx, cy), `k` times its size.
@@ -616,6 +648,23 @@ pub fn draw_ring_timer(cx: f32, cy: f32, r: f32, width: f32, lit: usize, color: 
         let shade = faded(if i < lit { color } else { RING_UNLIT_COLOR }, opacity);
         draw_arc(cx, cy, r, width, (from, from + step - RING_GAP_DEG), shade);
     }
+}
+
+/// A game texture's size in pixels.
+pub fn texture_size(texture: Ptr) -> (f32, f32) {
+    // SAFETY: a texture the game handed out.
+    let t = unsafe { Obj::from_ptr(texture) };
+    t.map_or((0.0, 0.0), |t| (t.i32(TEXTURE_W) as f32, t.i32(TEXTURE_H) as f32))
+}
+
+/// Draws the top `rows` of a game texture at its size, its top left at (x, y).
+pub fn draw_image_top(texture: Ptr, x: f32, y: f32, rows: f32) {
+    let (w, h) = texture_size(texture);
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    // SAFETY: the renderer's blit on a game texture; the region goes in as fractions.
+    unsafe { (api().blit_partial)(texture, x, y, w, rows, 0.0, 1.0, 0.0, rows / h, 1.0, WHITE, false) }
 }
 
 /// Game images looked up by path under img/, misses included.

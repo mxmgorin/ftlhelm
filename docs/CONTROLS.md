@@ -44,9 +44,12 @@ L3 or R3, or the Mouse plate of the settings wheel, switches the D-pad and both 
 between zones and mouse mode. In mouse mode they move the cursor freely, at `cursor_speed`,
 with `cursor_deadzone` and `cursor_curve` for the sticks.
 
-The badge in the top right corner names the selected crew member, or counts several, and the
-active modes: Mouse, Doors, Fast (fast forward) and Target with the armed weapon. `badge = 0`
-hides it; `overlay = 0` hides it, the zone brackets and the crew markers.
+The badge sits where the game writes PAUSED. It names the selected crew member, or counts
+several, and the active modes: Mouse, Doors, Fast (fast forward) and Target with the armed
+weapon. Targeting and doors mode show the game's own TARGETING and DOOR CONTROL banners, the
+rest a line under them; a banner on a paused game takes PAUSED's place, and the line then
+ends in Paused. `badge = 0` hides it; `overlay = 0` hides it, the zone brackets and the crew
+markers.
 
 ## Touch
 

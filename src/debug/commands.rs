@@ -84,11 +84,11 @@ impl Layer {
 
     fn dump_state(&self) {
         let wheel = self.wheel.open.and_then(|w| self.layout.wheels.get(w)).map_or("-", |w| &w.name);
-        log!("state: {}; wheel {wheel} sel {}; shift {}; dpad {}, left {}, right {}; aiming {} crew {} paused {} precision {}",
+        log!("state: {}; wheel {wheel} sel {}; shift {}; dpad {}, left {}, right {}; aiming {} crew {} paused {} menu {} precision {}",
              self.stack_names().join(" "), self.wheel.sel.map_or(-1, |s| s as i64), shift_count(),
              mode_name(self.slot_mode(Slot::Dpad)), mode_name(self.slot_mode(Slot::LStick)),
              mode_name(self.slot_mode(Slot::RStick)), state::aiming() as i32, state::any_crew_selected() as i32,
-             state::game_paused() as i32, self.bind.precision as i32);
+             state::game_paused() as i32, state::menu_paused() as i32, self.bind.precision as i32);
         let fps = state::fps_control();
         // SAFETY: the step cap float placed by redirect_step_cap.
         let cap = self.actions.step_cap.map_or(-1.0, |c| unsafe { (c as *const f32).read() });
@@ -161,9 +161,9 @@ impl Layer {
                 }
             }
             ("badge", _) if state::gui().is_some() => {
-                let text = self.badge_text();
-                let width = if text.is_empty() { 0.0 } else { text_width(WHEEL_FONT, &text) };
-                log!("badge: '{text}' width {width}");
+                let (banner, line) = self.badge_parts();
+                let width = if line.is_empty() { 0.0 } else { text_width(WHEEL_FONT, &line) };
+                log!("badge: banner {banner:?}, line '{line}' width {width}");
             }
             _ => log!("unknown command: {line}"),
         }

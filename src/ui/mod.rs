@@ -1,3 +1,4 @@
+pub mod badge;
 pub mod draw;
 pub mod overlay;
 pub mod shrink;

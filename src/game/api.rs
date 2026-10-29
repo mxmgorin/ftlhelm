@@ -197,6 +197,7 @@ game_api! {
     mouse_position: usize = "_ZN12MouseControl5MouseE",
     font_data: usize = "_ZN15ResourceControl11GetFontDataEib",
     choice_render: usize = "_ZN9ChoiceBox8OnRenderEv",
+    render_pause: usize = "_ZN10CommandGui11RenderPauseEv",
     measure_tooltip: usize = "_ZN12MouseControl14MeasureTooltipEi",
     choice_mouse_move: usize = "_ZN9ChoiceBox9MouseMoveEii",
     frame_draw: usize = "_ZN11WindowFrame4DrawEii",

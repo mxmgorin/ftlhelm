@@ -110,6 +110,11 @@ pub fn game_paused() -> bool {
     gui().is_some_and(|g| g.flag(layout().gui_paused))
 }
 
+/// Whether a menu or an event holds the game.
+pub fn menu_paused() -> bool {
+    gui().is_some_and(|g| g.flag(layout().gui_menu_paused))
+}
+
 pub fn window_open(window: Option<Obj>) -> bool {
     window.is_some_and(|w| w.flag(FOCUS_OPEN))
 }
@@ -263,6 +268,12 @@ pub fn boxed_crew() -> Vec<(usize, Obj)> {
 
 pub fn crew_dead(member: Obj) -> bool {
     member.flag(CREW_DEAD)
+}
+
+/// The game's current language code, as its loc- folders name it.
+pub fn language() -> String {
+    // SAFETY: the text library is a game global.
+    unsafe { Obj::from_addr(api().text_library) }.map_or_else(String::new, |l| l.string(TEXTLIB_LANGUAGE))
 }
 
 /// A TextString's display text: literal ones as they are, keys through the game's text

@@ -37,7 +37,7 @@ use crate::game::string::GameString;
 use crate::game::zones::record_button;
 use crate::game::{hud, ipad_art, sound, state};
 use crate::input::touch::{self, TouchPhase};
-use crate::ui::{shrink, text, zoom};
+use crate::ui::{badge, shrink, text, zoom};
 
 const DEBUG_ENV: &str = "FTLHELM_DEBUG";
 const LOG_ENV: &str = "FTLHELM_LOG";
@@ -51,6 +51,8 @@ const ONLOOP_PROLOGUE: [u8; 5] = [0x55, 0x53, 0x48, 0x89, 0xfb];
 const MOUSE_RENDER_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xff];
 /// push %r15; mov %rdi,%r15
 const CHOICE_RENDER_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xff];
+/// push %r12; push %rbp; push %rbx; mov %rdi,%rbx
+const RENDER_PAUSE_PROLOGUE: [u8; 7] = [0x41, 0x54, 0x55, 0x53, 0x48, 0x89, 0xfb];
 /// push %r12; lea -0x6(%rsi),%eax
 const FONT_DATA_PROLOGUE: [u8; 5] = [0x41, 0x54, 0x8d, 0x46, 0xfa];
 /// push %r13; xorps %xmm1,%xmm1
@@ -90,6 +92,7 @@ static GET_SHIFT_ORIG: AtomicUsize = AtomicUsize::new(0);
 static BUTTON_MOVE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static FONT_DATA_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CHOICE_RENDER_ORIG: AtomicUsize = AtomicUsize::new(0);
+static RENDER_PAUSE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static MEASURE_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CHOICE_MOUSE_MOVE_ORIG: AtomicUsize = AtomicUsize::new(0);
 static FRAME_DRAW_ORIG: AtomicUsize = AtomicUsize::new(0);
@@ -133,6 +136,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.poll_files(t);
         l.update_hud();
         l.update_ipad_art();
+        l.update_banner_art();
         text::keep_boxes_to(l.zoom.span);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
@@ -194,6 +198,14 @@ extern "C" fn font_data_hook(this: Ptr, id: c_int, flag: bool) -> *const FontDat
     // SAFETY: the original ResourceControl::GetFontData with its own arguments.
     let found = unsafe { orig::<extern "C" fn(Ptr, c_int, bool) -> *const FontData>(&FONT_DATA_ORIG)(this, id, flag) };
     text::font_for(id, found)
+}
+
+extern "C" fn render_pause_hook(this: Ptr) {
+    if with_layer(|l| l.banner_hides_pause()).unwrap_or(false) {
+        return;
+    }
+    // SAFETY: the original CommandGui::RenderPause on its own object.
+    unsafe { orig::<extern "C" fn(Ptr)>(&RENDER_PAUSE_ORIG)(this) };
 }
 
 extern "C" fn choice_render_hook(this: Ptr) {
@@ -494,6 +506,15 @@ pub extern "C" fn init() {
         &CREW_RENDER_ORIG,
     );
     hud::set_left_hooked(hud_left);
+    let pause_banner = overlay
+        && install(
+            "CommandGui::RenderPause",
+            a.render_pause,
+            render_pause_hook as *const () as usize,
+            &RENDER_PAUSE_PROLOGUE,
+            &RENDER_PAUSE_ORIG,
+        );
+    badge::set_pause_hooked(pause_banner);
     let ipad = install(
         "ResourceControl::GetImageId",
         a.image_id as usize,
@@ -508,8 +529,8 @@ pub extern "C" fn init() {
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
         "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \
-         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, ipad art {}, \
-         step cap {}, pad scan {}, sound recovery {}",
+         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, pause banner {}, \
+         ipad art {}, step cap {}, pad scan {}, sound recovery {}",
         build.name,
         on(overlay),
         on(shift),
@@ -522,6 +543,7 @@ pub extern "C" fn init() {
         on(tooltip_text),
         on(zoom),
         on(hud_left),
+        on(pause_banner),
         on(ipad),
         on(step_cap.is_some()),
         on(pad_scan),

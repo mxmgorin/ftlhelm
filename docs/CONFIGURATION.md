@@ -72,7 +72,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `overlay` | 1 | switch | the badge, the focus brackets and the crew markers, each as its own key allows; 0: none of them |
-| `badge` | 1 | switch | the badge in the top right corner: the selected crew and the active modes |
+| `badge` | 1 | switch | the badge on the game's PAUSED row: the selected crew and the active modes |
 | `focus_brackets` | 1 | switch | corner brackets in place of the pointer arrow on the zone the cursor jumped to |
 | `crew_marker` | 1 | switch | a green marker over each selected crew member on the ship view |
 | `pointer_scale_max` | 2 | 1 to 4 | the most times its size the pointer is drawn on a screen that shows the frame smaller than 1280x720; 1: the game's size |

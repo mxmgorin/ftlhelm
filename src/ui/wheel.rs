@@ -389,12 +389,6 @@ fn plate_center((ox, oy): (f32, f32), slot: usize) -> (f32, f32) {
     (ox + angle.sin() * WHEEL_RADIUS, oy - angle.cos() * WHEEL_RADIUS)
 }
 
-fn texture_size(texture: Ptr) -> (f32, f32) {
-    // SAFETY: a texture the game handed out.
-    let t = unsafe { Obj::from_ptr(texture) };
-    t.map_or((0.0, 0.0), |t| (t.i32(TEXTURE_W) as f32, t.i32(TEXTURE_H) as f32))
-}
-
 /// Draws a plate's icon or portrait centred at cx,cy, an icon fitted to a `size` square.
 fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, size: f32, tint: GlColor) {
     let a = api();
