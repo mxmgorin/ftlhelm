@@ -45,7 +45,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
   </tr>
 </table>
 
-<p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom to 1.33x, briefly 2x and back to 1.33x, the view follows the cursor from room to room and onto the enemy ship, the beacon map enlarged to fit the screen, and the zoom stepped back to the whole frame" width="640"><br><sub><b>Zoom</b> on a 640x480 screen: the view follows the cursor, the beacon map enlarged to fit</sub></p>
+<p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="640"><br><sub><b>Zoom</b> on a 640x480 screen: the settings wheel sets the level, the view follows the cursor, the beacon map enlarged to fit</sub></p>
 
 <p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without ftlhelm on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without ftlhelm on the left, with it on the right</sub></p>
 
