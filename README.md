@@ -16,6 +16,8 @@
 
 ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
+<p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets through the ship's rooms, the weapons wheel arms the Burst Laser, a volley takes down the enemy's shield, the Artemis hits its weapons room, and the beacon map jumps the ship away" width="800"><br><sub>The D-pad, the weapons wheel, a volley and a jump, all on a gamepad</sub></p>
+
 ## Features
 
 - **Zones**: the D-pad and sticks jump between rooms, doors, event choices, beacons and buttons
