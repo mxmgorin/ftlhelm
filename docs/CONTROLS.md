@@ -82,7 +82,8 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | D-pad left, right | previous, next plate |
 | D-pad up, down | add, take power; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the plate's setting |
 | A | act on the plate |
-| B, or the wheel's own button | close |
+| B | close; in a wheel opened from a plate, back to the wheel it was opened from |
+| the wheel's own button | close, with any wheel opened from it |
 | hold another wheel's button | switch to that wheel |
 
 `autopause_wheel` pauses the game while a wheel is open; `wheels_ship_only = 0` opens
@@ -99,11 +100,24 @@ cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 | Fast speed | next fast forward speed, the slowest after the fastest | faster, slower |
 | Help | the controls table | |
 | Rumble | next rumble strength, off after the strongest; a pulse at the new strength | stronger, weaker |
-| Overlay | switch the badge, the zone brackets and the crew markers | on, off |
+| View | the view wheel | |
 | Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
 
 Autopause is lit while `autopause_wheel` or `autopause_aim` is on. Mouse mode resets each
 run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
+
+## View wheel
+
+| Plate | A | D-pad up, down | Pickable |
+| --- | --- | --- | --- |
+| Overlay | switch the badge, the zone brackets and the crew markers | on, off | always |
+| Crew marker | switch the crew markers | on, off | with the overlay on |
+| HUD shift | switch the [HUD shift](#zoom) | on, off | on a screen narrower than 1280x720 |
+| iPad beacons | switch the map's beacon icons to the iPad art | on, off | always |
+| iPad buttons | switch the crew station buttons to the iPad art | on, off | always |
+| Sharpen | next sharpening of the shrunk frame, off after the strongest | more, less | on a screen that shows the frame smaller, with the frame filter on |
+| Frame filter | switch the area-averaged shrunk frame | on, off | on a screen that shows the frame smaller |
+| Focus brackets | switch the zone brackets | on, off | with the overlay on |
 
 ## Zoom
 

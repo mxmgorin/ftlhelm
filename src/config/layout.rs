@@ -506,7 +506,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::{OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
+    use crate::config::settings::{HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
 
     #[test]
     fn variant_lists_follow_declaration_order() {
@@ -592,7 +592,16 @@ mod tests {
         for b in [Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Help, Builtin::Autopause] {
             assert!(actions.contains(&Action::Builtin(b)));
         }
-        for key in [OVERLAY_KEY, RUMBLE_KEY, SPEED_LEVEL_KEY] {
+        for key in [RUMBLE_KEY, SPEED_LEVEL_KEY] {
+            assert!(actions.contains(&Action::Set(tunable(key).expect("a tunable key"))), "{key}");
+        }
+        let Some(view) = actions.iter().find_map(|a| if let Action::Wheel(w) = a { Some(&l.wheels[*w]) } else { None })
+        else {
+            panic!("a settings plate opens a wheel");
+        };
+        assert_eq!((view.kind, view.plates.iter().flatten().count()), (WheelKind::Settings, WHEEL_SLOTS));
+        let actions: Vec<Action> = view.plates.iter().flatten().map(|p| p.action).collect();
+        for key in [OVERLAY_KEY, HUD_SHIFT_KEY] {
             assert!(actions.contains(&Action::Set(tunable(key).expect("a tunable key"))), "{key}");
         }
     }

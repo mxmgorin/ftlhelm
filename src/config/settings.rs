@@ -25,11 +25,16 @@ pub const OVERLAY_KEY: &str = "overlay";
 pub const RUMBLE_KEY: &str = "rumble";
 pub const SHARPEN_KEY: &str = "sharpen";
 pub const SPEED_LEVEL_KEY: &str = "speed_level";
+pub const FOCUS_BRACKETS_KEY: &str = "focus_brackets";
+pub const CREW_MARKER_KEY: &str = "crew_marker";
+pub const HUD_SHIFT_KEY: &str = "hud_shift";
+pub const FRAME_FILTER_KEY: &str = "frame_filter";
+pub const IPAD_BEACONS_KEY: &str = "ipad_beacons";
 const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
 const LAYOUT_VERSION_KEY: &str = "layout_version";
-const LAYOUT_VERSION: i32 = 1;
+const LAYOUT_VERSION: i32 = 2;
 const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -223,8 +228,8 @@ const OPTIONS: &[(&str, Field)] = &[
     ("cursor_curve", Field::Float(|c| &mut c.cursor_curve, CURSOR_CURVE_MIN, CURSOR_CURVE_MAX)),
     (OVERLAY_KEY, Field::Bool(|c| &mut c.overlay)),
     ("badge", Field::Bool(|c| &mut c.badge)),
-    ("focus_brackets", Field::Bool(|c| &mut c.focus_brackets)),
-    ("crew_marker", Field::Bool(|c| &mut c.crew_marker)),
+    (FOCUS_BRACKETS_KEY, Field::Bool(|c| &mut c.focus_brackets)),
+    (CREW_MARKER_KEY, Field::Bool(|c| &mut c.crew_marker)),
     ("pointer_scale_max", Field::Float(|c| &mut c.pointer_scale_max, 1.0, POINTER_SCALE_LIMIT)),
     ("snap_dpad", Field::Bool(|c| &mut c.snap_dpad)),
     ("autopause_wheel", Field::Bool(|c| &mut c.autopause_wheel)),
@@ -248,11 +253,11 @@ const OPTIONS: &[(&str, Field)] = &[
     ("rumble_time", Field::Float(|c| &mut c.rumble_time, RUMBLE_S_MIN, RUMBLE_S_MAX)),
     (TEXT_SCALE_KEY, Field::Float(|c| &mut c.text_scale, TEXT_SCALE_AUTO, TEXT_SCALE_MAX)),
     (ZOOM_KEY, Field::Float(|c| &mut c.zoom, ZOOM_AUTO, ZOOM_MAX)),
-    ("hud_shift", Field::Bool(|c| &mut c.hud_shift)),
-    ("ipad_beacons", Field::Bool(|c| &mut c.ipad_beacons)),
+    (HUD_SHIFT_KEY, Field::Bool(|c| &mut c.hud_shift)),
+    (IPAD_BEACONS_KEY, Field::Bool(|c| &mut c.ipad_beacons)),
     ("ipad_station_buttons", Field::Bool(|c| &mut c.ipad_station_buttons)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
-    ("frame_filter", Field::Bool(|c| &mut c.frame_filter)),
+    (FRAME_FILTER_KEY, Field::Bool(|c| &mut c.frame_filter)),
     (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
     ("touch", Field::Bool(|c| &mut c.touch)),
     ("touch_long_press", Field::Float(|c| &mut c.touch_long_press, HOLD_S_MIN, HOLD_S_MAX)),

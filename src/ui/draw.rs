@@ -201,6 +201,14 @@ pub fn draw_rect_outline(x: f32, y: f32, w: f32, h: f32, color: GlColor) {
     unsafe { (api().draw_rect_outline)(x as i32, y as i32, w as i32, h as i32, color, OVERLAY_LINE) }
 }
 
+/// The outline of `x, y, w, h`, `thick` wide inside it, out of bars that do not overlap.
+pub fn draw_outline(x: f32, y: f32, w: f32, h: f32, thick: f32, color: GlColor) {
+    draw_rect(x, y, w, thick, color);
+    draw_rect(x, y + h - thick, w, thick, color);
+    draw_rect(x, y + thick, thick, h - 2.0 * thick, color);
+    draw_rect(x + w - thick, y + thick, thick, h - 2.0 * thick, color);
+}
+
 /// A circle in a frame's style, its band's outer edge at radius `r`: the glow past it, a
 /// `band` wide pale ring, then the fill.
 pub fn draw_round_frame(cx: f32, cy: f32, r: f32, band: f32, fill: GlColor) {
@@ -313,9 +321,38 @@ pub fn draw_side_triangle(x: f32, cy: f32, w: f32, h: f32, color: GlColor) {
     let half = h / 2.0;
     let mut top = -half;
     while top < half {
-        let dy = top + OVERLAY_LINE / 2.0;
-        let len = (w.abs() * (1.0 - dy.abs() / half)).round();
+        let len = triangle_row(w, half, top);
         draw_rect(if w < 0.0 { x - len } else { x }, cy + top, len, OVERLAY_LINE, color);
+        top += OVERLAY_LINE;
+    }
+}
+
+/// The length of the row `top` below the middle of a sideways triangle `w` long and `2 * half`
+/// tall; returns 0 outside it.
+fn triangle_row(w: f32, half: f32, top: f32) -> f32 {
+    let dy = top + OVERLAY_LINE / 2.0;
+    (w.abs() * (1.0 - dy.abs() / half)).round().max(0.0)
+}
+
+/// A diamond `w` wide and `h` tall centred on (`cx`, `cy`): two sideways triangles base to base.
+pub fn draw_diamond(cx: f32, cy: f32, w: f32, h: f32, color: GlColor) {
+    draw_side_triangle(cx, cy, w / 2.0, h, color);
+    draw_side_triangle(cx, cy, -w / 2.0, h, color);
+}
+
+/// The lower edge of the diamond `w` wide and `h` tall centred on (`cx`, `cy`), `thick` lines
+/// deep: a chevron pointing down, on the diamond's rows.
+pub fn draw_chevron(cx: f32, cy: f32, w: f32, h: f32, thick: f32, color: GlColor) {
+    let half = h / 2.0;
+    let mut top = -half;
+    while top < half {
+        // The diamond's row less the same diamond's row `thick` lines higher up.
+        let outer = triangle_row(w / 2.0, half, top);
+        let inner = if top + thick < half { triangle_row(w / 2.0, half, top + thick) } else { 0.0 };
+        if outer > inner {
+            draw_rect(cx - outer, cy + top, outer - inner, OVERLAY_LINE, color);
+            draw_rect(cx + inner, cy + top, outer - inner, OVERLAY_LINE, color);
+        }
         top += OVERLAY_LINE;
     }
 }

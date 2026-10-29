@@ -8,7 +8,10 @@ use super::draw::*;
 use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
-use crate::config::settings::{is_switch, option_name, Tuning, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
+use crate::config::settings::{
+    is_switch, option_name, Tuning, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY,
+    IPAD_BEACONS_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
+};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::game::actions::{tap_key, toggle_pause, MouseButton};
@@ -104,16 +107,57 @@ const SWAP_SPACING: f32 = 10.0;
 const PAUSE_GLYPH_BAR_W: f32 = 6.0;
 const PAUSE_GLYPH_BAR_H: f32 = 20.0;
 const PAUSE_GLYPH_GAP: f32 = 6.0;
-/// The overlay glyph's crew marker, inside its brackets.
-const MARKER_GLYPH_W: f32 = 14.0;
-const MARKER_GLYPH_H: f32 = 8.0;
-/// The sharpen glyph's square, its left half filled.
-const SHARPEN_GLYPH: f32 = 22.0;
+/// The overlay glyph: layers, a diamond over the edge of one more below it, GLYPH_W by GLYPH_H.
+const LAYER_H: f32 = 16.0;
+const LAYER_STEP: f32 = GLYPH_H - LAYER_H;
+/// The sharpen glyph: a four-point star, a tall diamond across a wide one.
+const STAR_LONG: f32 = 30.0;
+const STAR_SHORT: f32 = 10.0;
 /// The rumble glyph: a pad body, and each side of it waves that shorten outward.
 const RUMBLE_BODY_W: f32 = 8.0;
 const RUMBLE_BODY_H: f32 = 20.0;
 const RUMBLE_WAVE_GAP: f32 = 3.0;
 const RUMBLE_WAVES_H: [f32; 2] = [14.0, 8.0];
+/// The crew marker glyph, top down: the marker, a gap, a crew member's head and shoulders.
+const FIGURE_MARKER_W: f32 = 16.0;
+const FIGURE_MARKER_H: f32 = 9.0;
+const FIGURE_GAP: f32 = 4.0;
+const FIGURE_HEAD_R: f32 = 5.0;
+const FIGURE_BODY_W: f32 = 18.0;
+const FIGURE_BODY_H: f32 = 6.0;
+const FIGURE_H: f32 = FIGURE_MARKER_H + FIGURE_GAP + 2.0 * FIGURE_HEAD_R + OVERLAY_LINE + FIGURE_BODY_H;
+/// The HUD shift glyph: a screen, and inside it a panel each side with a triangle pushing it
+/// toward the middle.
+const SHIFT_SCREEN_W: f32 = 34.0;
+const SHIFT_SCREEN_H: f32 = 24.0;
+const SHIFT_SCREEN_LINE: f32 = 2.0;
+const SHIFT_HEAD_W: f32 = 5.0;
+const SHIFT_HEAD_H: f32 = 10.0;
+const SHIFT_PANEL_W: f32 = 4.0;
+const SHIFT_PANEL_H: f32 = 14.0;
+/// How far each panel's outer side sits from the screen's edge.
+const SHIFT_PANEL_IN: f32 = 9.0;
+/// The frame filter glyph: a checkerboard of FILTER_CELLS by FILTER_CELLS squares, an arrow,
+/// and one square of their average.
+const FILTER_CELLS: i32 = 2;
+const FILTER_CELL: f32 = 7.0;
+const FILTER_SQUARE: f32 = FILTER_CELLS as f32 * FILTER_CELL;
+const FILTER_HEAD_W: f32 = 5.0;
+const FILTER_HEAD_H: f32 = 8.0;
+const FILTER_GAP: f32 = 2.0;
+const FILTER_W: f32 = 2.0 * FILTER_SQUARE + FILTER_HEAD_W + 2.0 * FILTER_GAP;
+/// Ink over the plate at half strength: the checkerboard's average.
+const FILTER_AVERAGE_COLOR: GlColor = GlColor { a: 0.5, ..INK_COLOR };
+/// The beacon glyph: a diamond as tall as it is wide.
+const BEACON_GLYPH: f32 = 22.0;
+/// The display glyph: a screen outline over a neck and a base.
+const DISPLAY_W: f32 = 32.0;
+const DISPLAY_SCREEN_H: f32 = 22.0;
+const DISPLAY_NECK_W: f32 = 6.0;
+const DISPLAY_BASE_W: f32 = 18.0;
+const DISPLAY_H: f32 = DISPLAY_SCREEN_H + 2.0 * GLYPH_STROKE;
+/// A plate that opens this wheel shows the display glyph.
+const VIEW_WHEEL: &str = "view";
 /// The label of a slot with nothing in it.
 const EMPTY_LABEL: &str = "Empty";
 const ZOOM_OFF_BADGE: &str = "Whole frame";
@@ -200,10 +244,22 @@ enum Glyph {
     Pause,
     /// Corner brackets round a crew marker.
     Overlay,
-    /// A square, half filled.
+    /// A four-point star.
     Sharpen,
     /// A pad body between waves.
     Rumble,
+    /// Corner brackets alone.
+    Brackets,
+    /// A crew marker over a crew member.
+    Marker,
+    /// A screen with its side panels pushed in.
+    HudShift,
+    /// A checkerboard, an arrow, and a square of their average.
+    FrameFilter,
+    /// A map beacon's diamond.
+    Beacon,
+    /// A display on its stand.
+    Display,
 }
 
 /// Where a power wheel finds the item a slot key powers.
@@ -298,11 +354,18 @@ pub struct WheelUi {
     paused: bool,
     /// Whether the game was already aiming when the wheel opened; only a new aim closes it.
     pub opened_aiming: bool,
+    /// The wheel the open one was opened from, and the plate that opened it.
+    parent: Option<(usize, usize)>,
 }
 
 impl WheelUi {
     fn pickable(&self, slot: usize) -> bool {
         self.plates[slot].bound && self.plates[slot].available
+    }
+
+    /// Whether wheel `index` is open, or the one open was opened from it.
+    pub fn open_from(&self, index: usize) -> bool {
+        self.open == Some(index) || self.parent.is_some_and(|(w, _)| w == index)
     }
 }
 
@@ -439,17 +502,16 @@ fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(cx + gap / 2.0, top, w, h, INK_COLOR);
         }
         Glyph::Overlay => {
-            let t = GLYPH_STROKE;
-            draw_corners(cx - GLYPH_W / 2.0, cy - GLYPH_H / 2.0, GLYPH_W, GLYPH_H, GLYPH_ARM, t, INK_COLOR);
-            draw_down_marker(cx, cy + MARKER_GLYPH_H / 2.0, MARKER_GLYPH_W, MARKER_GLYPH_H, INK_COLOR);
+            // On whole pixels: each row stays one line.
+            let (cx, top) = (cx.round(), (cy - GLYPH_H / 2.0).round());
+            draw_diamond(cx, top + LAYER_H / 2.0, GLYPH_W, LAYER_H, INK_COLOR);
+            let below = top + LAYER_STEP + LAYER_H / 2.0;
+            draw_chevron(cx, below, GLYPH_W, LAYER_H, GLYPH_STROKE, INK_COLOR);
         }
         Glyph::Sharpen => {
-            let (s, t) = (SHARPEN_GLYPH, GLYPH_STROKE);
-            let (x, y) = (cx - s / 2.0, cy - s / 2.0);
-            draw_rect(x, y, s, t, INK_COLOR);
-            draw_rect(x, y + s - t, s, t, INK_COLOR);
-            draw_rect(x + s - t, y, t, s, INK_COLOR);
-            draw_rect(x, y, s / 2.0, s, INK_COLOR);
+            let (cx, cy) = (cx.round(), cy.round());
+            draw_diamond(cx, cy, STAR_SHORT, STAR_LONG, INK_COLOR);
+            draw_diamond(cx, cy, STAR_LONG, STAR_SHORT, INK_COLOR);
         }
         Glyph::Rumble => {
             let t = GLYPH_STROKE;
@@ -460,6 +522,55 @@ fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
                 draw_rect(cx - off - t, cy - h / 2.0, t, h, INK_COLOR);
                 off += t + RUMBLE_WAVE_GAP;
             }
+        }
+        Glyph::Brackets => {
+            let t = GLYPH_STROKE;
+            draw_corners(cx - GLYPH_W / 2.0, cy - GLYPH_H / 2.0, GLYPH_W, GLYPH_H, GLYPH_ARM, t, INK_COLOR);
+        }
+        Glyph::Marker => {
+            // On whole pixels: the head stays round.
+            let (cx, top) = (cx.round(), (cy - FIGURE_H / 2.0).round());
+            let tip = top + FIGURE_MARKER_H;
+            draw_down_marker(cx, tip, FIGURE_MARKER_W, FIGURE_MARKER_H, INK_COLOR);
+            let head = tip + FIGURE_GAP + FIGURE_HEAD_R;
+            draw_pixel_ring(cx, head, FIGURE_HEAD_R, FIGURE_HEAD_R, INK_COLOR);
+            let body = head + FIGURE_HEAD_R + OVERLAY_LINE;
+            draw_rect(cx - FIGURE_BODY_W / 2.0, body, FIGURE_BODY_W, FIGURE_BODY_H, INK_COLOR);
+        }
+        Glyph::HudShift => {
+            // On whole pixels: each row stays one line.
+            let (left, top, cy) =
+                ((cx - SHIFT_SCREEN_W / 2.0).round(), (cy - SHIFT_SCREEN_H / 2.0).round(), cy.round());
+            let (line, right) = (SHIFT_SCREEN_LINE, left + SHIFT_SCREEN_W);
+            draw_outline(left, top, SHIFT_SCREEN_W, SHIFT_SCREEN_H, line, INK_COLOR);
+            draw_side_triangle(left + line + OVERLAY_LINE, cy, SHIFT_HEAD_W, SHIFT_HEAD_H, INK_COLOR);
+            draw_side_triangle(right - line - OVERLAY_LINE, cy, -SHIFT_HEAD_W, SHIFT_HEAD_H, INK_COLOR);
+            let panel_top = cy - SHIFT_PANEL_H / 2.0;
+            draw_rect(left + SHIFT_PANEL_IN, panel_top, SHIFT_PANEL_W, SHIFT_PANEL_H, INK_COLOR);
+            draw_rect(right - SHIFT_PANEL_IN - SHIFT_PANEL_W, panel_top, SHIFT_PANEL_W, SHIFT_PANEL_H, INK_COLOR);
+        }
+        Glyph::FrameFilter => {
+            // On whole pixels: the cells keep one size.
+            let (left, top, cy) = ((cx - FILTER_W / 2.0).round(), (cy - FILTER_SQUARE / 2.0).round(), cy.round());
+            for row in 0..FILTER_CELLS {
+                for col in (row % 2..FILTER_CELLS).step_by(2) {
+                    let (x, y) = (left + col as f32 * FILTER_CELL, top + row as f32 * FILTER_CELL);
+                    draw_rect(x, y, FILTER_CELL, FILTER_CELL, INK_COLOR);
+                }
+            }
+            draw_outline(left, top, FILTER_SQUARE, FILTER_SQUARE, OVERLAY_LINE, INK_COLOR);
+            draw_side_triangle(left + FILTER_SQUARE + FILTER_GAP, cy, FILTER_HEAD_W, FILTER_HEAD_H, INK_COLOR);
+            let average = left + FILTER_W - FILTER_SQUARE;
+            draw_rect(average, top, FILTER_SQUARE, FILTER_SQUARE, FILTER_AVERAGE_COLOR);
+            draw_outline(average, top, FILTER_SQUARE, FILTER_SQUARE, OVERLAY_LINE, INK_COLOR);
+        }
+        Glyph::Beacon => draw_diamond(cx.round(), cy.round(), BEACON_GLYPH, BEACON_GLYPH, INK_COLOR),
+        Glyph::Display => {
+            let (left, top) = ((cx - DISPLAY_W / 2.0).round(), (cy - DISPLAY_H / 2.0).round());
+            let (cx, t) = (cx.round(), GLYPH_STROKE);
+            draw_outline(left, top, DISPLAY_W, DISPLAY_SCREEN_H, t, INK_COLOR);
+            draw_rect(cx - DISPLAY_NECK_W / 2.0, top + DISPLAY_SCREEN_H, DISPLAY_NECK_W, t, INK_COLOR);
+            draw_rect(cx - DISPLAY_BASE_W / 2.0, top + DISPLAY_SCREEN_H + t, DISPLAY_BASE_W, t, INK_COLOR);
         }
     }
 }
@@ -584,6 +695,11 @@ fn setting_glyph(key: &str) -> Option<Glyph> {
         RUMBLE_KEY => Some(Glyph::Rumble),
         SHARPEN_KEY => Some(Glyph::Sharpen),
         SPEED_LEVEL_KEY => Some(Glyph::FastForward),
+        FOCUS_BRACKETS_KEY => Some(Glyph::Brackets),
+        CREW_MARKER_KEY => Some(Glyph::Marker),
+        HUD_SHIFT_KEY => Some(Glyph::HudShift),
+        FRAME_FILTER_KEY => Some(Glyph::FrameFilter),
+        IPAD_BEACONS_KEY => Some(Glyph::Beacon),
         _ => None,
     }
 }
@@ -663,7 +779,8 @@ fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
     }
 }
 
-fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
+/// The plates of `def`, a wheel of `wheels`.
+fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Images) -> [Plate; WHEEL_SLOTS] {
     let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
     for (pl, pdef) in plates.iter_mut().zip(def.plates.iter()) {
         let Some(pdef) = pdef else {
@@ -681,6 +798,8 @@ fn layout_plates(def: &WheelDef, images: &mut Images) -> [Plate; WHEEL_SLOTS] {
             builtin_art(images, pl, b);
         } else if let Action::Set(i) = pdef.action {
             pl.glyph = setting_glyph(option_name(i));
+        } else if let Action::Wheel(w) = pdef.action {
+            pl.glyph = wheels.get(w).filter(|w| w.name == VIEW_WHEEL).map(|_| Glyph::Display);
         }
         if pdef.action == Action::Builtin(Builtin::CenterSwap) {
             pl.available = state::enemy_ship().is_some();
@@ -822,7 +941,7 @@ impl Layer {
         self.wheel.plates = match def.kind {
             WheelKind::Crew => crew_plates(),
             WheelKind::Systems => system_plates(),
-            _ => layout_plates(def, &mut self.images),
+            _ => layout_plates(def, &self.layout.wheels, &mut self.images),
         };
         if def.kind == WheelKind::Settings {
             self.show_settings();
@@ -830,16 +949,23 @@ impl Layer {
     }
 
     /// Fills the settings plates' state: lit while on or set by hand, pips for the setting or
-    /// the switch, and the value as the badge; sharpening only where a shrunk frame is filtered.
+    /// the switch, and the value as the badge; a setting is pickable only where it takes effect.
     fn show_settings(&mut self) {
         let cursor = self.bind.dpad_mouse;
         let (zoom, text_scale) = (self.zoom.level, self.cfg.text_scale);
-        let filtered = self.cfg.frame_filter && self.frame_per_window() > 1.0;
+        let shrunk = self.frame_per_window() > 1.0;
+        let narrow = zoom::narrower_than_frame();
         let autopause = self.autopause();
         for pl in &mut self.wheel.plates {
             if let Some(Action::Set(i)) = pl.action {
                 show_tuning(pl, self.cfg.tuning(i));
-                pl.available = option_name(i) != SHARPEN_KEY || filtered;
+                pl.available = match option_name(i) {
+                    SHARPEN_KEY => shrunk && self.cfg.frame_filter,
+                    FRAME_FILTER_KEY => shrunk,
+                    FOCUS_BRACKETS_KEY | CREW_MARKER_KEY => self.cfg.overlay,
+                    HUD_SHIFT_KEY => narrow,
+                    _ => true,
+                };
                 continue;
             }
             let Some(Action::Builtin(b)) = pl.action else {
@@ -892,15 +1018,16 @@ impl Layer {
         }
         self.wheel.paused = false;
         self.wheel.sel = None;
+        self.wheel.parent = None;
         if self.layout.wheels.get(closed).is_some_and(|w| w.kind == WheelKind::Settings) {
             self.save_tuned();
         }
     }
 
     /// Opens a wheel on its top plate, or the first pickable one clockwise, in place of the
-    /// open one; a second press of the open wheel closes it.
+    /// open one; a second press of the open wheel, or of the one it was opened from, closes it.
     pub fn open_wheel(&mut self, index: usize, by: Source) {
-        if self.wheel.open == Some(index) {
+        if self.wheel.open_from(index) {
             self.close_wheel();
             return;
         }
@@ -909,6 +1036,7 @@ impl Layer {
         }
         self.wheel.open = Some(index);
         self.wheel.sel = None;
+        self.wheel.parent = None;
         self.wheel.opened_aiming = state::aiming();
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
@@ -921,9 +1049,31 @@ impl Layer {
         }
     }
 
-    /// Performs the selected plate: keys and clicks run as taps; an action wheel, or a
-    /// settings wheel on a plate other than a stepped setting, closes after, the others
-    /// refill. The abilities key is remembered for repeat_ability.
+    /// Opens wheel `index` from the open one's selected plate, which back_wheel returns to.
+    fn open_sub_wheel(&mut self, index: usize) {
+        let parent = self.wheel.open.zip(self.wheel.sel);
+        self.open_wheel(index, Source::Plate);
+        if self.wheel.open == Some(index) {
+            self.wheel.parent = parent;
+        }
+    }
+
+    /// Returns to the wheel the open one was opened from, on the plate that opened it; closes
+    /// a wheel opened on its own.
+    pub fn back_wheel(&mut self) {
+        let Some((wheel, slot)) = self.wheel.parent.take() else {
+            self.close_wheel();
+            return;
+        };
+        self.open_wheel(wheel, Source::Plate);
+        if self.wheel.open == Some(wheel) && self.wheel.pickable(slot) {
+            self.wheel.sel = Some(slot);
+        }
+    }
+
+    /// Performs the selected plate: keys and clicks run as taps, a wheel plate opens its wheel
+    /// in place; an action wheel, or a settings wheel off a stepped setting, closes after, the
+    /// others refill. The abilities key is remembered for repeat_ability.
     pub fn act_on_plate(&mut self) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
@@ -948,6 +1098,10 @@ impl Layer {
             Some(Action::Set(i)) => {
                 self.tune(i, None);
                 self.buzz();
+            }
+            Some(Action::Wheel(next)) => {
+                self.open_sub_wheel(next);
+                return;
             }
             _ => {}
         }
@@ -1296,6 +1450,59 @@ mod tests {
             assert!(p.iter().all(|pl| !shows_label(pl)));
             assert_eq!((p[1].icon, p[1].icon_base, p[1].glyph), (Some(door.ptr()), true, None));
             assert!(!p[1].icon_native, "a layout icon is fitted");
+        });
+    }
+
+    #[test]
+    fn a_wheel_plate_opens_its_wheel_and_cancel_goes_back() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[wheel:settings]\nkind = settings\nup = set overlay\nleft = wheel view \"View\"\n\
+                          [wheel:view]\nkind = settings\nup = set hud_shift\n";
+            l.layout = Layout::parse(layout).0;
+            let (settings, view) = (0, 1);
+            l.open_wheel(settings, Source::Plate);
+            assert_eq!(l.wheel.plates[6].glyph, Some(Glyph::Display));
+            l.wheel.sel = Some(6);
+            l.act_on_plate();
+            assert_eq!((l.wheel.open, l.wheel.parent), (Some(view), Some((settings, 6))));
+            l.back_wheel();
+            assert_eq!((l.wheel.open, l.wheel.sel), (Some(settings), Some(6)), "back on the plate that opened it");
+            l.back_wheel();
+            assert_eq!(l.wheel.open, None);
+            l.open_wheel(settings, Source::Plate);
+            l.wheel.sel = Some(6);
+            l.act_on_plate();
+            l.open_wheel(settings, Source::Plate);
+            assert_eq!(l.wheel.open, None, "the settings wheel's own button closes what it opened");
+            l.open_wheel(settings, Source::Plate);
+            l.wheel.sel = Some(6);
+            l.act_on_plate();
+            l.wheel.sel = Some(0);
+            l.act_on_plate();
+            assert_eq!((l.cfg.hud_shift, l.wheel.open, l.wheel.parent), (false, None, None));
+        });
+    }
+
+    #[test]
+    fn view_plates_are_pickable_only_where_they_take_effect() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[wheel:view]\nkind = settings\nup = set focus_brackets\nright = set crew_marker\n\
+                          down = set frame_filter\nleft = set hud_shift\nup_left = set ipad_beacons\n";
+            let p = plates(&mut l, layout);
+            let glyphs = [0, 2, 4, 6, 7].map(|i| p[i].glyph);
+            let drawn = [Glyph::Brackets, Glyph::Marker, Glyph::FrameFilter, Glyph::HudShift, Glyph::Beacon].map(Some);
+            assert_eq!(glyphs, drawn);
+            assert!(p[0].available && p[2].available);
+            assert!(!p[4].available, "the frame is shown whole");
+            assert!(p[6].available, "the stand-in screen is narrower than the frame");
+            l.cfg.overlay = false;
+            l.zoom.view = Some(View { x: 0.0, y: 0.0, w: GAME_W as f32, h: GAME_H as f32, k: 0.5 });
+            l.refresh_wheel();
+            let p = &l.wheel.plates;
+            assert!(!p[0].available && !p[2].available, "the overlay is off");
+            assert!(p[4].available, "the frame is shrunk");
         });
     }
 

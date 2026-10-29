@@ -170,7 +170,7 @@ impl Layer {
             }
             Builtin::Cancel if down => {
                 if self.wheel.open.is_some() {
-                    self.close_wheel();
+                    self.back_wheel();
                 } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some()) {
                     tap_key(KEY_ESCAPE, false);
                 } else if state::aiming() {
@@ -309,7 +309,7 @@ impl Layer {
                 return;
             }
             // The open wheel's own button closes it, its tap half included.
-            if self.wheel.open == Some(w) {
+            if self.wheel.open_from(w) {
                 self.close_wheel();
                 return;
             }
