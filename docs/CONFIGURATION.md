@@ -138,7 +138,8 @@ state.
 | --- | --- |
 | `context_click` | click; with crew selected, a room orders them there; in a wheel, act |
 | `cancel` | close the wheel, or back to the wheel it was opened from; cancel the aim, clear the crew, close the menu or a screen |
-| `arm_next` | arm the next powered weapon |
+| `arm_next` | arm the first powered weapon without a target; with a weapon armed, the next powered one |
+| `arm_all` | arm every powered weapon, clearing their targets: the next target goes to all of them, then each beam waits for its own line |
 | `aim_crew` | select the next crew member |
 | `prev_tab`, `next_tab` | ship and store screen tabs |
 | `repeat_ability` | the last ability used from a wheel |
@@ -171,7 +172,7 @@ state.
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
 without one), and an optional icon: a game image path under `img/` in `ftl.dat`, with
-`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, and `zoom`, `text_size`, `help`, `center_swap`, `autopause`, `wheel view` and the `set` plates of `overlay`, `focus_brackets`, `crew_marker`, `hud_shift`, `ipad_beacons`, `frame_filter`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
+`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, an `arm_all` plate the game's target crosshair, and `zoom`, `text_size`, `help`, `center_swap`, `autopause`, `wheel view` and the `set` plates of `overlay`, `focus_brackets`, `crew_marker`, `hud_shift`, `ipad_beacons`, `frame_filter`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
 
 | `set` step | Step |
 | --- | --- |

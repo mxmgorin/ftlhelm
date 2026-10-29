@@ -229,7 +229,13 @@ pub const ARMAMENTBOX_HIT_H: i32 = 39;
 pub const WEAPON_BLUEPRINT: usize = 32;
 pub const WEAPON_POWERED: usize = 242;
 pub const WEAPON_POWER: usize = 244;
+/// ProjectileFactory::targets, a std::vector of Pointf; empty while the weapon has no target.
+pub const WEAPON_TARGETS: usize = 248;
+pub const POINTF_SIZE: usize = 2 * std::mem::size_of::<f32>();
+pub const WEAPONBP_TYPE_NAME: usize = 120;
 pub const WEAPONBP_ICON: usize = 320;
+/// The blueprint type name of a beam.
+pub const BEAM_TYPE_NAME: &str = "BEAM";
 pub const DRONE_BLUEPRINT: usize = 32;
 pub const DRONE_POWERED: usize = 16;
 pub const DRONE_POWER: usize = 20;
@@ -254,6 +260,8 @@ pub const DRONE_ICON_PREFIX: &str = "systemUI/weapbox_icon_D_";
 pub const ICON_SUFFIX: &str = ".png";
 pub const WEAPON_ICON_FALLBACK: &str = "icons/s_weapons_overlay.png";
 pub const DRONE_ICON_FALLBACK: &str = "icons/s_drones_overlay.png";
+/// The mark the game puts on a room a weapon aims at.
+pub const CROSSHAIR_ICON: &str = "misc/crosshairs_placed.png";
 /// The game's pointer, and its arrow's region of the texture.
 pub const POINTER_ICON: &str = "mouse/pointerValid.png";
 pub const POINTER_REGION: [f32; 4] = [0.0, 0.0, 14.0, 21.0];

@@ -769,8 +769,14 @@ fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
         Builtin::Help => pl.glyph = Some(Glyph::Text(HELP_GLYPH)),
         Builtin::CenterSwap => pl.glyph = Some(Glyph::Swap),
         Builtin::Autopause => pl.glyph = Some(Glyph::Pause),
+        Builtin::ArmAll => pl.icon = images.get(CROSSHAIR_ICON),
         _ => {}
     }
+}
+
+/// Whether an armament control holds a powered item.
+fn any_powered(control: Obj) -> bool {
+    (0..WEAPON_SLOTS as usize).any(|i| state::armament_item(control, i).is_some_and(|w| w.flag(WEAPON_POWERED)))
 }
 
 /// The plates of `def`, a wheel of `wheels`.
@@ -795,8 +801,10 @@ fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Images) -> [P
         } else if let Action::Wheel(w) = pdef.action {
             pl.glyph = wheels.get(w).filter(|w| w.name == VIEW_WHEEL).map(|_| Glyph::Display);
         }
-        if pdef.action == Action::Builtin(Builtin::CenterSwap) {
-            pl.available = state::enemy_ship().is_some();
+        match pdef.action {
+            Action::Builtin(Builtin::CenterSwap) => pl.available = state::enemy_ship().is_some(),
+            Action::Builtin(Builtin::ArmAll) => pl.available = state::weapon_control().is_some_and(any_powered),
+            _ => {}
         }
         let Action::Key { code, .. } = pdef.action else {
             continue;
@@ -1308,6 +1316,21 @@ mod tests {
             }
             let autofire = &plates[4];
             assert!(autofire.available && autofire.powered && !autofire.empty);
+        });
+    }
+
+    #[test]
+    fn the_all_weapons_plate_waits_for_a_powered_weapon() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let layout = "[wheel:power]\nkind = power\nup_left = arm_all\n";
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let ion = armament(g, "Heavy Ion", "ion_heavy", 1, false);
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[ion]);
+            assert!(!plates(&mut l, layout)[7].available);
+            let laser = armament(g, "Burst Laser", "laser_burst", 2, true);
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[laser]);
+            assert!(plates(&mut l, layout)[7].available);
         });
     }
 

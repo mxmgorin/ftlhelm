@@ -33,6 +33,8 @@ const VIEW_MARGIN: f32 = 8.0;
 const SEPARATOR: &str = " / ";
 const CREW_TITLE: &str = "Crew";
 const TARGET_TITLE: &str = "Target";
+/// The badge's name for a volley's aim, in place of the armed weapon's.
+const VOLLEY_TITLE: &str = "All weapons";
 const DOORS_TITLE: &str = "Doors";
 const FAST_TITLE: &str = "Fast";
 const MOUSE_TITLE: &str = "Mouse";
@@ -214,11 +216,15 @@ impl Layer {
     pub fn badge_line(&self, banner: Option<Banner>, paused: bool) -> String {
         let mut parts = Vec::new();
         if state::mouse().i32(MOUSE_AIMING) != 0 {
-            let weapon = state::weapon_control()
-                .and_then(|c| c.obj(WEAPONCTRL_ARMED))
-                .and_then(|w| w.obj(WEAPON_BLUEPRINT))
-                .map(|bp| truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE))))
-                .unwrap_or_default();
+            let weapon = if self.actions.volley.is_some() {
+                VOLLEY_TITLE.to_string()
+            } else {
+                state::weapon_control()
+                    .and_then(|c| c.obj(WEAPONCTRL_ARMED))
+                    .and_then(|w| w.obj(WEAPON_BLUEPRINT))
+                    .map(|bp| truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE))))
+                    .unwrap_or_default()
+            };
             match (banner, weapon.is_empty()) {
                 (Some(Banner::Targeting), true) => {}
                 (Some(Banner::Targeting), false) => parts.push(weapon),

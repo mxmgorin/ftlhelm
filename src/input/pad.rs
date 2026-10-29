@@ -512,9 +512,9 @@ impl Layer {
     }
 
     /// Reacts to mode changes read from the game: a new aim moves the cursor to the enemy
-    /// ship, a new crew selection with crew_follow to the member's room.
+    /// ship, a new crew selection with crew_follow to the member's room. A volley is one aim.
     fn follow_game_modes(&mut self) {
-        let now_aiming = state::aiming();
+        let now_aiming = state::aiming() || self.actions.volley.is_some();
         let now_crew = state::first_selected_crew();
         if now_aiming && !self.pad.prev_aiming {
             if let (Some(gui), Some(enemy)) = (state::gui(), state::enemy_ship()) {

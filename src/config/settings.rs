@@ -34,7 +34,7 @@ const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
 const LAYOUT_VERSION_KEY: &str = "layout_version";
-const LAYOUT_VERSION: i32 = 2;
+const LAYOUT_VERSION: i32 = 3;
 const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;

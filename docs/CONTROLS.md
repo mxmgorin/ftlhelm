@@ -38,6 +38,15 @@ While L2 is held with no crew selected, the doors of the player ship are the zon
 or closes the door under the cursor. An L2 tap opens or closes all doors of the room under
 the cursor.
 
+## Weapons
+
+An X tap arms the first powered weapon without a target; with a weapon armed, it arms the
+next powered one.
+
+The All weapons plate of the weapons wheel arms every powered weapon and clears their
+targets. A on a room aims them all at it; each beam then waits for its own line. B leaves
+them all without a target. Autofire is the game's button under the weapons.
+
 ## Mouse mode
 
 L3 or R3, or the Mouse plate of the settings wheel, switches the D-pad and both sticks
@@ -46,10 +55,10 @@ with `cursor_deadzone` and `cursor_curve` for the sticks.
 
 The badge sits where the game writes PAUSED. It names the selected crew member, or counts
 several, and the active modes: Mouse, Doors, Fast (fast forward) and Target with the armed
-weapon. Targeting and doors mode show the game's own TARGETING and DOOR CONTROL banners, the
-rest a line under them; a banner on a paused game takes PAUSED's place, and the line then
-ends in Paused. `badge = 0` hides it; `overlay = 0` hides it, the zone brackets and the crew
-markers.
+weapon, or with All weapons during a volley. Targeting and doors mode show the game's own
+TARGETING and DOOR CONTROL banners, the rest a line under them; a banner on a paused game
+takes PAUSED's place, and the line then ends in Paused. `badge = 0` hides it; `overlay = 0`
+hides it, the zone brackets and the crew markers.
 
 ## Touch
 

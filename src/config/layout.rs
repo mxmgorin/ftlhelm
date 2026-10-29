@@ -96,7 +96,7 @@ pub enum SlotMode {
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Builtin {
-    Cancel, ContextClick, ArmNext, AimCrew, RepeatAbility, Precision, CenterSwap,
+    Cancel, ContextClick, ArmNext, ArmAll, AimCrew, RepeatAbility, Precision, CenterSwap,
     PrevTab, NextTab, Help, RoomDoors, Pause, FastForward, DpadMode, Zoom, TextSize, Autopause,
 }
 
@@ -105,14 +105,14 @@ impl Builtin {
     const COUNT: usize = Builtin::Autopause as usize + 1;
     #[rustfmt::skip]
     pub const ALL: [Builtin; Builtin::COUNT] = [
-        Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::AimCrew,
+        Builtin::Cancel, Builtin::ContextClick, Builtin::ArmNext, Builtin::ArmAll, Builtin::AimCrew,
         Builtin::RepeatAbility, Builtin::Precision, Builtin::CenterSwap, Builtin::PrevTab,
         Builtin::NextTab, Builtin::Help, Builtin::RoomDoors, Builtin::Pause, Builtin::FastForward,
         Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Autopause,
     ];
     #[rustfmt::skip]
     const NAMES: [&'static str; Builtin::COUNT] = [
-        "cancel", "context_click", "arm_next", "aim_crew", "repeat_ability",
+        "cancel", "context_click", "arm_next", "arm_all", "aim_crew", "repeat_ability",
         "precision", "center_swap", "prev_tab", "next_tab", "help", "room_doors", "pause",
         "fast_forward", "dpad_mode", "zoom", "text_size", "autopause",
     ];

@@ -113,6 +113,7 @@ fn builtin_title(b: Builtin) -> &'static str {
         Builtin::Cancel => "Cancel",
         Builtin::ContextClick => "Click",
         Builtin::ArmNext => "Next weapon",
+        Builtin::ArmAll => "All weapons",
         Builtin::AimCrew => "Next crew",
         Builtin::RepeatAbility => "Repeat ability",
         Builtin::Precision => "Doors mode",

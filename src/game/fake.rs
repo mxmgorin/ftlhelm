@@ -220,6 +220,21 @@ pub fn live_strings() -> isize {
 
 extern "C" fn key_down(_app: Ptr, code: c_int) {
     record(Call::KeyDown(code));
+    select_weapon(code);
+}
+
+/// As the game's weapon hotkeys: a slot's key without Shift arms its powered weapon.
+fn select_weapon(code: c_int) {
+    let slot = code - KEY_FIRST_WEAPON;
+    if !(0..WEAPON_SLOTS).contains(&slot) || super::actions::shift_held() {
+        return;
+    }
+    let Some(control) = state::weapon_control() else {
+        return;
+    };
+    if let Some(weapon) = state::armament_item(control, slot as usize).filter(|w| w.flag(WEAPON_POWERED)) {
+        control.set(WEAPONCTRL_ARMED, weapon.addr());
+    }
 }
 
 extern "C" fn key_up(_app: Ptr, code: c_int) {

@@ -186,6 +186,10 @@ impl Layer {
                 }
             }
             Builtin::ArmNext if down => actions::arm_next(),
+            Builtin::ArmAll if down => {
+                self.close_wheel();
+                self.arm_all();
+            }
             Builtin::AimCrew if down => actions::select_next_crew(),
             Builtin::RepeatAbility if down => {
                 if let Some(key) = self.bind.last_ability_key {

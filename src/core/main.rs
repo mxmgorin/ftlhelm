@@ -141,6 +141,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
         l.run_queued_clicks();
+        l.run_volley();
         l.sync_cursor();
         l.build_zones();
         if l.cfg.focus_first {
@@ -150,6 +151,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.apply_touch(t);
         let pad = l.poll_pad(frame.dt);
         l.apply_pad(pad, t, frame.dt);
+        l.run_volley();
         l.update_zoom(frame.dt);
         if l.debug && frame.beat {
             log!(

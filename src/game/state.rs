@@ -230,6 +230,22 @@ pub fn weapon_control() -> Option<Obj> {
     Some(gui()?.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL))
 }
 
+/// The slot of the weapon waiting for a target in a weapon control, None when none is.
+pub fn armed_slot(control: Obj) -> Option<usize> {
+    let armed = control.obj(WEAPONCTRL_ARMED)?;
+    (0..WEAPON_SLOTS as usize).find(|&i| armament_item(control, i) == Some(armed))
+}
+
+/// Whether a weapon holds a target.
+pub fn weapon_aimed(weapon: Obj) -> bool {
+    weapon.at(WEAPON_TARGETS).vec_len(POINTF_SIZE) > 0
+}
+
+/// Whether a weapon is a beam.
+pub fn weapon_is_beam(weapon: Obj) -> bool {
+    weapon.obj(WEAPON_BLUEPRINT).is_some_and(|bp| bp.string(WEAPONBP_TYPE_NAME) == BEAM_TYPE_NAME)
+}
+
 pub fn drone_control() -> Option<Obj> {
     Some(gui()?.at(GUI_COMBAT_CONTROL + COMBAT_DRONE_CONTROL))
 }
