@@ -440,18 +440,23 @@ fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, size: f32, tint: GlColor) {
     }
 }
 
-/// Draws a row of power pips centred at cx with its top at y.
+/// Draws a row of power pips centred at cx with its top at y, in one batch.
 fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
     let n_f = n as f32;
     let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * CONTENT_INSET - (n_f - 1.0) * PIP_GAP) / n_f);
-    let mut x = cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0;
-    for i in 0..n {
-        if i < lit {
-            draw_rect(x, y, pw, PIP_H, if available { POWER_COLOR } else { TEXT_DISABLED_COLOR });
+    let left = cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0;
+    let xs: Vec<f32> = (0..n).scan(left, |x, _| Some(std::mem::replace(x, *x + pw + PIP_GAP))).collect();
+    let fill = if available { POWER_COLOR } else { TEXT_DISABLED_COLOR };
+    draw_batched(|| {
+        // Every fill before every outline: one run per colour.
+        for &x in xs.iter().take(lit.max(0) as usize) {
+            draw_rect(x, y, pw, PIP_H, fill);
         }
-        draw_rect_outline(x, y, pw, PIP_H, INK_COLOR);
-        x += pw + PIP_GAP;
-    }
+        for &x in &xs {
+            // On whole pixels, as the renderer's own outline.
+            draw_outline(x.trunc(), y.trunc(), pw.trunc(), PIP_H, OVERLAY_LINE, INK_COLOR);
+        }
+    });
 }
 
 /// Whether a plate shows its label in place of an icon.
@@ -614,7 +619,7 @@ fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: b
     if pl.icon.is_some() || pl.portrait.is_some() {
         draw_plate_icon(pl, cx, icon_cy, icon, art_tint(fill));
     } else if let Some(glyph) = pl.glyph {
-        draw_glyph(glyph, font, cx, icon_cy, icon);
+        draw_batched(|| draw_glyph(glyph, font, cx, icon_cy, icon));
     } else if shows_label(pl) {
         set_color(INK_COLOR);
         draw_text_scaled(font, cx, icon_cy, label_k, &pl.label);

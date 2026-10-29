@@ -9,6 +9,11 @@
 //! Marks (corner brackets, the down marker) are layers of rects the same way, one primitive
 //! per layer and corner: the band, a dark edge around it, then a glow ring per pixel out, none
 //! overlapping another.
+//!
+//! Pixel-art shapes built of many small rects (glyphs, pip rows) are drawn in a batch: the
+//! rects are collected, snapped to the pixels the renderer would fill, and each run of one
+//! colour is drawn as one cached primitive. gl4es misplaces vertices of long series of the
+//! renderer's one-off rect draws.
 
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::SQRT_2;
@@ -141,14 +146,23 @@ const NO_FLIP: [(bool, bool); 1] = [(false, false)];
 const ALL_FLIPS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
 
 /// What a cached primitive draws.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Shape {
     Ring(Ring),
     Mark(MarkLayer),
+    /// Pixel rects from the origin.
+    Rects(Vec<PixelRect>),
 }
+
+/// A rect on whole pixels: x, y, w, h.
+type PixelRect = [i32; 4];
+/// Pixel rects and their colours, in drawing order.
+type Batch = Vec<(PixelRect, GlColor)>;
 
 /// Primitives by shape, as addresses.
 static SHAPES: Mutex<BTreeMap<Shape, usize>> = Mutex::new(BTreeMap::new());
+/// The batch being collected; None while none is.
+static BATCH: Mutex<Option<Batch>> = Mutex::new(None);
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
@@ -223,14 +237,47 @@ pub fn set_color(color: GlColor) {
     unsafe { (api().set_color)(color) }
 }
 
+/// Fills `x, y, w, h` with `color`, or adds it to the batch being collected.
 pub fn draw_rect(x: f32, y: f32, w: f32, h: f32, color: GlColor) {
+    if let Some(batch) = BATCH.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        batch.extend(pixel_rect(x, y, w, h).map(|r| (r, color)));
+        return;
+    }
     // SAFETY: the renderer's rectangle fill.
     unsafe { (api().draw_rect)(x, y, w, h, color) }
 }
 
-pub fn draw_rect_outline(x: f32, y: f32, w: f32, h: f32, color: GlColor) {
-    // SAFETY: the renderer's rectangle outline.
-    unsafe { (api().draw_rect_outline)(x as i32, y as i32, w as i32, h as i32, color, OVERLAY_LINE) }
+/// The pixels the renderer fills for `x, y, w, h`; None when it fills none.
+fn pixel_rect(x: f32, y: f32, w: f32, h: f32) -> Option<PixelRect> {
+    // A pixel is filled when its centre lies inside, the far edges excluded.
+    let span = |from: f32, len: f32| {
+        let (lo, hi) = (from.min(from + len), from.max(from + len));
+        ((lo - 0.5).ceil() as i32, (hi - 0.5).ceil() as i32)
+    };
+    let ((x0, x1), (y0, y1)) = (span(x, w), span(y, h));
+    (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
+}
+
+/// Runs `draw` collecting the rects it fills, then draws each run of one colour as one cached
+/// primitive; the rects land over anything else `draw` draws. Inside a batch, adds to it.
+pub fn draw_batched(draw: impl FnOnce()) {
+    {
+        let mut batch = BATCH.lock().unwrap_or_else(|e| e.into_inner());
+        if batch.is_some() {
+            drop(batch);
+            draw();
+            return;
+        }
+        *batch = Some(Vec::new());
+    }
+    draw();
+    let rects = BATCH.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+    for run in rects.chunk_by(|a, b| a.1 == b.1) {
+        let (x, y) = run.iter().fold((i32::MAX, i32::MAX), |(x, y), (r, _)| (x.min(r[0]), y.min(r[1])));
+        let local = run.iter().map(|&([rx, ry, w, h], _)| [rx - x, ry - y, w, h]).collect();
+        draw_shape(x as f32, y as f32, 1.0, Shape::Rects(local), run[0].1);
+    }
+    reset_fixed_color();
 }
 
 /// The outline of `x, y, w, h`, `thick` wide inside it, out of bars that do not overlap.
@@ -532,9 +579,9 @@ fn build_primitive(rects: &[Rect]) -> Option<usize> {
 
 /// The game primitive of a shape, built white on first use; None when the game builds none.
 /// A mark's layers and flips are all built with it.
-fn shape_primitive(shape: Shape) -> Option<Ptr> {
+fn shape_primitive(shape: &Shape) -> Option<Ptr> {
     let mut shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(&p) = shapes.get(&shape) {
+    if let Some(&p) = shapes.get(shape) {
         return Some(p as Ptr);
     }
     if shapes.len() >= SHAPES_MAX {
@@ -545,21 +592,27 @@ fn shape_primitive(shape: Shape) -> Option<Ptr> {
     }
     match shape {
         Shape::Ring(r) => {
-            if let Some(p) = build_primitive(&ring_rects(r)) {
-                shapes.insert(shape, p);
+            if let Some(p) = build_primitive(&ring_rects(*r)) {
+                shapes.insert(shape.clone(), p);
             }
         }
         Shape::Mark(m) => {
             for (layer, rects) in mark_layers(m.mark).iter().enumerate() {
                 for &(flip_x, flip_y) in m.mark.flips() {
                     if let Some(p) = build_primitive(&flipped(rects, flip_x, flip_y)) {
-                        shapes.insert(Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..m }), p);
+                        shapes.insert(Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..*m }), p);
                     }
                 }
             }
         }
+        Shape::Rects(rects) => {
+            let rects: Vec<Rect> = rects.iter().map(|&[x, y, w, h]| Rect { x, y, w, h }).collect();
+            if let Some(p) = build_primitive(&rects) {
+                shapes.insert(shape.clone(), p);
+            }
+        }
     }
-    shapes.get(&shape).map(|&p| p as Ptr)
+    shapes.get(shape).map(|&p| p as Ptr)
 }
 
 /// Draws `shape` with its origin at (`x`, `y`), `k` times its size.
@@ -567,7 +620,7 @@ fn draw_shape(x: f32, y: f32, k: f32, shape: Shape, color: GlColor) {
     if color.a <= 0.0 {
         return;
     }
-    let Some(p) = shape_primitive(shape) else {
+    let Some(p) = shape_primitive(&shape) else {
         return;
     };
     let a = api();
@@ -826,6 +879,16 @@ mod tests {
     fn ring_segments_span_whole_pie_steps() {
         let span = TURN_DEG / RING_SEGMENTS as f32 - RING_GAP_DEG;
         assert!(span > 0.0 && (span / PIE_STEP_DEG).fract() == 0.0, "{span}");
+    }
+
+    #[test]
+    fn a_batched_rect_covers_the_pixels_whose_centres_it_holds() {
+        assert_eq!(pixel_rect(10.0, 20.0, 3.0, 1.0), Some([10, 20, 3, 1]));
+        assert_eq!(pixel_rect(10.5, 20.4, 2.0, 1.0), Some([10, 20, 2, 1]));
+        assert_eq!(pixel_rect(10.6, 20.0, 2.6, 1.0), Some([11, 20, 2, 1]));
+        assert_eq!(pixel_rect(13.0, 20.0, -3.0, 1.0), Some([10, 20, 3, 1]));
+        assert_eq!(pixel_rect(10.0, 20.0, 0.0, 1.0), None);
+        assert_eq!(pixel_rect(10.6, 20.0, 0.3, 1.0), None);
     }
 
     #[test]
