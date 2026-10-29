@@ -327,6 +327,14 @@ pub const EQUIP_OVERCAPACITY_BOX: usize = 520;
 pub const EQUIP_OVERAUG_BOX: usize = 528;
 pub const EQUIP_OVER_CAPACITY: usize = 808;
 pub const EQUIP_OVER_AUG_CAPACITY: usize = 809;
+/// Equipment::sellBox, the DropBox an item dragged onto sells, and the store mode that shows it.
+pub const EQUIP_SELL_BOX: usize = 320;
+pub const EQUIP_STORE_MODE: usize = 810;
+/// DropBox: where it is drawn, the image whose size it hit-tests, and the heights added below.
+pub const DROPBOX_POSITION: usize = 0;
+pub const DROPBOX_IMAGE: usize = 16;
+pub const DROPBOX_INSERT_HEIGHT: usize = 124;
+pub const DROPBOX_TITLE_INSERT: usize = 128;
 pub const CREWSCREEN_BOXES: usize = 184;
 pub const EQUIPBOX_HITBOX: usize = 96;
 pub const TABBED_BUTTONS: usize = 32;

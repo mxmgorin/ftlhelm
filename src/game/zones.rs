@@ -34,6 +34,7 @@ pub enum ZoneKind {
     Button,
     Door,
     Slot,
+    SellBox,
 }
 
 impl ZoneKind {
@@ -47,6 +48,7 @@ impl ZoneKind {
             ZoneKind::Button => "button",
             ZoneKind::Door => "door",
             ZoneKind::Slot => "slot",
+            ZoneKind::SellBox => "sell box",
         }
     }
 }
@@ -266,7 +268,7 @@ impl Zones {
     }
 
     /// Equipment and crew slots of an open ship screen, which are not buttons; the overflow
-    /// boxes only while shown.
+    /// boxes only while shown, then the store's sell box.
     fn add_slot_zones(&mut self, gui: Obj) {
         let screens: [(usize, usize, &[ShownBox]); 2] = [
             (layout().gui_equip_screen, EQUIP_BOXES, &EQUIP_OVERFLOW),
@@ -289,7 +291,23 @@ impl Zones {
                 }
             }
         }
+        if let Some(r) = sell_box(gui.at(layout().gui_equip_screen)) {
+            self.push(r, 0, ZoneKind::SellBox);
+        }
     }
+}
+
+/// The box the store's sell tab sells an item dropped on, as the game hit-tests it; None
+/// off the sell tab.
+fn sell_box(equip: Obj) -> Option<Rect> {
+    if !equip.flag(FOCUS_OPEN) || !equip.flag(EQUIP_STORE_MODE) {
+        return None;
+    }
+    let sell = equip.at(EQUIP_SELL_BOX);
+    let image = sell.obj(DROPBOX_IMAGE)?;
+    let at = sell.point(DROPBOX_POSITION);
+    let h = image.i32(TEXTURE_H) + sell.i32(DROPBOX_INSERT_HEIGHT) + sell.i32(DROPBOX_TITLE_INSERT);
+    Some(Rect { x: at.x, y: at.y, w: image.i32(TEXTURE_W), h })
 }
 
 impl Layer {
@@ -550,6 +568,31 @@ mod tests {
                     (ZoneKind::Button, 1, rect(600, 300)),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn the_store_sell_tab_lists_the_sell_box_after_the_slots() {
+        with_game(|g| {
+            g.gui.at(layout().gui_store_screens).set(FOCUS_OPEN, 1u8);
+            let equip = g.gui.at(layout().gui_equip_screen);
+            equip.set(FOCUS_OPEN, 1u8);
+            let slot = g.arena.alloc(EQUIPBOX_HITBOX + size_of::<Rect>());
+            slot.set(EQUIPBOX_HITBOX, rect(400, 200));
+            g.arena.ptr_vector(equip, EQUIP_BOXES, &[Some(slot)]);
+            let image = g.arena.alloc(TEXTURE_H + size_of::<i32>());
+            image.set(TEXTURE_W, SIDE);
+            image.set(TEXTURE_H, SIDE);
+            let sell = equip.at(EQUIP_SELL_BOX);
+            sell.set(DROPBOX_POSITION, Point { x: 70, y: 250 });
+            sell.set(DROPBOX_IMAGE, image.addr());
+            sell.set(DROPBOX_INSERT_HEIGHT, 7i32);
+            sell.set(DROPBOX_TITLE_INSERT, 3i32);
+            let mut l = Layer::default();
+            assert_eq!(built(&mut l).len(), 1, "no sell box out of store mode");
+            equip.set(EQUIP_STORE_MODE, 1u8);
+            let tall = Rect { h: SIDE + 7 + 3, ..rect(70, 250) };
+            assert_eq!(built(&mut l), [(ZoneKind::Slot, 0, rect(400, 200)), (ZoneKind::SellBox, 0, tall)]);
         });
     }
 
