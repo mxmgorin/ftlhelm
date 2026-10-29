@@ -110,7 +110,7 @@ cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 
 | Plate | A | D-pad up, down |
 | --- | --- | --- |
-| Mouse | switch the D-pad and sticks between zones and mouse mode | |
+| Mouse | switch the D-pad and sticks between zones and mouse mode | mouse mode on, off |
 | Zoom | next zoom level, back to auto after the last | zoom in, out; auto below the whole frame |
 | Autopause | both autopauses off when either is on, else both on: while a wheel is open, and while a weapon or ability waits for a target | on, off |
 | Fast speed | next fast forward speed, the slowest after the fastest | faster, slower |

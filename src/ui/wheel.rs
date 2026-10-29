@@ -1193,6 +1193,7 @@ impl Layer {
                 Action::Builtin(Builtin::Zoom) => self.zoom_step(dir > 0),
                 Action::Builtin(Builtin::TextSize) => self.text_size_step(dir > 0),
                 Action::Builtin(Builtin::Autopause) => self.set_autopause(dir > 0),
+                Action::Builtin(Builtin::DpadMode) => self.bind.dpad_mouse = dir > 0,
                 Action::Set(i) => {
                     self.tune(i, Some(dir > 0));
                     self.buzz();
@@ -1502,6 +1503,10 @@ mod tests {
             l.act_on_plate();
             assert_eq!((l.cfg.text_scale, l.wheel.open), (2.0, Some(0)));
             l.wheel.sel = Some(0);
+            l.adjust_plate(-1);
+            assert_eq!(shown(&l.wheel.plates[0]), (false, SWITCH_PIPS, 0, OFF_BADGE.to_string()));
+            l.adjust_plate(1);
+            assert_eq!((l.bind.dpad_mouse, l.wheel.open), (true, Some(0)));
             l.act_on_plate();
             assert_eq!((l.bind.dpad_mouse, l.wheel.open), (false, None));
         });
