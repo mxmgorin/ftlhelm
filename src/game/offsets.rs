@@ -176,6 +176,8 @@ pub const CHOICE_OPEN_TIME: usize = 132;
 /// WindowFrame::rect, relative to the point the frame draws at.
 pub const FRAME_RECT: usize = 0;
 
+/// GenericButton::position, the button's top left corner.
+pub const BUTTON_POSITION: usize = 8;
 pub const BUTTON_HITBOX: usize = 16;
 pub const BUTTON_RENDER_OFF: usize = 34;
 pub const BUTTON_ACTIVE: usize = 72;
@@ -295,6 +297,17 @@ pub const CREW_RETURN_STATIONS: usize = 384;
 /// CrewControl::stationsLastY: the station buttons' backgrounds are rebuilt only when their y
 /// differs from it.
 pub const CREW_STATIONS_LAST_Y: usize = 544;
+/// CrewControl::crewMessage, the tracker that runs while the station buttons' message shows,
+/// and the message.
+pub const CREW_MESSAGE_TRACKER: usize = 200;
+pub const CREW_MESSAGE: usize = 232;
+/// CrewControl::OnRender prints the message in this font at this column, this far below the
+/// save stations button's top.
+pub const CREW_MESSAGE_FONT: i32 = 10;
+pub const CREW_MESSAGE_X: i32 = 10;
+pub const CREW_MESSAGE_DROP: i32 = 38;
+/// AnimationTracker::running.
+pub const TRACKER_RUNNING: usize = 20;
 
 pub const EQUIP_BOXES: usize = 472;
 /// The overflow boxes Equipment keeps in its box list, and the flags that show them.

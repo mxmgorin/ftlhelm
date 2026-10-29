@@ -110,6 +110,8 @@ pub enum Call {
     DestroyPrimitive(usize),
     /// Button::OnInit on the button at this address, with this hit box size.
     ButtonInit(usize, i32, i32),
+    /// freetype::easy_print in this font at this point.
+    PrintLeft(i32, f32, f32),
 }
 
 /// The size of every image ResourceControl::GetImageId finds.
@@ -292,6 +294,12 @@ extern "C" fn destroy_primitive(primitive: Ptr) {
     record(Call::DestroyPrimitive(primitive as usize));
 }
 
+extern "C" fn set_color(_color: GlColor) {}
+
+extern "C" fn print_left(font: c_int, x: f32, y: f32, _text: *const Ptr) {
+    record(Call::PrintLeft(font, x, y));
+}
+
 extern "C" fn button_init(button: Ptr, _name: *const Ptr, hit: *const Rect, _image: *const Rect, _mirror: bool) {
     // SAFETY: the caller passes a valid hit box.
     let hit = unsafe { *hit };
@@ -405,6 +413,8 @@ fn install_api() -> Statics {
     stand_in.create_image_primitive = create_image_primitive;
     stand_in.destroy_primitive = destroy_primitive;
     stand_in.button_init = button_init;
+    stand_in.set_color = set_color;
+    stand_in.print_left = print_left;
     stand_in.string_ctor = string_ctor;
     stand_in.string_dtor = string_dtor;
     stand_in.get_text = get_text;

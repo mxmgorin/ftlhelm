@@ -12,8 +12,8 @@
 //!   event boxes scaled;
 //! - MouseControl::MeasureTooltip and ResourceControl::GetFontData scale tooltip fonts;
 //! - CSurface::GL_BlitFrameBuffer shows the zoomed view and averages a shrunk frame;
-//! - CrewBox::CrewBox and ShipStatus::OnMouseMove build the crew boxes and hit-test the
-//!   status panel with the HUD's left shift;
+//! - CrewBox::CrewBox, ShipStatus::OnMouseMove and CrewControl::OnRender build the crew
+//!   boxes, hit-test the status panel and print the crew message with the HUD's left shift;
 //! - ResourceControl::GetImageId hands the game the iPad art of the sets switched on;
 //! - the PLT calls to snd_pcm_open and snd_pcm_recover restart a failed sound stream.
 
@@ -73,6 +73,8 @@ const RENDER_TOOLTIP_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x49, 0x89, 0xf7];
 const CREW_BOX_PROLOGUE: [u8; 5] = [0x41, 0x57, 0x48, 0x89, 0xf0];
 /// lea -0x6(%rsi),%eax; push %rbx; mov %rdi,%rbx
 const STATUS_MOUSE_PROLOGUE: [u8; 7] = [0x8d, 0x46, 0xfa, 0x53, 0x48, 0x89, 0xfb];
+/// push %r15; push %r14; lea 0xf0(%rdi),%r14
+const CREW_RENDER_PROLOGUE: [u8; 11] = [0x41, 0x57, 0x41, 0x56, 0x4c, 0x8d, 0xb7, 0xf0, 0x00, 0x00, 0x00];
 /// push %r12; push %rbp; mov %rsi,%rbp
 const IMAGE_ID_PROLOGUE: [u8; 6] = [0x41, 0x54, 0x55, 0x48, 0x89, 0xf5];
 /// The game puts the pointer's tooltip this far below the pointer's tip.
@@ -96,6 +98,7 @@ static BLIT_PIXEL_ORIG: AtomicUsize = AtomicUsize::new(0);
 static RENDER_TOOLTIP_ORIG: AtomicUsize = AtomicUsize::new(0);
 static CREW_BOX_ORIG: AtomicUsize = AtomicUsize::new(0);
 static STATUS_MOUSE_ORIG: AtomicUsize = AtomicUsize::new(0);
+static CREW_RENDER_ORIG: AtomicUsize = AtomicUsize::new(0);
 static IMAGE_ID_ORIG: AtomicUsize = AtomicUsize::new(0);
 /// The plain pointer's textures while the game draws its pointer, else 0.
 static POINTERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
@@ -261,6 +264,16 @@ extern "C" fn crew_box_hook(this: Ptr, at: Point, crew: Ptr, number: c_int) {
 extern "C" fn status_mouse_hook(this: Ptr, x: c_int, y: c_int) {
     // SAFETY: the original ShipStatus::OnMouseMove on its own object, at a position in its layout.
     unsafe { orig::<extern "C" fn(Ptr, c_int, c_int)>(&STATUS_MOUSE_ORIG)(this, x - hud::left_shift(), y) };
+}
+
+extern "C" fn crew_render_hook(this: Ptr) {
+    // SAFETY: the original CrewControl::OnRender on its own object.
+    let render = || unsafe { orig::<extern "C" fn(Ptr)>(&CREW_RENDER_ORIG)(this) };
+    // SAFETY: the game passes its CrewControl as `this`.
+    match unsafe { Obj::from_ptr(this as *const c_void) } {
+        Some(crew) => hud::render_crew_control(crew, render),
+        None => render(),
+    }
 }
 
 extern "C" fn image_id_hook(resources: Ptr, name: *const Ptr) -> Ptr {
@@ -473,6 +486,12 @@ pub extern "C" fn init() {
         status_mouse_hook as *const () as usize,
         &STATUS_MOUSE_PROLOGUE,
         &STATUS_MOUSE_ORIG,
+    ) && install(
+        "CrewControl::OnRender",
+        a.crew_render,
+        crew_render_hook as *const () as usize,
+        &CREW_RENDER_PROLOGUE,
+        &CREW_RENDER_ORIG,
     );
     hud::set_left_hooked(hud_left);
     let ipad = install(

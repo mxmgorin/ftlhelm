@@ -219,6 +219,7 @@ game_api! {
     mem_alloc: unsafe extern "C" fn(i64, c_int, c_int) -> *mut c_void = "mem_alloc",
     crew_box_ctor: usize = "_ZN7CrewBoxC1E5PointP10CrewMemberi",
     status_mouse_move: usize = "_ZN10ShipStatus11OnMouseMoveEii",
+    crew_render: usize = "_ZN11CrewControl8OnRenderEv",
     clear_crew_boxes: unsafe extern "C" fn(Ptr) = "_ZN11CrewControl14ClearCrewBoxesEv",
     update_sub_box: unsafe extern "C" fn(Ptr) = "_ZN13SystemControl18UpdateSubSystemBoxEv",
     ship_info: unsafe extern "C" fn(c_int) -> Ptr = "_ZN9ShipGraph11GetShipInfoEi",

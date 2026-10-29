@@ -10,17 +10,19 @@
 //!
 //! Panels draw and hit-test from position fields the layer writes, each the game's own value
 //! plus the shift; a field the game sets anew, as for a new ship, gives the new base. The crew
-//! boxes take their position when built and the status panel hit-tests fixed spots, so two
-//! hooks add the left shift there, and the left panels stay put without them.
+//! boxes take their position when built, the status panel hit-tests fixed spots and the crew
+//! message prints at a fixed column, so three hooks add the left shift there, and the left
+//! panels stay put without them.
 
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::game::api::api;
+use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
+use crate::ui::draw::set_color;
 use crate::ui::zoom::{self, Span};
 
 /// Frame pixels kept free between a moved panel and what it moves toward.
@@ -40,11 +42,16 @@ const HULL_MARGINS: [(i32, i32, i32); 10] = [
     (721, 25, 26),
 ];
 
-/// The left shift the crew boxes are built with and the status panel hit-tests with.
+/// The station buttons' message as CrewControl::OnRender prints it.
+const CREW_MESSAGE_COLOR: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
+
+/// The left shift the crew boxes are built with, the status panel hit-tests with and the crew
+/// message prints with.
 static LEFT_SHIFT: AtomicI32 = AtomicI32::new(0);
 static LEFT_HOOKED: AtomicBool = AtomicBool::new(false);
 
-/// Records whether the crew box and status panel hooks are in; the left shift needs both.
+/// Records whether the crew box, status panel and crew message hooks are in; the left shift
+/// needs all three.
 pub fn set_left_hooked(on: bool) {
     LEFT_HOOKED.store(on, Ordering::Relaxed);
 }
@@ -52,6 +59,25 @@ pub fn set_left_hooked(on: bool) {
 /// The left shift as the panels have it.
 pub fn left_shift() -> i32 {
     LEFT_SHIFT.load(Ordering::Relaxed)
+}
+
+/// Runs CrewControl::OnRender on `crew` through `render`, with the station buttons' message
+/// moved by the left shift.
+pub fn render_crew_control(crew: Obj, render: impl FnOnce()) {
+    let shift = left_shift();
+    let running = CREW_MESSAGE_TRACKER + TRACKER_RUNNING;
+    if shift == 0 || !crew.flag(running) {
+        return render();
+    }
+    // The game prints the message at a fixed column: hidden from it, printed here.
+    crew.set(running, false);
+    render();
+    crew.set(running, true);
+    let y = crew.at(CREW_SAVE_STATIONS).point(BUTTON_POSITION).y + CREW_MESSAGE_DROP;
+    set_color(CREW_MESSAGE_COLOR);
+    let message = crew.at(CREW_MESSAGE).ptr() as *const Ptr;
+    // SAFETY: the game's font code on the crew control's own std::string.
+    unsafe { (api().print_left)(CREW_MESSAGE_FONT, (CREW_MESSAGE_X + shift) as f32, y as f32, message) };
 }
 
 /// Free frame columns in each shift's way, on the HUD as the game lays it out on its own.
@@ -254,6 +280,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::api::Point;
     use crate::game::fake::{self, with_game, Call};
 
     /// The free columns around the Kestrel's HUD as the game lays it out.
@@ -295,6 +322,28 @@ mod tests {
         assert_eq!(m.next(747, -100), Some(647));
         assert_eq!(m.next(647, 0), Some(747));
         assert_eq!(m.next(747, 0), None);
+    }
+
+    #[test]
+    fn the_crew_message_moves_with_the_left_shift() {
+        with_game(|g| {
+            let crew = g.gui.at(GUI_CREW_CONTROL);
+            let running = CREW_MESSAGE_TRACKER + TRACKER_RUNNING;
+            crew.at(CREW_SAVE_STATIONS).set(BUTTON_POSITION, Point { x: 30, y: 300 });
+            crew.set(running, true);
+            render_crew_control(crew, || assert!(crew.flag(running)));
+            assert!(fake::calls().is_empty());
+            LEFT_SHIFT.store(20, Ordering::Relaxed);
+            render_crew_control(crew, || assert!(!crew.flag(running)));
+            assert!(crew.flag(running));
+            let (x, y) = ((CREW_MESSAGE_X + 20) as f32, (300 + CREW_MESSAGE_DROP) as f32);
+            assert_eq!(fake::calls(), [Call::PrintLeft(CREW_MESSAGE_FONT, x, y)]);
+            // No message: nothing printed.
+            crew.set(running, false);
+            render_crew_control(crew, || ());
+            assert!(fake::calls().is_empty());
+            LEFT_SHIFT.store(0, Ordering::Relaxed);
+        });
     }
 
     #[test]
