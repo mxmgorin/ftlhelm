@@ -459,18 +459,36 @@ fn select_weapon(control: Obj, slot: usize) -> bool {
     state::armed_slot(control) == Some(slot)
 }
 
-/// Steps the open ship or store screen's tab, wrapping.
+/// Steps the open ship or store screen's tab, wrapping; each page of the store's buy tab
+/// counts as a tab.
 pub fn tab_step(dir: i32) {
     let Some(tabbed) = state::open_tabbed() else {
         return;
     };
-    let n = tabbed.at(TABBED_BUTTONS).ptr_count() as i32;
-    if n <= 0 {
+    let store = state::open_store();
+    let pages = |tab: u32| match store {
+        Some(s) if tab == STORE_BUY_TAB as u32 => state::store_pages(s),
+        _ => 1,
+    };
+    let tabs = tabbed.at(TABBED_BUTTONS).ptr_count() as u32;
+    let screens: Vec<(u32, u32)> = (0..tabs).flat_map(|t| (0..pages(t)).map(move |p| (t, p))).collect();
+    let current = tabbed.get::<u32>(TABBED_CURRENT);
+    let page = match store {
+        Some(s) if pages(current) > 1 => s.flag(STORE_SHOW_PAGE2) as u32,
+        _ => 0,
+    };
+    let Some(at) = screens.iter().position(|&s| s == (current, page)) else {
         return;
+    };
+    let (tab, page) = screens[(at as i32 + dir).rem_euclid(screens.len() as i32) as usize];
+    if tab != current {
+        // SAFETY: SetTab on the open TabbedWindow with an index below its tab count.
+        unsafe { (api().set_tab)(tabbed.ptr(), tab) }
     }
-    let current = tabbed.get::<u32>(TABBED_CURRENT) as i32;
-    // SAFETY: SetTab on the open TabbedWindow with an index below its tab count.
-    unsafe { (api().set_tab)(tabbed.ptr(), ((current + dir + n) % n) as u32) }
+    if pages(tab) > 1 {
+        // The screen passes keys to its current tab's window.
+        tap_key(KEY_STORE_FIRST_PAGE + page as i32, false);
+    }
 }
 
 #[cfg(test)]
@@ -740,6 +758,50 @@ mod tests {
             l.zones.list = vec![zone(ROOM + 2)];
             assert!(!l.pick_room_crew(), "no crew in the room");
             assert_eq!(calls(), []);
+        });
+    }
+
+    /// Opens the tabbed screen at `off` in the GUI with `tabs` tabs; returns it.
+    fn open_tabbed(g: &mut Game, off: usize, tabs: usize) -> Obj {
+        let screens = g.gui.at(off);
+        screens.set(FOCUS_OPEN, 1u8);
+        let buttons: Vec<_> = (0..tabs).map(|_| Some(g.arena.alloc(size_of::<usize>()))).collect();
+        g.arena.ptr_vector(screens, TABBED_BUTTONS, &buttons);
+        screens
+    }
+
+    #[test]
+    fn the_store_tabs_step_through_the_buy_pages() {
+        with_game(|g| {
+            let screens = open_tabbed(g, layout().gui_store_screens, 2);
+            let store = g.arena.alloc(STORE_SHOW_PAGE2 + 1);
+            store.set(STORE_SECTION_COUNT, (STORE_PAGE_SECTIONS + 1) as i32);
+            g.arena.ptr_vector(screens, TABBED_WINDOWS, &[Some(store)]);
+            let (buy, sell) = (STORE_BUY_TAB as u32, STORE_SELL_TAB as u32);
+            let set_tab = |tab| Call::SetTab(screens.addr(), tab);
+            let page = |p| [Call::KeyDown(KEY_STORE_FIRST_PAGE + p), Call::KeyUp(KEY_STORE_FIRST_PAGE + p)];
+            let step = |tab: u32, page2: bool, dir| {
+                screens.set(TABBED_CURRENT, tab);
+                store.set(STORE_SHOW_PAGE2, page2);
+                tab_step(dir);
+                calls()
+            };
+            assert_eq!(step(buy, false, 1), page(1), "page 1 to page 2");
+            assert_eq!(step(buy, true, 1), [set_tab(sell)], "page 2 to sell");
+            assert_eq!(step(sell, true, 1), [&[set_tab(buy)][..], &page(0)].concat(), "sell wraps to page 1");
+            assert_eq!(step(sell, false, -1), [&[set_tab(buy)][..], &page(1)].concat(), "sell back to page 2");
+            assert_eq!(step(buy, false, -1), [set_tab(sell)], "page 1 wraps back to sell");
+            store.set(STORE_SECTION_COUNT, STORE_PAGE_SECTIONS as i32);
+            assert_eq!(step(buy, false, 1), [set_tab(sell)], "a single page");
+        });
+    }
+
+    #[test]
+    fn the_ship_screens_step_their_tabs_wrapping() {
+        with_game(|g| {
+            let screens = open_tabbed(g, layout().gui_ship_screens, 3);
+            tab_step(-1);
+            assert_eq!(calls(), [Call::SetTab(screens.addr(), 2)]);
         });
     }
 }

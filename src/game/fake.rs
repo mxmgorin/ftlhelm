@@ -100,6 +100,8 @@ pub enum Call {
     MouseMove(i32, i32),
     /// CrewControl::ClearSelectedCrew on the control at this address.
     ClearCrew(usize),
+    /// TabbedWindow::SetTab on the window at this address, to this tab.
+    SetTab(usize, u32),
     /// CrewControl::ClearCrewBoxes on the control at this address.
     ClearCrewBoxes(usize),
     /// SystemControl::UpdateSubSystemBox on the control at this address.
@@ -262,6 +264,10 @@ extern "C" fn mouse_move(_app: Ptr, x: c_int, y: c_int, _dx: c_int, _dy: c_int, 
     record(Call::MouseMove(x, y));
 }
 
+extern "C" fn set_tab(tabbed: Ptr, tab: u32) {
+    record(Call::SetTab(tabbed as usize, tab));
+}
+
 extern "C" fn clear_crew(control: Ptr) {
     record(Call::ClearCrew(control as usize));
 }
@@ -420,6 +426,7 @@ fn install_api() -> Statics {
     stand_in.rbutton_down = rbutton_down;
     stand_in.rbutton_up = rbutton_up;
     stand_in.mouse_move = mouse_move;
+    stand_in.set_tab = set_tab;
     stand_in.clear_crew = clear_crew;
     stand_in.clear_crew_boxes = clear_crew_boxes;
     stand_in.update_sub_box = update_sub_box;

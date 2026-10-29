@@ -152,14 +152,25 @@ pub fn open_tabbed() -> Option<Obj> {
         .find(|w| w.flag(FOCUS_OPEN))
 }
 
+/// The open store screen's buy window, the Store.
+pub fn open_store() -> Option<Obj> {
+    let screens = gui()?.at(layout().gui_store_screens);
+    if !screens.flag(FOCUS_OPEN) {
+        return None;
+    }
+    // Only an open store screen's window is sure to be live.
+    screens.at(TABBED_WINDOWS).vec_obj(STORE_BUY_TAB)
+}
+
+/// How many pages the store's buy tab shows its sections on.
+pub fn store_pages(store: Obj) -> u32 {
+    1 + (store.i32(STORE_SECTION_COUNT).max(0) as usize > STORE_PAGE_SECTIONS) as u32
+}
+
 /// The buttons of the store page not shown, which the game hit-tests all the same; none
 /// with the store closed.
 pub fn hidden_store_buttons() -> Vec<usize> {
-    let Some(screens) = gui().map(|g| g.at(layout().gui_store_screens)).filter(|s| s.flag(FOCUS_OPEN)) else {
-        return Vec::new();
-    };
-    // Only an open store screen's window is sure to be live.
-    let Some(store) = screens.at(TABBED_WINDOWS).vec_obj(STORE_BUY_TAB) else {
+    let Some(store) = open_store() else {
         return Vec::new();
     };
     let page2 = store.flag(STORE_SHOW_PAGE2);

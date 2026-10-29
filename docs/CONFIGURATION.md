@@ -141,7 +141,7 @@ state.
 | `arm_next` | arm the first powered weapon without a target; with a weapon armed, the next powered one |
 | `arm_all` | arm every powered weapon, clearing their targets: the next target goes to all of them, then each beam waits for its own line |
 | `aim_crew` | select the next crew member |
-| `prev_tab`, `next_tab` | ship and store screen tabs |
+| `prev_tab`, `next_tab` | ship and store screen tabs; the store's buy pages count as tabs |
 | `repeat_ability` | the last ability used from a wheel |
 | `precision` | doors become the zones while held |
 | `room_doors` | toggle the doors of the room under the cursor |
