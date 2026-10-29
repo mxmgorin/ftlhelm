@@ -422,14 +422,15 @@ impl Layer {
     }
 
     /// Refreshes the open wheel, points it with the sticks, and closes it when aiming starts
-    /// or the screen no longer allows it.
+    /// other than at picked weapons, or the screen no longer allows it.
     fn tick_wheel(&mut self, p: &PadFrame) {
         self.wheel.refresh_wait -= 1;
         if self.wheel.refresh_wait <= 0 {
             self.refresh_wheel();
         }
         self.point_wheel(p.stick[0], p.stick[1]);
-        if (state::aiming() && !self.wheel.opened_aiming) || !self.open_wheel_allowed() {
+        let new_aim = state::aiming() && !self.wheel.opened_aiming && !self.wheel.picking;
+        if new_aim || !self.open_wheel_allowed() {
             self.close_wheel();
         }
         if !state::aiming() {
@@ -512,25 +513,28 @@ impl Layer {
     }
 
     /// Reacts to mode changes read from the game: a new aim moves the cursor to the enemy
-    /// ship, a new crew selection with crew_follow to the member's room. A volley is one aim.
+    /// ship, a new crew selection with crew_follow to the member's room. A volley is one aim;
+    /// an aim taken in an open wheel counts once the wheel closes.
     fn follow_game_modes(&mut self) {
         let now_aiming = state::aiming() || self.actions.volley.is_some();
         let now_crew = state::first_selected_crew();
-        if now_aiming && !self.pad.prev_aiming {
-            if let (Some(gui), Some(enemy)) = (state::gui(), state::enemy_ship()) {
-                if let Some((ex, ey)) = ship_center(enemy, state::enemy_origin(gui)) {
-                    (self.cursor.x, self.cursor.y) = (ex, ey);
-                    self.send_cursor();
+        if self.wheel.open.is_none() {
+            if now_aiming && !self.pad.prev_aiming {
+                if let (Some(gui), Some(enemy)) = (state::gui(), state::enemy_ship()) {
+                    if let Some((ex, ey)) = ship_center(enemy, state::enemy_origin(gui)) {
+                        (self.cursor.x, self.cursor.y) = (ex, ey);
+                        self.send_cursor();
+                    }
+                }
+                if self.cfg.autopause_aim && !state::game_paused() {
+                    toggle_pause();
                 }
             }
-            if self.cfg.autopause_aim && !state::game_paused() {
-                toggle_pause();
-            }
+            self.pad.prev_aiming = now_aiming;
         }
         if now_crew.is_some() && now_crew != self.pad.prev_crew && self.cfg.crew_follow {
             self.cursor_to_selected_crew();
         }
-        self.pad.prev_aiming = now_aiming;
         self.pad.prev_crew = now_crew;
     }
 }

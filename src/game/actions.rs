@@ -46,6 +46,9 @@ pub struct Volley {
     rest: Vec<usize>,
     /// Where the first weapon aimed by a point took its target, in frame pixels.
     at: Option<(f32, f32)>,
+    /// Every slot of the volley in arming order, and whether it took all powered weapons.
+    pub slots: Vec<usize>,
+    pub all: bool,
 }
 
 /// Clicks queued for later frames, the volley, the fast speed's step cap, and its state.
@@ -260,14 +263,52 @@ impl Layer {
         self.cursor.last_set = state::mouse_point();
     }
 
-    /// Starts a volley: selects every powered weapon, which clears their targets, and leaves
-    /// the first armed. Weapons aimed by a point come first in slot order, the beams last.
+    /// Starts a volley of every powered weapon.
     pub fn arm_all(&mut self) {
+        let slots: Vec<usize> = (0..WEAPON_SLOTS as usize).collect();
+        self.arm_volley(&slots, true);
+    }
+
+    /// The weapons picked to aim together: the volley's, else the armed one.
+    pub fn picked_weapons(&self) -> Vec<usize> {
+        match &self.actions.volley {
+            Some(v) => v.slots.clone(),
+            None => state::weapon_control().and_then(state::armed_slot).into_iter().collect(),
+        }
+    }
+
+    /// Adds the weapon in `slot` to the picked ones, or drops it from them, and arms the rest
+    /// as a volley; dropping the last cancels the aim.
+    pub fn pick_weapon(&mut self, slot: usize, on: bool) {
+        let mut slots = self.picked_weapons();
+        if slots.contains(&slot) == on {
+            return;
+        }
+        if on {
+            slots.push(slot);
+        } else {
+            slots.retain(|&s| s != slot);
+        }
+        if slots.is_empty() {
+            // The right button cancels targeting.
+            self.click_tap(MouseButton::Right);
+        } else {
+            self.arm_volley(&slots, false);
+        }
+    }
+
+    /// Starts a volley of the powered weapons in `slots`: selects them, which clears their
+    /// targets, and leaves the first armed; a single weapon is armed alone unless `all`.
+    /// Weapons aimed by a point come first in slot order, the beams last.
+    pub fn arm_volley(&mut self, slots: &[usize], all: bool) {
         self.actions.volley = None;
         let Some(control) = state::weapon_control() else {
             return;
         };
-        let powered: Vec<(usize, Obj)> = (0..WEAPON_SLOTS as usize)
+        let mut slots = slots.to_vec();
+        slots.sort_unstable();
+        let powered: Vec<(usize, Obj)> = slots
+            .into_iter()
             .filter_map(|i| Some((i, state::armament_item(control, i)?)))
             .filter(|(_, w)| w.flag(WEAPON_POWERED))
             .collect();
@@ -277,6 +318,9 @@ impl Layer {
         for &slot in order.iter().rev() {
             select_weapon(control, slot);
         }
+        if order.len() == 1 && !all {
+            return;
+        }
         // A weapon the game refuses to arm drops out with those before it.
         let Some(armed) = state::armed_slot(control) else {
             return;
@@ -284,10 +328,11 @@ impl Layer {
         let Some(pos) = order.iter().position(|&s| s == armed) else {
             return;
         };
-        self.actions.volley = Some(Volley { armed, rest: order[pos + 1..].to_vec(), ..Default::default() });
+        let (rest, slots) = (order[pos + 1..].to_vec(), order[pos..].to_vec());
         if self.debug {
-            log!("volley: slots {:?}", &order[pos..]);
+            log!("volley: slots {slots:?}");
         }
+        self.actions.volley = Some(Volley { armed, rest, slots, all, ..Default::default() });
     }
 
     /// Moves the volley on: notes when its armed weapon takes a target, and arms the next once
@@ -573,7 +618,11 @@ mod tests {
             let mut l = Layer::default();
             l.arm_all();
             assert_eq!(keys_down(), [key(0), key(3), key(1)], "the first selected last");
-            assert_eq!(l.actions.volley, Some(Volley { armed: 1, rest: vec![3, 0], ..Default::default() }));
+            let slots = vec![1, 3, 0];
+            assert_eq!(
+                l.actions.volley,
+                Some(Volley { armed: 1, rest: vec![3, 0], slots, all: true, ..Default::default() })
+            );
             l.run_volley();
             assert_eq!(calls(), [], "the first waits for the player");
             let target = Point { x: 300, y: 200 };
@@ -637,6 +686,30 @@ mod tests {
             l.run_volley();
             assert_eq!(l.actions.volley, None, "the click took no target");
             assert_eq!(state::armed_slot(control), Some(1), "the weapon stays armed");
+        });
+    }
+
+    #[test]
+    fn picked_weapons_aim_as_one_volley_and_dropping_the_last_cancels_the_aim() {
+        with_game(|g| {
+            let (beam, laser) = (Some((true, true, false)), Some((true, false, false)));
+            weapons(g, &[beam, laser, laser]);
+            let mut l = Layer::default();
+            l.pick_weapon(2, true);
+            assert_eq!(keys_down(), [key(2)], "one weapon armed alone");
+            assert_eq!((l.actions.volley.is_none(), l.picked_weapons()), (true, vec![2]));
+            l.pick_weapon(0, true);
+            assert_eq!(keys_down(), [key(0), key(2)], "the beam last");
+            let volley = l.actions.volley.as_ref().expect("two weapons picked");
+            assert_eq!((volley.slots.as_slice(), volley.all), (&[2, 0][..], false));
+            l.pick_weapon(0, true);
+            assert_eq!(keys_down(), [], "a picked weapon stays picked");
+            l.pick_weapon(2, false);
+            assert_eq!(keys_down(), [key(0)]);
+            assert_eq!((l.actions.volley.is_none(), l.picked_weapons()), (true, vec![0]));
+            l.pick_weapon(0, false);
+            let right = calls().into_iter().filter(|c| matches!(c, Call::Button(MouseButton::Right, ..))).count();
+            assert_eq!(right, 2, "the right button cancels the aim");
         });
     }
 

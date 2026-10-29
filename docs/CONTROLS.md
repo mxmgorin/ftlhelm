@@ -47,6 +47,10 @@ The All weapons plate of the weapons wheel arms every powered weapon and clears 
 targets. A on a room aims them all at it; each beam then waits for its own line. B leaves
 them all without a target. Autofire is the game's button under the weapons.
 
+On the weapons wheel, D-pad up on a powered weapon picks it: the picked weapons, lit yellow,
+aim together as with the All weapons plate. D-pad down drops a picked weapon, then takes its
+power. A on a picked weapon closes the wheel.
+
 ## Mouse mode
 
 L3 or R3, or the Mouse plate of the settings wheel, switches the D-pad and both sticks
@@ -55,10 +59,10 @@ with `cursor_deadzone` and `cursor_curve` for the sticks.
 
 The badge sits where the game writes PAUSED. It names the selected crew member, or counts
 several, and the active modes: Mouse, Doors, Fast (fast forward) and Target with the armed
-weapon, or with All weapons during a volley. Targeting and doors mode show the game's own
-TARGETING and DOOR CONTROL banners, the rest a line under them; a banner on a paused game
-takes PAUSED's place, and the line then ends in Paused. `badge = 0` hides it; `overlay = 0`
-hides it, the zone brackets and the crew markers.
+weapon, the number of picked weapons, or All weapons during a volley. Targeting and doors
+mode show the game's own TARGETING and DOOR CONTROL banners, the rest a line under them; a
+banner on a paused game takes PAUSED's place, and the line then ends in Paused. `badge = 0`
+hides it; `overlay = 0` hides it, the zone brackets and the crew markers.
 
 ## Touch
 
@@ -92,7 +96,7 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | --- | --- |
 | either stick | point at a plate |
 | D-pad left, right | previous, next plate |
-| D-pad up, down | add, take power; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the plate's setting |
+| D-pad up, down | add, take power; on a powered weapon, pick it, drop it; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the plate's setting |
 | A | act on the plate |
 | B | close; in a wheel opened from a plate, back to the wheel it was opened from |
 | the wheel's own button | close, with any wheel opened from it |

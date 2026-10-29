@@ -33,8 +33,10 @@ const VIEW_MARGIN: f32 = 8.0;
 const SEPARATOR: &str = " / ";
 const CREW_TITLE: &str = "Crew";
 const TARGET_TITLE: &str = "Target";
-/// The badge's name for a volley's aim, in place of the armed weapon's.
+/// The badge's names for a volley's aim, in place of the armed weapon's: of all weapons, and
+/// after the count of picked ones.
 const VOLLEY_TITLE: &str = "All weapons";
+const WEAPONS_TITLE: &str = "weapons";
 const DOORS_TITLE: &str = "Doors";
 const FAST_TITLE: &str = "Fast";
 const MOUSE_TITLE: &str = "Mouse";
@@ -216,14 +218,14 @@ impl Layer {
     pub fn badge_line(&self, banner: Option<Banner>, paused: bool) -> String {
         let mut parts = Vec::new();
         if state::mouse().i32(MOUSE_AIMING) != 0 {
-            let weapon = if self.actions.volley.is_some() {
-                VOLLEY_TITLE.to_string()
-            } else {
-                state::weapon_control()
+            let weapon = match &self.actions.volley {
+                Some(v) if v.all => VOLLEY_TITLE.to_string(),
+                Some(v) => format!("{} {WEAPONS_TITLE}", v.slots.len()),
+                None => state::weapon_control()
                     .and_then(|c| c.obj(WEAPONCTRL_ARMED))
                     .and_then(|w| w.obj(WEAPON_BLUEPRINT))
                     .map(|bp| truncate_label(&state::display_text(bp.at(BLUEPRINT_SHORT_TITLE))))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
             };
             match (banner, weapon.is_empty()) {
                 (Some(Banner::Targeting), true) => {}
@@ -282,6 +284,7 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::LABEL_CHARS;
+    use crate::game::actions::Volley;
     use crate::game::fake::with_game;
 
     const BANNER: (f32, f32, f32) = (264.0, 72.0, 49.0);
@@ -369,6 +372,12 @@ mod tests {
             let name = title.chars().take(LABEL_CHARS).collect::<String>().to_uppercase();
             assert_eq!(l.badge_line(None, false), format!("TARGET: {name} / DOORS / MOUSE"));
             assert_eq!(l.badge_line(Some(Banner::Targeting), true), format!("{name} / DOORS / MOUSE / PAUSED"));
+            let mut volley = Volley::default();
+            volley.slots = vec![0, 2];
+            l.actions.volley = Some(volley);
+            assert_eq!(l.badge_line(None, false), "TARGET: 2 WEAPONS / DOORS / MOUSE", "a volley of picked weapons");
+            l.actions.volley.as_mut().expect("set above").all = true;
+            assert_eq!(l.badge_line(None, false), "TARGET: ALL WEAPONS / DOORS / MOUSE");
         });
     }
 

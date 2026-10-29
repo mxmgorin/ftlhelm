@@ -164,7 +164,7 @@ state.
 | `kind` | Plates |
 | --- | --- |
 | `action` | from the section; the wheel closes after an action |
-| `power` | from the section, with power pips; D-pad up and down add and take power |
+| `power` | from the section, with power pips; D-pad up and down add and take power, and pick a powered weapon and drop it |
 | `crew` | filled from the ship's crew |
 | `systems` | filled from the ship's systems |
 | `settings` | from the section; opens on any screen; D-pad up and down step `zoom`, `text_size` and stepped `set` plates, and turn `autopause` and `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |

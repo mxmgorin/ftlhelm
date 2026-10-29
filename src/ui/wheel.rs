@@ -69,6 +69,13 @@ const SELECTED_GROW: f32 = 4.0;
 /// unlit; a powered one's band green.
 const PLATE_FRAME: FrameStyle = FrameStyle { band: 2, ..BUTTON_FRAME };
 const PLATE_POWERED_FRAME: FrameStyle = FrameStyle { band_color: POWER_COLOR, ..PLATE_FRAME };
+/// A weapon picked to aim: its band twice as wide, band and glow in the game's selection yellow.
+const PLATE_PICKED_FRAME: FrameStyle = FrameStyle {
+    band: 2 * PLATE_FRAME.band,
+    band_color: BUTTON_SELECTED_COLOR,
+    glow: Some(BUTTON_SELECTED_COLOR),
+    ..PLATE_FRAME
+};
 const PLATE_DISABLED_FRAME: FrameStyle = FrameStyle { glow: None, ..PLATE_FRAME };
 
 const DISC_COLOR: GlColor = GlColor::new(0.02, 0.06, 0.06, 0.5);
@@ -316,6 +323,8 @@ pub struct Plate {
     pub bound: bool,
     pub available: bool,
     pub powered: bool,
+    /// A weapon picked to aim with the other picked ones.
+    pub picked: bool,
     /// A slot with nothing in it, drawn as a faint frame.
     pub empty: bool,
     pub action: Option<Action>,
@@ -354,6 +363,8 @@ pub struct WheelUi {
     paused: bool,
     /// Whether the game was already aiming when the wheel opened; only a new aim closes it.
     pub opened_aiming: bool,
+    /// Whether a weapon was picked in the open wheel, whose aim keeps it open.
+    pub picking: bool,
     /// The wheel the open one was opened from, and the plate that opened it.
     parent: Option<(usize, usize)>,
 }
@@ -583,6 +594,8 @@ fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: b
     }
     let style = if !pl.available {
         &PLATE_DISABLED_FRAME
+    } else if pl.picked {
+        &PLATE_PICKED_FRAME
     } else if pl.powered {
         &PLATE_POWERED_FRAME
     } else {
@@ -774,6 +787,11 @@ fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
     }
 }
 
+/// The weapon slot a key arms, if it is a weapon's.
+fn weapon_slot(code: i32) -> Option<usize> {
+    (KEY_FIRST_WEAPON..KEY_FIRST_WEAPON + WEAPON_SLOTS).contains(&code).then(|| (code - KEY_FIRST_WEAPON) as usize)
+}
+
 /// Whether an armament control holds a powered item.
 fn any_powered(control: Obj) -> bool {
     (0..WEAPON_SLOTS as usize).any(|i| state::armament_item(control, i).is_some_and(|w| w.flag(WEAPON_POWERED)))
@@ -945,8 +963,22 @@ impl Layer {
             WheelKind::Systems => system_plates(),
             _ => layout_plates(def, &self.layout.wheels, &mut self.images),
         };
-        if def.kind == WheelKind::Settings {
-            self.show_settings();
+        match def.kind {
+            WheelKind::Settings => self.show_settings(),
+            WheelKind::Power => self.show_picked(),
+            _ => {}
+        }
+    }
+
+    /// Marks the weapon plates picked to aim.
+    fn show_picked(&mut self) {
+        let picked = self.picked_weapons();
+        for pl in &mut self.wheel.plates {
+            let slot = match pl.action {
+                Some(Action::Key { code, shift: false }) => weapon_slot(code),
+                _ => None,
+            };
+            pl.picked = pl.powered && slot.is_some_and(|s| picked.contains(&s));
         }
     }
 
@@ -1021,6 +1053,7 @@ impl Layer {
         self.wheel.paused = false;
         self.wheel.sel = None;
         self.wheel.parent = None;
+        self.wheel.picking = false;
         if self.layout.wheels.get(closed).is_some_and(|w| w.kind == WheelKind::Settings) {
             self.save_tuned();
         }
@@ -1040,6 +1073,7 @@ impl Layer {
         self.wheel.sel = None;
         self.wheel.parent = None;
         self.wheel.opened_aiming = state::aiming();
+        self.wheel.picking = false;
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
         if self.cfg.autopause_wheel && state::ship_view() && !state::game_paused() {
@@ -1085,6 +1119,11 @@ impl Layer {
         }
         let kind = self.layout.wheels[w].kind;
         let action = self.wheel.plates[sel].action;
+        // A picked weapon is armed already: its key would drop the others picked.
+        if self.wheel.plates[sel].picked {
+            self.close_wheel();
+            return;
+        }
         match action {
             // With Shift, a crew member joins the selection.
             Some(Action::Key { code, .. }) if kind == WheelKind::Crew => tap_key(code, state::any_crew_selected()),
@@ -1138,8 +1177,8 @@ impl Layer {
     }
 
     /// Adds power to the selected item of a power or systems wheel, or takes it away for a
-    /// negative dir; on the crew wheel, adds the member to the selection or drops them; on
-    /// the settings wheel, steps the selected setting.
+    /// negative dir, picking or dropping a weapon past its power; on the crew wheel, adds the
+    /// member to the selection or drops them; on the settings wheel, steps the selected setting.
     pub fn adjust_plate(&mut self, dir: i32) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
@@ -1166,6 +1205,18 @@ impl Layer {
         let Action::Key { code, .. } = action else {
             return;
         };
+        let weapon = weapon_slot(code).filter(|_| kind == WheelKind::Power);
+        // A powered weapon is picked past its power, and dropped before it loses power.
+        if let Some(slot) = weapon.filter(|_| plate.powered && (dir > 0 || plate.picked)) {
+            if self.debug {
+                let how = if dir > 0 { "picked" } else { "dropped" };
+                log!("wheel {}: {} {how}", self.layout.wheels[w].name, plate.label);
+            }
+            self.pick_weapon(slot, dir > 0);
+            self.wheel.picking = true;
+            self.refresh_wheel();
+            return;
+        }
         match kind {
             WheelKind::Crew => {
                 let Some(member) = state::crew_at((code - KEY_F1) as usize) else {
@@ -1179,6 +1230,9 @@ impl Layer {
                 }
             }
             WheelKind::Power | WheelKind::Systems => {
+                // Powering a weapon disarms the armed one: the picked ones are armed again.
+                let picked = if dir > 0 && weapon.is_some() { self.picked_weapons() } else { Vec::new() };
+                let all = self.actions.volley.as_ref().is_some_and(|v| v.all);
                 tap_key(code, dir < 0);
                 if self.debug {
                     log!(
@@ -1187,6 +1241,9 @@ impl Layer {
                         plate.label,
                         if dir < 0 { "down" } else { "up" }
                     );
+                }
+                if !picked.is_empty() {
+                    self.arm_volley(&picked, all);
                 }
             }
             _ => return,
@@ -1199,7 +1256,7 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::{Layout, LABEL_CHARS};
-    use crate::game::fake::{with_game, Game};
+    use crate::game::fake::{calls, with_game, Call, Game};
     use crate::ui::zoom::View;
     use std::mem::size_of;
 
@@ -1331,6 +1388,43 @@ mod tests {
             let laser = armament(g, "Burst Laser", "laser_burst", 2, true);
             g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[laser]);
             assert!(plates(&mut l, layout)[7].available);
+        });
+    }
+
+    #[test]
+    fn the_dpad_picks_powered_weapons_and_drops_them_before_their_power() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let boxes = [
+                armament(g, "Laser", "laser", 1, true),
+                armament(g, "Burst Laser", "laser_burst", 2, true),
+                armament(g, "Heavy Ion", "ion_heavy", 1, false),
+            ];
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &boxes);
+            plates(&mut l, "[wheel:power]\nkind = power\nup = 1\nright = 2\ndown = 3\n");
+            let press = |l: &mut Layer, plate, dir| {
+                l.wheel.sel = Some(plate);
+                l.adjust_plate(dir);
+                calls()
+                    .into_iter()
+                    .filter_map(|c| if let Call::KeyDown(k) = c { Some(k) } else { None })
+                    .collect::<Vec<_>>()
+            };
+            let picked = |l: &Layer| [0, 2, 4].map(|i| l.wheel.plates[i].picked);
+            let key = |slot| KEY_FIRST_WEAPON + slot;
+            assert_eq!(press(&mut l, 0, 1), [key(0)]);
+            assert_eq!(press(&mut l, 2, 1), [key(1), key(0)], "both armed, the first last");
+            assert_eq!(picked(&l), [true, true, false]);
+            assert!(l.wheel.picking, "the aim keeps the wheel open");
+            assert_eq!(press(&mut l, 4, 1), [key(2), key(1), key(0)], "the picked armed again after powering");
+            assert_eq!(press(&mut l, 0, -1), [key(1)], "dropped first");
+            assert_eq!(picked(&l), [false, true, false]);
+            assert_eq!(press(&mut l, 0, -1), [KEY_LSHIFT, key(0)], "then its power taken");
+            l.wheel.sel = Some(2);
+            l.act_on_plate();
+            assert_eq!(l.wheel.open, None, "A on a picked weapon closes the wheel");
+            assert_eq!(calls(), [], "without its key, which would drop the others");
         });
     }
 
