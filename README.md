@@ -100,6 +100,10 @@ A Steam copy runs from its own directory:
     cd "/path/to/FTL Faster Than Light"
     ~/ftlhelm/ftlhelm-linux-x86_64/ftlhelm.sh ./FTL
 
+### PortMaster
+
+On aarch64 handhelds, ftlhelm comes with the [FTL port for PortMaster](https://portmaster.games/detail.html?name=ftl).
+
 If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
