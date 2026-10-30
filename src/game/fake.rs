@@ -8,7 +8,7 @@
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
 //! non-executable memory and faults.
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
 use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -114,6 +114,8 @@ pub enum Call {
     ButtonInit(usize, i32, i32),
     /// freetype::easy_print in this font at this point.
     PrintLeft(i32, f32, f32),
+    /// SwapArmaments on the armament control at this address, of these two slots.
+    Swap(usize, u32, u32),
 }
 
 /// The size of every image ResourceControl::GetImageId finds.
@@ -269,6 +271,20 @@ extern "C" fn mouse_move(_app: Ptr, x: c_int, y: c_int, _dx: c_int, _dy: c_int, 
 extern "C" fn set_tab(tabbed: Ptr, tab: u32) {
     record(Call::SetTab(tabbed as usize, tab));
 }
+
+/// As the game's SwapArmaments with the boxes checked after: the two boxes trade items.
+extern "C" fn swap_armaments(control: Ptr, a: c_uint, b: c_uint) {
+    record(Call::Swap(control as usize, a, b));
+    // SAFETY: a control the test built.
+    let boxes = unsafe { Obj::from_addr(control as usize) }.expect("a built control").at(ARMAMENT_BOXES);
+    if let (Some(x), Some(y)) = (boxes.vec_obj(a as usize), boxes.vec_obj(b as usize)) {
+        let (item_x, item_y) = (x.get::<usize>(ARMAMENTBOX_ITEM), y.get::<usize>(ARMAMENTBOX_ITEM));
+        x.set(ARMAMENTBOX_ITEM, item_y);
+        y.set(ARMAMENTBOX_ITEM, item_x);
+    }
+}
+
+extern "C" fn check_armaments(_control: Ptr) {}
 
 extern "C" fn clear_crew(control: Ptr) {
     record(Call::ClearCrew(control as usize));
@@ -445,6 +461,10 @@ fn install_api() -> Statics {
     stand_in.mouse_move = mouse_move;
     stand_in.set_tab = set_tab;
     stand_in.clear_crew = clear_crew;
+    stand_in.weapon_swap = swap_armaments;
+    stand_in.weapon_check = check_armaments;
+    stand_in.drone_swap = swap_armaments;
+    stand_in.drone_check = check_armaments;
     stand_in.clear_crew_boxes = clear_crew_boxes;
     stand_in.update_sub_box = update_sub_box;
     stand_in.ship_info = ship_info;

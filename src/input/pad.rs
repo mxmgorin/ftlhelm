@@ -466,8 +466,8 @@ impl Layer {
                     self.pad.dpad_spent[d] = true;
                     if in_wheel {
                         match d {
-                            0 => self.step_wheel(-1),
-                            2 => self.step_wheel(1),
+                            0 => self.wheel_sideways(-1),
+                            2 => self.wheel_sideways(1),
                             1 => self.adjust_plate(1),
                             _ => self.adjust_plate(-1),
                         }

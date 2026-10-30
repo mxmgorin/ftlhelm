@@ -49,7 +49,7 @@ them all without a target. Autofire is the game's button under the weapons and a
 ship wheel, lit while autofire is on.
 
 A on a weapon or drone box clicks it. A held with D-pad left or right moves the weapon or
-drone one box that way.
+drone one box that way; on the weapons wheel, the same on its plate moves it one slot.
 
 On the weapons wheel, D-pad up on a powered weapon picks it: the picked weapons, lit yellow,
 aim together as with the All weapons plate. D-pad down drops a picked weapon, then takes its
@@ -101,7 +101,8 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | either stick | point at a plate |
 | D-pad left, right | previous, next plate |
 | D-pad up, down | add, take power; on a powered weapon, pick it, drop it; on the crew wheel, add to the selection, drop from it; on the settings wheel, step the plate's setting |
-| A | act on the plate |
+| A | act on the plate; on a weapon or drone plate, on release |
+| A held, D-pad left, right | on a weapon or drone plate, move it to the previous, next slot |
 | B | close; in a wheel opened from a plate, back to the wheel it was opened from |
 | the wheel's own button | close, with any wheel opened from it |
 | hold another wheel's button | switch to that wheel |

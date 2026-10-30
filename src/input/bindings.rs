@@ -153,9 +153,16 @@ impl Layer {
                     if let Some(button) = self.bind.context_done[slot].take() {
                         self.click(button, false);
                     }
+                    if self.wheel.grab.take() == Some(false) {
+                        self.act_on_plate();
+                    }
                 } else if self.wheel.open.is_some() && source != Source::Plate {
                     self.bind.context_done[slot] = None;
-                    self.act_on_plate();
+                    if self.grabs_plate() {
+                        self.wheel.grab = Some(false);
+                    } else {
+                        self.act_on_plate();
+                    }
                 } else if !state::aiming() && self.pick_room_crew() {
                     self.bind.context_done[slot] = None;
                 } else {

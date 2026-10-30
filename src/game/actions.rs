@@ -1,6 +1,7 @@
 //! What the layer does to the game: keys, Shift, clicks and queued clicks, room doors,
 //! crew and weapon cycling, volleys, tabs, and the fast speed.
 
+use std::ffi::c_uint;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::api::api;
@@ -92,6 +93,24 @@ pub fn set_shift(on: bool) {
         key_down(KEY_LSHIFT);
     } else if !on && count == 0 {
         key_up(KEY_LSHIFT);
+    }
+}
+
+/// Trades the weapons in slots `a` and `b` of a weapon control and rebinds its boxes.
+pub fn move_weapon(control: Obj, a: usize, b: usize) {
+    // SAFETY: the weapon control's SwapArmaments and CheckWeapons on itself.
+    unsafe {
+        (api().weapon_swap)(control.ptr(), a as c_uint, b as c_uint);
+        (api().weapon_check)(control.ptr());
+    }
+}
+
+/// Trades the drones in slots `a` and `b` of a drone control and rebinds its boxes.
+pub fn move_drone(control: Obj, a: usize, b: usize) {
+    // SAFETY: the drone control's SwapArmaments and CheckDrones on itself.
+    unsafe {
+        (api().drone_swap)(control.ptr(), a as c_uint, b as c_uint);
+        (api().drone_check)(control.ptr());
     }
 }
 
@@ -395,6 +414,24 @@ impl Layer {
         }
     }
 
+    /// Follows the weapons in slots `a` and `b` trading places in the volley under way.
+    pub fn swap_volley_slots(&mut self, a: usize, b: usize) {
+        let Some(v) = self.actions.volley.as_mut() else {
+            return;
+        };
+        let swap = |s: &mut usize| {
+            *s = if *s == a {
+                b
+            } else if *s == b {
+                a
+            } else {
+                *s
+            }
+        };
+        swap(&mut v.armed);
+        v.rest.iter_mut().chain(v.slots.iter_mut()).for_each(swap);
+    }
+
     fn end_volley(&mut self, why: &str) {
         self.actions.volley = None;
         if self.debug {
@@ -591,6 +628,15 @@ mod tests {
 
     fn keys_down() -> Vec<i32> {
         calls().into_iter().filter_map(|c| if let Call::KeyDown(k) = c { Some(k) } else { None }).collect()
+    }
+
+    #[test]
+    fn a_volley_follows_its_weapons_to_their_new_slots() {
+        let mut l = Layer::default();
+        l.actions.volley = Some(Volley { armed: 0, rest: vec![2, 3], slots: vec![0, 2, 3], ..Default::default() });
+        l.swap_volley_slots(0, 2);
+        let v = l.actions.volley.as_ref().expect("set above");
+        assert_eq!((v.armed, v.rest.as_slice(), v.slots.as_slice()), (2, [0, 3].as_slice(), [2, 0, 3].as_slice()));
     }
 
     #[test]

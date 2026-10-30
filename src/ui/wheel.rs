@@ -14,7 +14,7 @@ use crate::config::settings::{
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
-use crate::game::actions::{tap_key, toggle_pause, MouseButton};
+use crate::game::actions::{move_drone, move_weapon, tap_key, toggle_pause, MouseButton};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
@@ -305,6 +305,10 @@ struct Armament {
     icon_prefix: &'static str,
     icon_fallback: &'static str,
     icon_shift: f32,
+    /// Trades the items of two slots of the bar's control.
+    move_item: fn(Obj, usize, usize),
+    /// Whether a volley tracks the bar's slots.
+    volley: bool,
 }
 
 const ARMAMENTS: [Armament; 2] = [
@@ -319,6 +323,8 @@ const ARMAMENTS: [Armament; 2] = [
         icon_prefix: WEAPON_ICON_PREFIX,
         icon_fallback: WEAPON_ICON_FALLBACK,
         icon_shift: WEAPON_ICON_SHIFT,
+        move_item: move_weapon,
+        volley: true,
     },
     Armament {
         first_key: KEY_FIRST_WEAPON + WEAPON_SLOTS,
@@ -331,6 +337,8 @@ const ARMAMENTS: [Armament; 2] = [
         icon_prefix: DRONE_ICON_PREFIX,
         icon_fallback: DRONE_ICON_FALLBACK,
         icon_shift: 0.0,
+        move_item: move_drone,
+        volley: false,
     },
 ];
 
@@ -391,6 +399,9 @@ pub struct WheelUi {
     pub picking: bool,
     /// The wheel the open one was opened from, and the plate that opened it.
     parent: Option<(usize, usize)>,
+    /// The act button is held on a weapon or drone plate, which acts on its release; true
+    /// once D-pad left or right was pressed meanwhile, and then it does not act.
+    pub grab: Option<bool>,
 }
 
 impl WheelUi {
@@ -861,6 +872,15 @@ fn weapon_slot(code: i32) -> Option<usize> {
     (KEY_FIRST_WEAPON..KEY_FIRST_WEAPON + WEAPON_SLOTS).contains(&code).then(|| (code - KEY_FIRST_WEAPON) as usize)
 }
 
+/// The bar and the slot a key of a wheel of `kind` powers; None off a power wheel.
+fn armament_of(kind: WheelKind, code: i32) -> Option<(&'static Armament, usize)> {
+    if kind != WheelKind::Power {
+        return None;
+    }
+    let arm = ARMAMENTS.iter().find(|a| (a.first_key..a.first_key + a.slots).contains(&code))?;
+    Some((arm, (code - arm.first_key) as usize))
+}
+
 /// Whether an armament control holds a powered item.
 fn any_powered(control: Obj) -> bool {
     (0..WEAPON_SLOTS as usize).any(|i| state::armament_item(control, i).is_some_and(|w| w.flag(WEAPON_POWERED)))
@@ -898,11 +918,8 @@ fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Images) -> [P
         let Action::Key { code, .. } = pdef.action else {
             continue;
         };
-        let arm = ARMAMENTS
-            .iter()
-            .find(|a| def.kind == WheelKind::Power && code >= a.first_key && code < a.first_key + a.slots);
-        if let Some(arm) = arm {
-            let item = (arm.control)().and_then(|c| state::armament_item(c, (code - arm.first_key) as usize));
+        if let Some((arm, slot)) = armament_of(def.kind, code) {
+            let item = (arm.control)().and_then(|c| state::armament_item(c, slot));
             let bp = item.and_then(|i| i.obj(arm.blueprint));
             pl.available = bp.is_some();
             pl.empty = bp.is_none();
@@ -994,10 +1011,11 @@ impl Layer {
         }
     }
 
-    /// Points the wheel from the stronger stick; the selection stays when both are centred.
+    /// Points the wheel from the stronger stick; the selection stays when both are centred
+    /// and while a plate is held.
     pub fn point_wheel(&mut self, left: [f32; 2], right: [f32; 2]) {
         let [x, y] = if right[0].hypot(right[1]) > left[0].hypot(left[1]) { right } else { left };
-        if x.hypot(y) < WHEEL_ON {
+        if x.hypot(y) < WHEEL_ON || self.wheel.grab.is_some() {
             return;
         }
         // In f64: atan2f carries a glibc symbol version too new for older systems.
@@ -1023,6 +1041,61 @@ impl Layer {
                 self.buzz();
                 return;
             }
+        }
+    }
+
+    /// Moves the held plate's weapon or drone one slot that way, or steps the selection while
+    /// no plate is held.
+    pub fn wheel_sideways(&mut self, dir: i32) {
+        let Some(moved) = self.wheel.grab.as_mut() else {
+            self.step_wheel(dir);
+            return;
+        };
+        *moved = true;
+        self.move_plate(dir);
+    }
+
+    /// Whether the act button on the selected plate waits for its release: a weapon or drone
+    /// there may move first.
+    pub fn grabs_plate(&self) -> bool {
+        self.selected_armament().is_some()
+    }
+
+    /// The bar, its control and the slot of the weapon or drone on the selected plate of a
+    /// power wheel; None on other plates and on empty slots.
+    fn selected_armament(&self) -> Option<(&'static Armament, Obj, usize)> {
+        let w = self.wheel.open?;
+        let Some(Action::Key { code, shift: false }) = self.wheel.plates[self.wheel.sel?].action else {
+            return None;
+        };
+        let (arm, slot) = armament_of(self.layout.wheels[w].kind, code)?;
+        let control = (arm.control)()?;
+        state::armament_item(control, slot).map(|_| (arm, control, slot))
+    }
+
+    /// Trades the selected plate's weapon or drone with the item in the next slot (1) or the
+    /// previous (-1), when that slot has a plate on the wheel; the selection follows it.
+    fn move_plate(&mut self, dir: i32) {
+        let Some((arm, control, slot)) = self.selected_armament() else {
+            return;
+        };
+        let Some(to) = slot.checked_add_signed(dir as isize).filter(|&to| state::armament_item(control, to).is_some())
+        else {
+            return;
+        };
+        let moved = Some(Action::Key { code: arm.first_key + to as i32, shift: false });
+        let Some(plate) = self.wheel.plates.iter().position(|p| p.action == moved) else {
+            return;
+        };
+        (arm.move_item)(control, slot, to);
+        if arm.volley {
+            self.swap_volley_slots(slot, to);
+        }
+        self.refresh_wheel();
+        self.wheel.sel = Some(plate);
+        self.buzz();
+        if self.debug {
+            log!("wheel: slot {slot} moved to {to}");
         }
     }
 
@@ -1154,6 +1227,7 @@ impl Layer {
         self.wheel.sel = None;
         self.wheel.parent = None;
         self.wheel.picking = false;
+        self.wheel.grab = None;
         if self.layout.wheels.get(closed).is_some_and(|w| w.kind == WheelKind::Settings) {
             self.save_tuned();
         }
@@ -1174,6 +1248,7 @@ impl Layer {
         self.wheel.parent = None;
         self.wheel.opened_aiming = state::aiming();
         self.wheel.picking = false;
+        self.wheel.grab = None;
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
         if self.cfg.autopauses(AUTOPAUSE_WHEEL) && state::ship_view() && !state::game_paused() {
@@ -1359,7 +1434,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::layout::{Layout, LABEL_CHARS};
+    use crate::config::layout::{Input, Layout, LABEL_CHARS};
     use crate::game::fake::{calls, with_game, Call, Game};
     use crate::ui::zoom::View;
     use std::mem::size_of;
@@ -1529,6 +1604,39 @@ mod tests {
             l.act_on_plate();
             assert_eq!(l.wheel.open, None, "A on a picked weapon closes the wheel");
             assert_eq!(calls(), [], "without its key, which would drop the others");
+        });
+    }
+
+    #[test]
+    fn a_held_on_a_weapon_plate_moves_it_sideways_and_acts_on_release_only_unmoved() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let boxes = [armament(g, "Laser", "laser", 1, true), armament(g, "Heavy Ion", "ion_heavy", 1, true)];
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &boxes);
+            let ion = state::armament_item(weapons, 1);
+            plates(&mut l, "[wheel:power]\nkind = power\nup = 1\nright = 2\n");
+            let a = |l: &mut Layer, down| l.builtin(Builtin::ContextClick, Source::Input(Input::FaceDown), down);
+            l.wheel.sel = Some(2);
+            a(&mut l, true);
+            l.point_wheel([0.0, -1.0], [0.0, 0.0]);
+            assert_eq!(l.wheel.sel, Some(2), "the stick does not repoint a held plate");
+            l.wheel_sideways(-1);
+            assert_eq!(calls(), [Call::Swap(weapons.addr(), 1, 0)]);
+            assert_eq!((state::armament_item(weapons, 0), l.wheel.sel), (ion, Some(0)), "the ion first, selected");
+            l.wheel_sideways(-1);
+            a(&mut l, false);
+            assert_eq!(calls(), [], "no slot before the first, and a moved plate does not act");
+            plates(&mut l, "[wheel:power]\nkind = power\nup = 1\n");
+            l.wheel.sel = Some(0);
+            a(&mut l, true);
+            l.wheel_sideways(1);
+            a(&mut l, false);
+            assert_eq!(calls(), [], "no plate for the next slot, so no move");
+            a(&mut l, true);
+            assert_eq!(calls(), [], "it acts on release");
+            a(&mut l, false);
+            assert_eq!(calls(), [Call::KeyDown(KEY_FIRST_WEAPON), Call::KeyUp(KEY_FIRST_WEAPON)]);
         });
     }
 
