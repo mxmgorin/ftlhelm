@@ -369,9 +369,18 @@ pub fn ability_system(key: i32) -> Option<i32> {
         b'n' => SYS_HACKING,
         b'm' => SYS_MIND,
         b't' | b'r' => SYS_TELEPORTER,
-        b'y' => SYS_ARTILLERY,
         _ => return None,
     })
+}
+
+/// The system kinds whose power `key` adds, Shift taking it.
+pub fn powered_by(key: i32) -> Vec<i32> {
+    (SYS_SHIELDS..=SYS_HACKING).filter(|&kind| system_key(kind) == Some(key)).collect()
+}
+
+/// The player ship's system whose power `key` adds.
+pub fn keyed_system(key: i32) -> Option<Obj> {
+    powered_by(key).into_iter().find_map(player_system)
 }
 
 /// Whether the player's crew has a living crystal member.
@@ -385,6 +394,17 @@ pub fn has_system(kind: i32) -> bool {
     };
     // SAFETY: GetSystemRoom reads the ship manager it is given.
     unsafe { (api().system_room)(manager.ptr(), kind) >= 0 }
+}
+
+/// The player ship's system of `kind`.
+pub fn player_system(kind: i32) -> Option<Obj> {
+    let manager = player_manager()?;
+    // SAFETY: GetSystemRoom reads the ship manager it is given.
+    let room = unsafe { (api().system_room)(manager.ptr(), kind) };
+    if room < 0 {
+        return None;
+    }
+    system_in_room(room)
 }
 
 /// The system in a room of the player ship.

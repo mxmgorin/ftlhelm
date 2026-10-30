@@ -142,7 +142,7 @@ state.
 | `arm_all` | arm every powered weapon, clearing their targets: the next target goes to all of them, then each beam waits for its own line |
 | `aim_crew` | select the next crew member |
 | `prev_tab`, `next_tab` | ship and store screen tabs; the store's buy pages count as tabs |
-| `repeat_ability` | the last ability used from a wheel |
+| `repeat_ability` | the last ability used from a wheel; its plate names it and is grey until one is used |
 | `precision` | doors become the zones while held |
 | `room_doors` | toggle the doors of the room under the cursor |
 | `center_swap` | the cursor to the centre of the farther ship |
@@ -158,12 +158,12 @@ state.
 
     [wheel:ship]
     kind = action
-    up = u "Upgrades" statusUI/top_ship_on.png@13,14,48,27
-    up_right = z "Open doors" systemUI/button_door_bottom_on.png@10,35,20,15
+    up = center_swap "Other ship"
+    up_right = x "Close doors" systemUI/button_door_top_on.png@10,13,20,15
 
 | `kind` | Plates |
 | --- | --- |
-| `action` | from the section; the wheel closes after an action |
+| `action` | from the section; the wheel closes after an action; a plate on a system's power key (`y` for the artillery) shows the system's power, and D-pad up and down add and take it |
 | `power` | from the section, with power pips; D-pad up and down add and take power, and pick a powered weapon and drop it |
 | `crew` | filled from the ship's crew |
 | `systems` | filled from the ship's systems |
@@ -172,7 +172,7 @@ state.
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
 without one), and an optional icon: a game image path under `img/` in `ftl.dat`, with
-`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, an `arm_all` plate the game's target crosshair, and `zoom`, `text_size`, `help`, `center_swap`, `autopause`, `wheel view` and the `set` plates of `overlay`, `focus_brackets`, `crew_marker`, `hud_shift`, `ipad_beacons`, `frame_filter`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
+`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, an `arm_all` plate the game's target crosshair, and `zoom`, `text_size`, `help`, `center_swap`, `autopause`, `repeat_ability`, `v` (autofire), `wheel view` and the `set` plates of `overlay`, `focus_brackets`, `crew_marker`, `hud_shift`, `ipad_beacons`, `frame_filter`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
 
 | `set` step | Step |
 | --- | --- |

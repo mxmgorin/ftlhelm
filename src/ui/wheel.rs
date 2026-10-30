@@ -163,6 +163,24 @@ const DISPLAY_SCREEN_H: f32 = 22.0;
 const DISPLAY_NECK_W: f32 = 6.0;
 const DISPLAY_BASE_W: f32 = 18.0;
 const DISPLAY_H: f32 = DISPLAY_SCREEN_H + 2.0 * GLYPH_STROKE;
+/// The autofire glyph: a crosshair, a ring of radius AIM_R crossed by ticks from AIM_TICK_IN to
+/// AIM_TICK_OUT, and in its empty top left corner an A drawn in AUTOFIRE_CELL squares, its
+/// bottom right AIM_A_GAP up and left of the ring's centre.
+const AUTOFIRE_A: [&str; 6] = [".###.", "#...#", "#...#", "#####", "#...#", "#...#"];
+const AUTOFIRE_CELL: f32 = 2.0;
+const AIM_R: f32 = 10.0;
+const AIM_TICK_IN: f32 = 4.0;
+const AIM_TICK_OUT: f32 = 12.0;
+const AIM_TICK_STROKE: f32 = 2.0;
+const AIM_A_GAP: f32 = 8.0;
+/// The repeat glyph: a loop REPEAT_W by REPEAT_H between its shafts' middle lines, each shaft
+/// ending in a head; the sides stop REPEAT_GAP short of the heads.
+const REPEAT_W: f32 = 30.0;
+const REPEAT_H: f32 = 20.0;
+const REPEAT_SHAFT: f32 = 4.0;
+const REPEAT_HEAD_W: f32 = 7.0;
+const REPEAT_HEAD_H: f32 = 12.0;
+const REPEAT_GAP: f32 = 2.0;
 /// A plate that opens this wheel shows the display glyph.
 const VIEW_WHEEL: &str = "view";
 /// The label of a slot with nothing in it.
@@ -267,6 +285,10 @@ enum Glyph {
     Beacon,
     /// A display on its stand.
     Display,
+    /// The game's autofire target mark: an A beside a crosshair.
+    Autofire,
+    /// Two arrows chasing each other round a loop.
+    Repeat,
 }
 
 /// Where a power wheel finds the item a slot key powers.
@@ -582,6 +604,40 @@ fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(cx - DISPLAY_NECK_W / 2.0, top + DISPLAY_SCREEN_H, DISPLAY_NECK_W, t, INK_COLOR);
             draw_rect(cx - DISPLAY_BASE_W / 2.0, top + DISPLAY_SCREEN_H + t, DISPLAY_BASE_W, t, INK_COLOR);
         }
+        Glyph::Autofire => {
+            let a_w = AUTOFIRE_A[0].len() as f32 * AUTOFIRE_CELL;
+            let a_h = AUTOFIRE_A.len() as f32 * AUTOFIRE_CELL;
+            // Centred over the A and the crosshair, on whole pixels: the ring stays symmetric.
+            let ax = (cx + (a_w + AIM_A_GAP - AIM_TICK_OUT) / 2.0).round();
+            let ay = (cy + (a_h + AIM_A_GAP - AIM_TICK_OUT) / 2.0).round();
+            draw_pixel_ring(ax, ay, AIM_R, GLYPH_STROKE, INK_COLOR);
+            let (t, len) = (AIM_TICK_STROKE, AIM_TICK_OUT - AIM_TICK_IN);
+            draw_rect(ax - t / 2.0, ay - AIM_TICK_OUT, t, len, INK_COLOR);
+            draw_rect(ax - t / 2.0, ay + AIM_TICK_IN, t, len, INK_COLOR);
+            draw_rect(ax - AIM_TICK_OUT, ay - t / 2.0, len, t, INK_COLOR);
+            draw_rect(ax + AIM_TICK_IN, ay - t / 2.0, len, t, INK_COLOR);
+            let (left, top) = (ax - AIM_A_GAP - a_w, ay - AIM_A_GAP - a_h);
+            for (row, line) in AUTOFIRE_A.iter().enumerate() {
+                for (col, _) in line.bytes().enumerate().filter(|&(_, b)| b == b'#') {
+                    let (x, y) = (left + col as f32 * AUTOFIRE_CELL, top + row as f32 * AUTOFIRE_CELL);
+                    draw_rect(x, y, AUTOFIRE_CELL, AUTOFIRE_CELL, INK_COLOR);
+                }
+            }
+        }
+        Glyph::Repeat => {
+            // On whole pixels: each row stays one line.
+            let (left, cy) = ((cx - REPEAT_W / 2.0).round(), cy.round());
+            let (right, t) = (left + REPEAT_W, REPEAT_SHAFT);
+            let (upper, lower) = (cy - REPEAT_H / 2.0, cy + REPEAT_H / 2.0);
+            let (head_w, head_h) = (REPEAT_HEAD_W, REPEAT_HEAD_H);
+            draw_rect(left, upper - t / 2.0, REPEAT_W - head_w, t, INK_COLOR);
+            draw_side_triangle(right - head_w, upper, head_w, head_h, INK_COLOR);
+            draw_rect(left + head_w, lower - t / 2.0, REPEAT_W - head_w, t, INK_COLOR);
+            draw_side_triangle(left + head_w, lower, -head_w, head_h, INK_COLOR);
+            let side_h = REPEAT_H - head_h / 2.0 - REPEAT_GAP + t / 2.0;
+            draw_rect(left, upper - t / 2.0, t, side_h, INK_COLOR);
+            draw_rect(right - t, lower + t / 2.0 - side_h, t, side_h, INK_COLOR);
+        }
     }
 }
 
@@ -761,16 +817,21 @@ fn system_plates() -> [Plate; WHEEL_SLOTS] {
         let Some(sys) = systems.iter().find(|s| s.i32(SYSTEM_TYPE) == kind || Some(s.i32(SYSTEM_TYPE)) == alt) else {
             continue;
         };
-        pl.available = true;
         pl.empty = false;
-        pl.powered = sys.i32(SYSTEM_POWER) > 0;
+        show_power(pl, *sys);
         pl.icon = sys.obj(SYSTEM_ICON).map(Obj::ptr);
-        pl.pips = sys.i32(SYSTEM_POWER_MAX);
-        pl.pips_on = sys.i32(SYSTEM_POWER);
         pl.label = state::system_name(sys.i32(SYSTEM_TYPE)).to_string();
-        pl.badge = format!("{}/{}", pl.pips_on, pl.pips);
     }
     plates
+}
+
+/// Shows a system's power on its plate: pickable, lit while powered, a pip per bar, and the
+/// power out of the bars as the badge.
+fn show_power(pl: &mut Plate, sys: Obj) {
+    pl.available = true;
+    pl.powered = sys.i32(SYSTEM_POWER) > 0;
+    (pl.pips, pl.pips_on) = (sys.i32(SYSTEM_POWER_MAX), sys.i32(SYSTEM_POWER));
+    pl.badge = format!("{}/{}", pl.pips_on, pl.pips);
 }
 
 /// Gives the plate of built-in `b` its art when it has a look of its own: the game's pointer
@@ -788,6 +849,7 @@ fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
         Builtin::CenterSwap => pl.glyph = Some(Glyph::Swap),
         Builtin::Autopause => pl.glyph = Some(Glyph::Pause),
         Builtin::ArmAll => pl.icon = images.get(CROSSHAIR_ICON),
+        Builtin::RepeatAbility => pl.glyph = Some(Glyph::Repeat),
         _ => {}
     }
 }
@@ -823,6 +885,8 @@ fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Images) -> [P
             pl.glyph = setting_glyph(option_name(i));
         } else if let Action::Wheel(w) = pdef.action {
             pl.glyph = wheels.get(w).filter(|w| w.name == VIEW_WHEEL).map(|_| Glyph::Display);
+        } else if let Action::Key { code: KEY_AUTOFIRE, .. } = pdef.action {
+            pl.glyph = Some(Glyph::Autofire);
         }
         match pdef.action {
             Action::Builtin(Builtin::CenterSwap) => pl.available = state::enemy_ship().is_some(),
@@ -848,8 +912,13 @@ fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Images) -> [P
                 }
                 _ => pl.label = EMPTY_LABEL.to_string(),
             }
-        } else if def.kind == WheelKind::Power && code == KEY_AUTOFIRE {
+        } else if code == KEY_AUTOFIRE {
             pl.powered = state::weapon_control().is_some_and(|c| c.flag(WEAPONCTRL_AUTOFIRE));
+        } else if def.kind == WheelKind::Action && !state::powered_by(code).is_empty() {
+            pl.available = false;
+            if let Some(sys) = state::keyed_system(code) {
+                show_power(pl, sys);
+            }
         } else if def.kind == WheelKind::Action {
             if let Some(sys) = state::ability_system(code) {
                 pl.available = state::has_system(sys);
@@ -971,7 +1040,22 @@ impl Layer {
         match def.kind {
             WheelKind::Settings => self.show_settings(),
             WheelKind::Power => self.show_picked(),
+            WheelKind::Action => self.show_repeat(),
             _ => {}
+        }
+    }
+
+    /// Makes the repeat plates pickable once an ability was used from a wheel, its plate's
+    /// label as their badge.
+    fn show_repeat(&mut self) {
+        let last = self.bind.last_ability_key;
+        let used = |p: &Plate| matches!(p.action, Some(Action::Key { code, .. }) if Some(code) == last);
+        let name = self.wheel.plates.iter().find(|p| used(p)).map(|p| p.label.clone()).unwrap_or_default();
+        for pl in &mut self.wheel.plates {
+            if pl.action == Some(Action::Builtin(Builtin::RepeatAbility)) {
+                pl.available = last.is_some();
+                pl.badge.clone_from(&name);
+            }
         }
     }
 
@@ -1181,9 +1265,9 @@ impl Layer {
         }
     }
 
-    /// Adds power to the selected item of a power or systems wheel, or takes it away for a
-    /// negative dir, picking or dropping a weapon past its power; on the crew wheel, adds the
-    /// member to the selection or drops them; on the settings wheel, steps the selected setting.
+    /// Adds power to the selected item of a power or systems wheel or an action plate's system, or
+    /// takes it for a negative dir, picking or dropping a weapon past its power; on the crew wheel,
+    /// adds the member to the selection or drops them; on the settings wheel, steps the setting.
     pub fn adjust_plate(&mut self, dir: i32) {
         let (Some(w), Some(sel)) = (self.wheel.open, self.wheel.sel) else {
             return;
@@ -1211,6 +1295,9 @@ impl Layer {
         let Action::Key { code, .. } = action else {
             return;
         };
+        if kind == WheelKind::Action && state::powered_by(code).is_empty() {
+            return;
+        }
         let weapon = weapon_slot(code).filter(|_| kind == WheelKind::Power);
         // A powered weapon is picked past its power, and dropped before it loses power.
         if let Some(slot) = weapon.filter(|_| plate.powered && (dir > 0 || plate.picked)) {
@@ -1235,7 +1322,7 @@ impl Layer {
                     unsafe { (api().deselect_crew)(gui.at(GUI_CREW_CONTROL).ptr(), member.ptr()) };
                 }
             }
-            WheelKind::Power | WheelKind::Systems => {
+            WheelKind::Power | WheelKind::Systems | WheelKind::Action => {
                 // Powering a weapon disarms the armed one: the picked ones are armed again.
                 let picked = if dir > 0 && weapon.is_some() { self.picked_weapons() } else { Vec::new() };
                 let all = self.actions.volley.as_ref().is_some_and(|v| v.all);
@@ -1651,6 +1738,62 @@ mod tests {
             assert_eq!((p[0].available, p[0].glyph), (false, Some(Glyph::Swap)));
             g.enemy_manager();
             assert!(plates(&mut l, layout)[0].available);
+        });
+    }
+
+    #[test]
+    fn a_power_key_plate_shows_its_system_and_steps_its_power() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let layout = "[wheel:ship]\ndown_right = y \"Artillery\"\n";
+            g.player_manager();
+            assert!(!plates(&mut l, layout)[3].available, "no artillery aboard");
+            g.system(SYS_SHIELDS, 2, 4);
+            g.system(SYS_ARTILLERY, 1, 3);
+            let artillery = &plates(&mut l, layout)[3];
+            assert!(artillery.available && artillery.powered);
+            assert_eq!((artillery.pips, artillery.pips_on, artillery.badge.as_str()), (3, 1, "1/3"));
+            l.wheel.sel = Some(3);
+            let keys = |l: &mut Layer, dir| {
+                l.adjust_plate(dir);
+                calls()
+                    .into_iter()
+                    .filter_map(|c| if let Call::KeyDown(k) = c { Some(k) } else { None })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(keys(&mut l, 1), ['y' as i32]);
+            assert_eq!(keys(&mut l, -1), [KEY_LSHIFT, 'y' as i32]);
+            l.act_on_plate();
+            assert_eq!(l.bind.last_ability_key, None, "power is no ability to repeat");
+        });
+    }
+
+    #[test]
+    fn the_autofire_plate_is_lit_on_any_wheel_and_drawn_as_a_glyph() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let layout = "[wheel:ship]\ndown = v \"Autofire\"\n";
+            let p = plates(&mut l, layout);
+            assert_eq!((p[4].powered, p[4].glyph), (false, Some(Glyph::Autofire)));
+            g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL).set(WEAPONCTRL_AUTOFIRE, 1u8);
+            assert!(plates(&mut l, layout)[4].powered);
+        });
+    }
+
+    #[test]
+    fn the_repeat_plate_waits_for_an_ability_and_names_it() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let layout = "[wheel:abilities]\nup = c \"Cloak\"\ndown_left = repeat_ability \"Repeat ability\"\n";
+            g.player_manager();
+            g.system(SYS_CLOAKING, 1, 1);
+            let p = plates(&mut l, layout);
+            assert_eq!((p[5].available, p[5].glyph), (false, Some(Glyph::Repeat)));
+            l.wheel.sel = Some(0);
+            l.act_on_plate();
+            assert_eq!(l.bind.last_ability_key, Some('c' as i32));
+            let repeat = &plates(&mut l, layout)[5];
+            assert_eq!((repeat.available, repeat.badge.as_str()), (true, "Cloak"));
         });
     }
 

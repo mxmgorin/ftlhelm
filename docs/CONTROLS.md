@@ -45,7 +45,8 @@ next powered one.
 
 The All weapons plate of the weapons wheel arms every powered weapon and clears their
 targets. A on a room aims them all at it; each beam then waits for its own line. B leaves
-them all without a target. Autofire is the game's button under the weapons.
+them all without a target. Autofire is the game's button under the weapons and a plate of the
+ship wheel, lit while autofire is on.
 
 On the weapons wheel, D-pad up on a powered weapon picks it: the picked weapons, lit yellow,
 aim together as with the All weapons plate. D-pad down drops a picked weapon, then takes its

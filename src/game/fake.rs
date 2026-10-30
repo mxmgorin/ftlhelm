@@ -147,6 +147,8 @@ static SHIP_GRAPH: AtomicUsize = AtomicUsize::new(0);
 static TEXTURE: OnceLock<usize> = OnceLock::new();
 /// The last primitive handed out; each is a distinct non-null address.
 static PRIMITIVES: AtomicUsize = AtomicUsize::new(0);
+/// The player ship's systems by room: each one's address, its room its index.
+static SYSTEMS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Copy)]
 struct Statics {
@@ -278,6 +280,21 @@ extern "C" fn clear_crew_boxes(control: Ptr) {
 
 extern "C" fn update_sub_box(control: Ptr) {
     record(Call::UpdateSubBox(control as usize));
+}
+
+fn systems() -> MutexGuard<'static, Vec<usize>> {
+    SYSTEMS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+extern "C" fn system_room(_manager: Ptr, kind: c_int) -> c_int {
+    // SAFETY: the systems are live arena objects of the running test.
+    let kind_of = |&addr: &usize| unsafe { Obj::from_addr(addr) }.map(|s| s.i32(SYSTEM_TYPE));
+    systems().iter().position(|a| kind_of(a) == Some(kind)).map_or(-1, |room| room as c_int)
+}
+
+extern "C" fn system_in_room(_manager: Ptr, room: c_int) -> Ptr {
+    let addr = usize::try_from(room).ok().and_then(|r| systems().get(r).copied()).unwrap_or(0);
+    addr as Ptr
 }
 
 extern "C" fn ship_info(_id: c_int) -> Ptr {
@@ -431,6 +448,8 @@ fn install_api() -> Statics {
     stand_in.clear_crew_boxes = clear_crew_boxes;
     stand_in.update_sub_box = update_sub_box;
     stand_in.ship_info = ship_info;
+    stand_in.system_room = system_room;
+    stand_in.system_in_room = system_in_room;
     stand_in.image_id = image_id;
     stand_in.create_image_primitive = create_image_primitive;
     stand_in.destroy_primitive = destroy_primitive;
@@ -487,6 +506,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     set_pads(Vec::new());
     LIVE_STRINGS.store(0, Ordering::Relaxed);
     SHIP_GRAPH.store(0, Ordering::Relaxed);
+    systems().clear();
     let _reset = AppReset;
     let mut arena = Arena::default();
     let app = arena.alloc(APP_SIZE);
@@ -540,6 +560,16 @@ impl Game {
         member.set(CREW_SHIP, ship);
         member.set(CREW_DEAD, dead as u8);
         member
+    }
+
+    /// A ShipSystem of `kind` with its power out of `max` bars, in the player ship's next room.
+    pub fn system(&mut self, kind: i32, power: i32, max: i32) -> Obj {
+        let sys = self.arena.alloc(SYSTEM_ICON + size_of::<usize>());
+        sys.set(SYSTEM_TYPE, kind);
+        sys.set(SYSTEM_POWER, power);
+        sys.set(SYSTEM_POWER_MAX, max);
+        systems().push(sys.addr());
+        sys
     }
 
     /// A Room with its id and its rectangle relative to the ship.
