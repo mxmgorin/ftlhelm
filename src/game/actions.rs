@@ -83,15 +83,17 @@ pub fn key_up(code: i32) {
 
 /// Holds Shift down while any caller wants it, in the engine's key state and in the flag
 /// CApp::OnLoop samples once a frame for the hotkeys.
+/// A release with no caller holding it does nothing.
 pub fn set_shift(on: bool) {
-    let delta = if on { 1 } else { -1 };
-    let count = SHIFT_COUNT.fetch_add(delta, Ordering::Relaxed) + delta;
+    let next = |n: i32| if on { n + 1 } else { (n - 1).max(0) };
+    let old = SHIFT_COUNT.update(Ordering::Relaxed, Ordering::Relaxed, next);
+    let (was, now) = (old > 0, next(old) > 0);
     if let Some(app) = state::app() {
-        app.set::<u8>(CAPP_SHIFT_HELD, (count > 0) as u8);
+        app.set::<u8>(CAPP_SHIFT_HELD, now as u8);
     }
-    if on && count == 1 {
+    if !was && now {
         key_down(KEY_LSHIFT);
-    } else if !on && count == 0 {
+    } else if was && !now {
         key_up(KEY_LSHIFT);
     }
 }
@@ -584,6 +586,21 @@ mod tests {
 
     const ORIGIN: Point = Point { x: 100, y: 50 };
     const ROOM: i32 = 4;
+
+    #[test]
+    fn a_stray_shift_release_leaves_the_next_hold_working() {
+        with_game(|_| {
+            SHIFT_COUNT.store(0, Ordering::Relaxed);
+            set_shift(false);
+            assert_eq!((shift_count(), calls()), (0, vec![]));
+            set_shift(true);
+            set_shift(true);
+            set_shift(false);
+            assert_eq!(calls(), [Call::KeyDown(KEY_LSHIFT)], "held while one holder is left");
+            set_shift(false);
+            assert_eq!((shift_count(), calls()), (0, vec![Call::KeyUp(KEY_LSHIFT)]));
+        });
+    }
 
     fn at(p: Point) -> (f32, f32) {
         ((ORIGIN.x + p.x) as f32, (ORIGIN.y + p.y) as f32)
