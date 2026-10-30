@@ -61,6 +61,8 @@ pub struct PadState {
     flick_last: [f64; 2],
     flick_armed: [bool; 2],
     prev_aiming: bool,
+    /// The aim autopause paused the game for the aim under way; the aim's end resumes it.
+    pub aim_paused: bool,
     prev_crew: Option<Obj>,
     frame: u64,
     /// The active pad.
@@ -91,6 +93,7 @@ impl Default for PadState {
             flick_last: [0.0; 2],
             flick_armed: [true; 2],
             prev_aiming: false,
+            aim_paused: false,
             prev_crew: None,
             frame: 0,
             index: None,
@@ -519,6 +522,10 @@ impl Layer {
         let now_aiming = state::aiming() || self.actions.volley.is_some();
         let now_crew = state::first_selected_crew();
         if self.wheel.open.is_none() {
+            // Resumed by hand: a later pause is the player's.
+            if !state::game_paused() {
+                self.pad.aim_paused = false;
+            }
             if now_aiming && !self.pad.prev_aiming {
                 if let (Some(gui), Some(enemy)) = (state::gui(), state::enemy_ship()) {
                     if let Some((ex, ey)) = ship_center(enemy, state::enemy_origin(gui)) {
@@ -528,7 +535,11 @@ impl Layer {
                 }
                 if self.cfg.autopauses(AUTOPAUSE_AIM) && !state::game_paused() {
                     toggle_pause();
+                    self.pad.aim_paused = true;
                 }
+            } else if !now_aiming && self.pad.aim_paused {
+                toggle_pause();
+                self.pad.aim_paused = false;
             }
             self.pad.prev_aiming = now_aiming;
         }
@@ -543,7 +554,7 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::game::fake::{calls, set_pad, set_pads, with_game, Call, FakePad};
-    use crate::game::offsets::KEY_SPACE;
+    use crate::game::offsets::{layout, KEY_SPACE, MOUSE_AIMING};
 
     /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
     const RAW_OFFSET: i32 = 100;
@@ -644,6 +655,27 @@ mod tests {
             set_pads(vec![pad(0, false)]);
             l.poll_pad(0.0);
             assert!(!l.help_shown, "closed once: not again");
+        });
+    }
+
+    #[test]
+    fn the_aim_autopause_lasts_until_the_aim_ends_unless_resumed_by_hand() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            l.cfg.autopause = AUTOPAUSE_AIM;
+            let space = [Call::KeyDown(KEY_SPACE), Call::KeyUp(KEY_SPACE)];
+            let frame = |l: &mut Layer, aiming: i32, paused: bool| {
+                g.mouse.set(MOUSE_AIMING, aiming);
+                g.gui.set(layout().gui_paused, paused);
+                l.follow_game_modes();
+                calls()
+            };
+            assert_eq!(frame(&mut l, 1, false), space, "the aim pauses");
+            assert_eq!(frame(&mut l, 1, true), []);
+            assert_eq!(frame(&mut l, 0, true), space, "its end resumes");
+            frame(&mut l, 1, false);
+            frame(&mut l, 1, false);
+            assert_eq!(frame(&mut l, 0, true), [], "paused by hand after a resume by hand");
         });
     }
 

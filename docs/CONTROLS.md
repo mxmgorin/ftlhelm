@@ -120,8 +120,8 @@ cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 | View | the view wheel | |
 | Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
 
-Autopause modes: Wheels pauses while a wheel is open, Aim when a weapon or ability starts
-waiting for a target, Both does both; the plate is lit unless Off. Mouse mode resets each
+Autopause modes: Wheels pauses while a wheel is open, Aim while a weapon or ability waits
+for a target, Both does both; the plate is lit unless Off. Mouse mode resets each
 run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
 
 ## View wheel

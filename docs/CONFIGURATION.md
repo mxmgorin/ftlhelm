@@ -51,7 +51,7 @@ controls table first closes, `help_at_start = 0`.
 | `wheels_ship_only` | 1 | switch | wheels open only on the ship view; the settings wheel opens anywhere |
 | `wheel_place` | center | `center`, `cursor` | where a wheel opens: the middle of the screen, or around the cursor |
 | `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | under a wheel's plates: an octagon or a circle in the game's window frame, mocha or dark; the whole frame dimmed; a dark disc |
-| `autopause` | 1 | 0 to 3 | when the game pauses itself, flags added up: 1 while a wheel is open, 2 when a weapon or ability starts waiting for a target; 0: never |
+| `autopause` | 1 | 0 to 3 | when the game pauses itself, flags added up: 1 while a wheel is open, 2 while a weapon or ability waits for a target; 0: never |
 | `speed_level` | 6 | 1 to 6 | game speed while fast forward is held; each game step is scaled by (16 + 7 * level) / 16 |
 
 ### Pad

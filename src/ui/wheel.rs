@@ -9,7 +9,7 @@ use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    is_switch, option_name, Tuning, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
+    is_switch, option_name, Tuning, AUTOPAUSE_AIM, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
     FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
 };
 use crate::core::layer::Layer;
@@ -1136,13 +1136,19 @@ impl Layer {
         self.wheel.open.is_some_and(|w| self.wheel_allowed(w))
     }
 
-    /// Closes the open wheel, unpausing what it paused; a settings wheel saves its values.
+    /// Closes the open wheel, unpausing what it paused unless an aim taken on it keeps the
+    /// pause as its own; a settings wheel saves its values.
     pub fn close_wheel(&mut self) {
         let Some(closed) = self.wheel.open.take() else {
             return;
         };
         if self.wheel.paused && state::game_paused() {
-            toggle_pause();
+            let aiming = state::aiming() || self.actions.volley.is_some();
+            if self.cfg.autopauses(AUTOPAUSE_AIM) && aiming {
+                self.pad.aim_paused = true;
+            } else {
+                toggle_pause();
+            }
         }
         self.wheel.paused = false;
         self.wheel.sel = None;
