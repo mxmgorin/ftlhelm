@@ -14,10 +14,11 @@
 //! rects are collected, snapped to the pixels the renderer would fill, and each run of one
 //! colour is drawn as one cached primitive. gl4es misplaces vertices of long series of the
 //! renderer's one-off rect draws.
+//!
+//! Arcs (discs, round frames, ring timers) are cached too, each pie built around the origin.
 
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::SQRT_2;
-use std::ffi::c_int;
 use std::sync::Mutex;
 
 use crate::core::util::log;
@@ -154,6 +155,17 @@ enum Shape {
     Mark(MarkLayer),
     /// Pixel rects from the origin.
     Rects(Vec<PixelRect>),
+    Pie(Pie),
+}
+
+/// A pie around the origin as the renderer builds it: radius, width, start and end degrees,
+/// as f32 bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Pie {
+    r: u32,
+    width: u32,
+    from: u32,
+    end: u32,
 }
 
 /// A rect on whole pixels: x, y, w, h.
@@ -321,22 +333,16 @@ fn draw_circle(cx: f32, cy: f32, r: f32, width: f32, color: GlColor) {
 /// A filled disc: a pie as wide as its radius.
 pub fn draw_disc(cx: f32, cy: f32, r: f32, color: GlColor) {
     draw_arc(cx, cy, r, r, (0.0, TURN_DEG), color);
+    reset_fixed_color();
 }
 
-/// An arc `width` wide inside radius `r`, from `from` to `to` degrees.
+/// An arc `width` wide inside radius `r`, from `from` to `to` degrees, centred on whole pixels.
 /// The span must be whole PIE_STEP_DEG steps: the renderer's pies draw no part of a step.
 fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color: GlColor) {
     // Half a step past the end, so the pie puts its last point on it.
     let end = to + PIE_STEP_DEG / 2.0;
-    let a = api();
-    // SAFETY: the renderer's pie primitive, rendered once and freed.
-    unsafe {
-        let pie = (a.pie_partial)(cx.round() as c_int, cy.round() as c_int, r, from, end, width, color);
-        if !pie.is_null() {
-            (a.render_primitive)(pie);
-            (a.destroy_primitive)(pie);
-        }
-    }
+    let pie = Pie { r: r.to_bits(), width: width.to_bits(), from: from.to_bits(), end: end.to_bits() };
+    draw_shape(cx.round(), cy.round(), 1.0, Shape::Pie(pie), color);
 }
 
 /// Corner brackets in the game's style on the corners of `x, y, w, h`, `k` times their size:
@@ -592,6 +598,14 @@ fn build_primitive(rects: &[Rect]) -> Option<usize> {
     (!p.is_null()).then_some(p as usize)
 }
 
+/// A game pie of `pie`, white; None when the game builds none.
+fn build_pie(pie: Pie) -> Option<usize> {
+    let f = f32::from_bits;
+    // SAFETY: the renderer builds a primitive of its own from plain values.
+    let p = unsafe { (api().pie_partial)(0, 0, f(pie.r), f(pie.from), f(pie.end), f(pie.width), WHITE) };
+    (!p.is_null()).then_some(p as usize)
+}
+
 impl Shapes {
     /// Frees the SHAPES_EVICT primitives drawn longest ago, ties with the last of them
     /// included.
@@ -645,6 +659,7 @@ fn shape_primitive(shape: &Shape) -> Option<Ptr> {
             let rects: Vec<Rect> = rects.iter().map(|&[x, y, w, h]| Rect { x, y, w, h }).collect();
             build_primitive(&rects)
         }
+        Shape::Pie(pie) => build_pie(*pie),
     };
     if let Some(p) = built {
         cached.insert(shape.clone(), (p, now));
@@ -738,6 +753,7 @@ pub fn draw_ring_timer(cx: f32, cy: f32, r: f32, width: f32, lit: usize, color: 
         let shade = faded(if i < lit { color } else { RING_UNLIT_COLOR }, opacity);
         draw_arc(cx, cy, r, width, (from, from + step - RING_GAP_DEG), shade);
     }
+    reset_fixed_color();
 }
 
 /// A game texture's size in pixels.
@@ -958,6 +974,19 @@ mod tests {
             drop(shapes);
             let (built, destroyed) = built_and_destroyed();
             assert_eq!((built, destroyed), (SHAPES_MAX + 2, SHAPES_EVICT));
+        });
+    }
+
+    #[test]
+    fn arcs_are_built_once_and_drawn_from_the_cache() {
+        with_game(|_| {
+            empty_cache();
+            draw_ring_timer(100.3, 50.0, 20.0, 4.0, 5, RING_LIT_COLOR, 1.0);
+            draw_round_frame(300.0, 200.0, 50.0, 3.0, INK_COLOR);
+            assert_eq!(built_and_destroyed(), (1 + RING_SEGMENTS + FRAME_GLOW.len() + 2, 0));
+            draw_ring_timer(400.0, 70.6, 20.0, 4.0, 9, RING_LIT_COLOR, 0.5);
+            draw_round_frame(10.4, 20.0, 50.0, 3.0, TEXT_COLOR);
+            assert_eq!(built_and_destroyed(), (0, 0), "moved, lit and tinted otherwise");
         });
     }
 

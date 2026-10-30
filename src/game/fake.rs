@@ -8,7 +8,8 @@
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
 //! non-executable memory and faults.
 //!
-//! The renderer's primitives are distinct addresses, each build recorded.
+//! The renderer's primitives are distinct addresses, each build recorded; drawing them and
+//! the matrix and colour state do nothing.
 
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
@@ -112,7 +113,7 @@ pub enum Call {
     CreatePrimitive(i32, i32),
     /// CSurface::GL_DestroyPrimitive on the primitive at this address.
     DestroyPrimitive(usize),
-    /// A multi-rect primitive built at this address.
+    /// A multi-rect or pie primitive built at this address.
     BuildPrimitive(usize),
     /// Button::OnInit on the button at this address, with this hit box size.
     ButtonInit(usize, i32, i32),
@@ -362,6 +363,18 @@ extern "C" fn multi_rect(_rects: *const CppVector<Rect>, _color: GlColor) -> Ptr
     build_primitive()
 }
 
+extern "C" fn pie_partial(_x: c_int, _y: c_int, _r: f32, _from: f32, _to: f32, _width: f32, _color: GlColor) -> Ptr {
+    build_primitive()
+}
+
+extern "C" fn render_primitive_color(_primitive: Ptr, _color: GlColor) {}
+
+extern "C" fn matrix_stack() {}
+
+extern "C" fn transform(_x: f32, _y: f32, _z: f32) {}
+
+extern "C" fn set_fixed_color(_color: *const GlColor) {}
+
 extern "C" fn set_color(_color: GlColor) {}
 
 extern "C" fn print_left(font: c_int, x: f32, y: f32, _text: *const Ptr) {
@@ -488,6 +501,13 @@ fn install_api() -> Statics {
     stand_in.create_image_primitive = create_image_primitive;
     stand_in.destroy_primitive = destroy_primitive;
     stand_in.multi_rect = multi_rect;
+    stand_in.pie_partial = pie_partial;
+    stand_in.render_primitive_color = render_primitive_color;
+    stand_in.push_matrix = matrix_stack;
+    stand_in.pop_matrix = matrix_stack;
+    stand_in.translate = transform;
+    stand_in.scale = transform;
+    stand_in.set_fixed_color = set_fixed_color;
     stand_in.button_init = button_init;
     stand_in.set_color = set_color;
     stand_in.print_left = print_left;

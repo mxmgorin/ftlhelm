@@ -174,7 +174,6 @@ game_api! {
     translate: unsafe extern "C" fn(f32, f32, f32) = "_ZN8CSurface12GL_TranslateEfff",
     scale: unsafe extern "C" fn(f32, f32, f32) = "_ZN8CSurface8GL_ScaleEfff",
     pie_partial: unsafe extern "C" fn(c_int, c_int, f32, f32, f32, f32, GlColor) -> Ptr = "_ZN8CSurface28GL_CreatePiePartialPrimitiveEiiffff8GL_Color",
-    render_primitive: unsafe extern "C" fn(Ptr) = "_ZN8CSurface18GL_RenderPrimitiveEP12GL_Primitive",
     multi_rect: unsafe extern "C" fn(*const CppVector<Rect>, GlColor) -> Ptr = "_ZN8CSurface27GL_CreateMultiRectPrimitiveERKSt6vectorIN7Globals4RectESaIS2_EE8GL_Color",
     render_primitive_color: unsafe extern "C" fn(Ptr, GlColor) = "_ZN8CSurface27GL_RenderPrimitiveWithColorEP12GL_Primitive8GL_Color",
     set_fixed_color: unsafe extern "C" fn(*const GlColor) = "graphics_set_fixed_color",
