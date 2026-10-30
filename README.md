@@ -20,7 +20,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 
 ## Features
 
-- **Zones**: the D-pad and sticks jump between rooms, doors, event choices, beacons and buttons
+- **Zones**: the D-pad and sticks jump between rooms, weapon and drone boxes, doors, event choices, beacons and buttons
 - **Wheels** for weapons, crew, systems, ship orders and abilities, in the game's own art
 - **Small screens**, on by default below 1280x720:
   - **Zoom**: the ship view magnified around the cursor; the map, ship and store screens enlarged to fit

@@ -442,8 +442,8 @@ impl Layer {
     }
 
     /// Turns button changes into presses and releases; with a wheel open, or snapping on and
-    /// no state held, the D-pad steps the wheel or the focus instead, and its release is
-    /// swallowed.
+    /// no state held, the D-pad steps the wheel, a held armament box or the focus instead,
+    /// and its release is swallowed.
     fn apply_buttons(&mut self, p: &PadFrame, t: f64, in_wheel: bool, snapping: bool) {
         const DIR: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
         for input in Input::ALL {
@@ -471,7 +471,7 @@ impl Layer {
                             1 => self.adjust_plate(1),
                             _ => self.adjust_plate(-1),
                         }
-                    } else {
+                    } else if !self.focus_drag(DIR[d].0, DIR[d].1) {
                         self.focus_move(DIR[d].0, DIR[d].1);
                     }
                     continue;

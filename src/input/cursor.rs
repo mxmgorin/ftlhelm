@@ -210,6 +210,26 @@ impl Layer {
         self.buzz();
     }
 
+    /// Takes a D-pad step while the cursor holds an armament box: left or right carries the
+    /// game's drag to the next box of its bar, up and down do nothing. False when none is held.
+    pub fn focus_drag(&mut self, dx: f32, dy: f32) -> bool {
+        if !self.cursor.l_held {
+            return false;
+        }
+        let Some(from) = self.zone_under_cursor().filter(|&i| self.zones.list[i].kind == ZoneKind::Armament) else {
+            return false;
+        };
+        if dy == 0.0 {
+            if let Some(to) = self.zones.armament_beside(from, dx.signum() as i32) {
+                (self.cursor.x, self.cursor.y) = self.zones.list[to].rect.center();
+                self.send_cursor();
+                self.mark_focus();
+                self.buzz();
+            }
+        }
+        true
+    }
+
     /// How many times its size the game's pointer is drawn: as large on screen as on a whole
     /// frame shown at its size, up to `pointer_scale_max`.
     pub fn pointer_scale(&self) -> f32 {

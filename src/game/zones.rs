@@ -35,6 +35,7 @@ pub enum ZoneKind {
     Door,
     Slot,
     SellBox,
+    Armament,
 }
 
 impl ZoneKind {
@@ -49,6 +50,7 @@ impl ZoneKind {
             ZoneKind::Door => "door",
             ZoneKind::Slot => "slot",
             ZoneKind::SellBox => "sell box",
+            ZoneKind::Armament => "armament box",
         }
     }
 }
@@ -126,7 +128,7 @@ fn open_rect(at: Point, w: i32, h: i32) -> Rect {
     Rect { x: at.x + 1, y: at.y + 1, w: w - 1, h: h - 1 }
 }
 
-/// A HUD box that takes clicks and is no zone.
+/// A HUD box that takes clicks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HudBox {
     pub rect: Rect,
@@ -152,16 +154,25 @@ pub fn hud_boxes() -> Vec<HudBox> {
             HudBox { rect: open_rect(from, side, side), powered: None }
         })
         .collect();
-    let bars = [(state::weapon_control(), WEAPON_POWERED), (state::drone_control(), DRONE_POWERED)];
-    for (bar, powered) in bars.into_iter().filter_map(|(bar, powered)| Some((bar?, powered))) {
+    boxes.extend(armament_boxes().into_iter().map(|(rect, _, powered)| HudBox { rect, powered: Some(powered) }));
+    boxes
+}
+
+/// The weapon boxes, then the drone boxes, that hold an item: each box on screen, its slot
+/// counted on from the weapon slots for a drone, and whether its item is powered.
+fn armament_boxes() -> Vec<(Rect, usize, bool)> {
+    let mut boxes = Vec::new();
+    let bars =
+        [(state::weapon_control(), WEAPON_POWERED, 0), (state::drone_control(), DRONE_POWERED, WEAPON_SLOTS as usize)];
+    for (bar, powered, first) in bars.into_iter().filter_map(|(bar, powered, first)| Some((bar?, powered, first))) {
         let at = bar.point(ARMAMENT_LOCATION);
-        for (_, b) in bar.at(ARMAMENT_BOXES).vec_objs() {
+        for (slot, b) in bar.at(ARMAMENT_BOXES).vec_objs() {
             let Some(item) = b.obj(ARMAMENTBOX_ITEM) else {
                 continue;
             };
             let hit = b.point(ARMAMENTBOX_HIT);
             let rect = open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H);
-            boxes.push(HudBox { rect, powered: Some(item.flag(powered)) });
+            boxes.push((rect, first + slot, item.flag(powered)));
         }
     }
     boxes
@@ -201,6 +212,12 @@ impl Zones {
     fn add_doors(&mut self, ship: Obj, origin: Point) {
         self.add_door_list(ship.at(SHIP_DOORS), origin);
         self.add_door_list(ship.at(SHIP_AIRLOCKS), origin);
+    }
+
+    fn add_armament_zones(&mut self) {
+        for (rect, slot, _) in armament_boxes() {
+            self.push(rect, slot as i32, ZoneKind::Armament);
+        }
     }
 
     fn add_rooms(&mut self, ship: Obj, origin: Point, enemy: bool) {
@@ -313,7 +330,8 @@ fn sell_box(equip: Obj) -> Option<Rect> {
 impl Layer {
     /// Rebuilds the zones for the current screen: a dialog's choices alone while it is open
     /// (it sits over any screen but the game menu), beacons or sector boxes with the map
-    /// open, otherwise rooms; the buttons the game hit-tests come on top.
+    /// open, otherwise rooms, then the filled armament boxes unless aiming; the buttons the
+    /// game hit-tests come on top.
     pub fn build_zones(&mut self) {
         let zones = &mut self.zones;
         zones.list.clear();
@@ -351,6 +369,7 @@ impl Layer {
                     if let Some(enemy) = enemy {
                         zones.add_rooms(enemy, state::enemy_origin(gui), true);
                     }
+                    zones.add_armament_zones();
                 }
             }
         }
@@ -365,6 +384,19 @@ impl Layer {
     /// The zone under the cursor's last reported position.
     pub fn zone_under_cursor(&self) -> Option<usize> {
         self.zones.list.iter().position(|t| t.rect.contains(self.cursor.last_x, self.cursor.last_y))
+    }
+}
+
+impl Zones {
+    /// The armament zone one box along its bar from zone `i`, the next for a positive `dir`,
+    /// else the previous; None at the bar's end.
+    pub fn armament_beside(&self, i: usize, dir: i32) -> Option<usize> {
+        let from = self.list[i].id;
+        let to = from + dir.signum();
+        if (from < WEAPON_SLOTS) != (to < WEAPON_SLOTS) {
+            return None;
+        }
+        self.list.iter().position(|z| z.kind == ZoneKind::Armament && z.id == to)
     }
 }
 
@@ -445,6 +477,26 @@ mod tests {
             g.mouse.set(MOUSE_AIMING, 1i32);
             let kinds: Vec<_> = built(&mut Layer::default()).into_iter().map(|(k, id, _)| (k, id)).collect();
             assert_eq!(kinds, [(ZoneKind::EnemyRoom, 1), (ZoneKind::Room, 3), (ZoneKind::Room, 5)]);
+        });
+    }
+
+    #[test]
+    fn the_ship_view_lists_the_filled_armament_boxes_after_the_rooms_unless_aiming() {
+        with_game(|g| {
+            two_ships(g);
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
+            let item = g.arena.alloc(WEAPON_POWERED + size_of::<u8>());
+            let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+            filled.set(ARMAMENTBOX_ITEM, item.addr());
+            let empty = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(empty), Some(filled)]);
+            let mut l = Layer::default();
+            let last = built(&mut l).pop();
+            let rect = Rect { x: 301, y: 641, w: ARMAMENTBOX_HIT_W - 1, h: ARMAMENTBOX_HIT_H - 1 };
+            assert_eq!(last, Some((ZoneKind::Armament, 1, rect)), "the filled box by its slot");
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            assert!(built(&mut l).iter().all(|&(k, ..)| k != ZoneKind::Armament));
         });
     }
 

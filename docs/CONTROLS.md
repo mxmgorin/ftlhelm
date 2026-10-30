@@ -20,7 +20,7 @@ lands on shows corner brackets in place of the pointer arrow until the cursor mo
 
 | Screen | Zones |
 | --- | --- |
-| ship view | the rooms of both ships, buttons |
+| ship view | the rooms of both ships, the weapon and drone boxes holding an item (not while aiming), buttons |
 | event | its choices |
 | star map | beacons or sectors, the map's buttons |
 | ship and store screens | slots and buttons, without the HUD |
@@ -47,6 +47,9 @@ The All weapons plate of the weapons wheel arms every powered weapon and clears 
 targets. A on a room aims them all at it; each beam then waits for its own line. B leaves
 them all without a target. Autofire is the game's button under the weapons and a plate of the
 ship wheel, lit while autofire is on.
+
+A on a weapon or drone box clicks it. A held with D-pad left or right moves the weapon or
+drone one box that way.
 
 On the weapons wheel, D-pad up on a powered weapon picks it: the picked weapons, lit yellow,
 aim together as with the All weapons plate. D-pad down drops a picked weapon, then takes its
