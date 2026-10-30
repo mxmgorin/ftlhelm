@@ -583,8 +583,8 @@ mod tests {
         assert_eq!(cfg.cursor_deadzone, 0.25);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
         assert!(!l.wheels.is_empty());
-        let Some(Some(Action::Wheel(settings))) = l.states[0].bind[Input::Select as usize].map(|b| b.tap) else {
-            panic!("a select tap opens a wheel");
+        let Some(Action::Wheel(settings)) = l.states[0].bind[Input::Select as usize].map(|b| b.hold) else {
+            panic!("select opens a wheel");
         };
         let settings = &l.wheels[settings];
         assert_eq!(settings.kind, WheelKind::Settings);

@@ -64,7 +64,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 | R2 | beacon map | fast forward |
 | L3, R3 | mouse mode on, off | |
 | Start | pause | zoom out while zoomed |
-| Select | settings wheel | game menu |
+| Select | settings wheel | |
 
 <p align="center"><img src="docs/images/wheels.png" alt="The seven wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, and view with the overlay, HUD shift, iPad art and frame filter switches" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings and view</sub></p>
 

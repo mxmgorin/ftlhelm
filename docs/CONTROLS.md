@@ -90,7 +90,7 @@ elsewhere closes the wheel.
 
 ## Wheels
 
-Holding B, X, Y, L1 or R1 opens a wheel in the middle of the screen on the ship view; a Select tap
+Holding B, X, Y, L1 or R1 opens a wheel in the middle of the screen on the ship view; Select
 opens the settings wheel on any screen. A wheel stays open after the button is released.
 
 | Input | In a wheel |

@@ -153,9 +153,9 @@ fn band_text_top(top: f32, bottom: f32) -> f32 {
     (top + bottom - WHEEL_FONT_H) / 2.0
 }
 
-/// Whether an action acts while held: wheels, states, doors mode, fast forward.
+/// Whether an action acts while held: states, doors mode, fast forward.
 fn is_hold_action(a: Action) -> bool {
-    matches!(a, Action::Wheel(_) | Action::State(_) | Action::Builtin(Builtin::Precision | Builtin::FastForward))
+    matches!(a, Action::State(_) | Action::Builtin(Builtin::Precision | Builtin::FastForward))
 }
 
 impl Layer {

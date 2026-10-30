@@ -1122,7 +1122,7 @@ impl Layer {
 
     /// Whether the wheel at `index` may open now: a settings wheel anywhere, the others
     /// where wheel_screen allows.
-    fn wheel_allowed(&self, index: usize) -> bool {
+    pub fn wheel_allowed(&self, index: usize) -> bool {
         self.layout.wheels.get(index).is_some_and(|w| w.kind == WheelKind::Settings) || self.wheel_screen()
     }
 

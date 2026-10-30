@@ -305,7 +305,7 @@ impl Layer {
         };
         if let Action::Wheel(w) = b.hold {
             // Off the ship view a wheel button is its tap alone, at once.
-            if self.wheel.open.is_none() && !self.wheel_screen() {
+            if self.wheel.open.is_none() && !self.wheel_allowed(w) {
                 if let Some(tap) = b.tap {
                     self.perform(tap, Source::Input(input), true);
                     self.perform(tap, Source::Input(input), false);
@@ -472,5 +472,21 @@ mod tests {
         assert!(b.take_due(1.15, 0.2).is_empty());
         assert_eq!(b.take_due(1.25, 0.2), [(Input::FaceLeft, binding)]);
         assert!(b.take_due(2.0, 0.2).is_empty());
+    }
+
+    #[test]
+    fn a_lone_settings_wheel_opens_off_the_ship_view() {
+        with_game(|_| {
+            let layout = "[controls]\nback = wheel s\nx = wheel w\n[wheel:s]\nkind = settings\n[wheel:w]\n";
+            let mut l = Layer { layout: Layout::parse(layout).0, ..Layer::default() };
+            assert!(!state::ship_view());
+            l.press(Input::FaceLeft, 0.0);
+            assert_eq!(l.wheel.open, None);
+            l.press(Input::Select, 0.0);
+            assert_eq!(l.wheel.open, Some(0));
+            l.release(Input::Select);
+            l.press(Input::Select, 1.0);
+            assert_eq!(l.wheel.open, None);
+        });
     }
 }
