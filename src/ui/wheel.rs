@@ -475,11 +475,12 @@ fn draw_plate_icon(pl: &Plate, cx: f32, cy: f32, size: f32, tint: GlColor) {
     }
 }
 
-/// Draws a row of power pips centred at cx with its top at y, in one batch.
+/// Draws a row of power pips on whole pixels, centred at cx with its top at y, in one batch.
 fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
     let n_f = n as f32;
-    let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * CONTENT_INSET - (n_f - 1.0) * PIP_GAP) / n_f);
-    let left = cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0;
+    let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * CONTENT_INSET - (n_f - 1.0) * PIP_GAP) / n_f).trunc();
+    let left = (cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0).round();
+    let y = y.round();
     let xs: Vec<f32> = (0..n).scan(left, |x, _| Some(std::mem::replace(x, *x + pw + PIP_GAP))).collect();
     let fill = if available { POWER_COLOR } else { TEXT_DISABLED_COLOR };
     draw_batched(|| {
@@ -488,8 +489,7 @@ fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
             draw_rect(x, y, pw, PIP_H, fill);
         }
         for &x in &xs {
-            // On whole pixels, as the renderer's own outline.
-            draw_outline(x.trunc(), y.trunc(), pw.trunc(), PIP_H, OVERLAY_LINE, INK_COLOR);
+            draw_outline(x, y, pw, PIP_H, OVERLAY_LINE, INK_COLOR);
         }
     });
 }
@@ -1442,6 +1442,7 @@ mod tests {
     use super::*;
     use crate::config::layout::{Input, Layout, LABEL_CHARS};
     use crate::game::fake::{calls, with_game, Call, Game};
+    use crate::ui::draw::rects_of;
     use crate::ui::zoom::View;
     use std::mem::size_of;
 
@@ -1467,6 +1468,31 @@ mod tests {
         let armament_box = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
         armament_box.set(ARMAMENTBOX_ITEM, item.addr());
         Some(armament_box)
+    }
+
+    #[test]
+    fn pips_fill_their_outlines_and_look_alike_wherever_the_row_is() {
+        // The most power bars of a system in the game.
+        const MOST_PIPS: i32 = 8;
+        for n in 1..=MOST_PIPS {
+            let row = |cx: f32, y: f32| {
+                let rects = rects_of(|| draw_pips(n, n, cx, y, true));
+                let [x0, y0, ..] = rects[0].0;
+                let local: Vec<_> = rects.iter().map(|&([x, y, w, h], c)| ([x - x0, y - y0, w, h], c)).collect();
+                (rects, local)
+            };
+            let (rects, local) = row(100.3, 40.6);
+            assert_eq!(local, row(200.7, 80.2).1, "{n} pips");
+            let (fills, outlines) = rects.split_at(n as usize);
+            for (fill, bars) in fills.iter().zip(outlines.chunks(outlines.len() / fills.len())) {
+                let [x, y, w, h] = fill.0;
+                let left = bars.iter().map(|b| b.0[0]).min();
+                let top = bars.iter().map(|b| b.0[1]).min();
+                let right = bars.iter().map(|b| b.0[0] + b.0[2]).max();
+                let bottom = bars.iter().map(|b| b.0[1] + b.0[3]).max();
+                assert_eq!((left, top, right, bottom), (Some(x), Some(y), Some(x + w), Some(y + h)), "{n} pips");
+            }
+        }
     }
 
     #[test]

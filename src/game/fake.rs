@@ -7,6 +7,8 @@
 //! are malloc'd copies `live_strings` counts, the joystick reports `FakePad`s, also written
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
 //! non-executable memory and faults.
+//!
+//! The renderer's primitives are distinct addresses, each build recorded.
 
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::mem::{size_of, size_of_val};
@@ -14,7 +16,7 @@ use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use super::actions::MouseButton;
-use super::api::{self, Api, GlColor, Point, Ptr, Rect, SYMBOLS};
+use super::api::{self, Api, CppVector, GlColor, Point, Ptr, Rect, SYMBOLS};
 use super::mem::Obj;
 use super::offsets::*;
 use super::state;
@@ -110,6 +112,8 @@ pub enum Call {
     CreatePrimitive(i32, i32),
     /// CSurface::GL_DestroyPrimitive on the primitive at this address.
     DestroyPrimitive(usize),
+    /// A multi-rect primitive built at this address.
+    BuildPrimitive(usize),
     /// Button::OnInit on the button at this address, with this hit box size.
     ButtonInit(usize, i32, i32),
     /// freetype::easy_print in this font at this point.
@@ -348,6 +352,16 @@ extern "C" fn destroy_primitive(primitive: Ptr) {
     record(Call::DestroyPrimitive(primitive as usize));
 }
 
+fn build_primitive() -> Ptr {
+    let p = PRIMITIVES.fetch_add(1, Ordering::Relaxed) + 1;
+    record(Call::BuildPrimitive(p));
+    p as Ptr
+}
+
+extern "C" fn multi_rect(_rects: *const CppVector<Rect>, _color: GlColor) -> Ptr {
+    build_primitive()
+}
+
 extern "C" fn set_color(_color: GlColor) {}
 
 extern "C" fn print_left(font: c_int, x: f32, y: f32, _text: *const Ptr) {
@@ -473,6 +487,7 @@ fn install_api() -> Statics {
     stand_in.image_id = image_id;
     stand_in.create_image_primitive = create_image_primitive;
     stand_in.destroy_primitive = destroy_primitive;
+    stand_in.multi_rect = multi_rect;
     stand_in.button_init = button_init;
     stand_in.set_color = set_color;
     stand_in.print_left = print_left;

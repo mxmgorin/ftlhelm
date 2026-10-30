@@ -58,8 +58,10 @@ const FRAME_GLOW: [f32; 7] = [0.345, 0.259, 0.184, 0.122, 0.075, 0.039, 0.012];
 /// Rows of cut a frame's layer loses per pixel inward: a band stays as thick across its cut
 /// as along its sides.
 const CUT_PER_INSET: f32 = 2.0 - SQRT_2;
-/// Primitives kept; past it they are all freed and built anew.
+/// Primitives the shape cache holds; past it, those drawn longest ago are freed.
 const SHAPES_MAX: usize = 512;
+/// Primitives freed at once past SHAPES_MAX.
+const SHAPES_EVICT: usize = SHAPES_MAX / 4;
 const WHITE: GlColor = GlColor::new(1.0, 1.0, 1.0, 1.0);
 /// The dark edge of the game's pause banners' letters.
 const BANNER_EDGE_COLOR: GlColor = GlColor::new(0.2, 0.33, 0.37, 0.75);
@@ -159,8 +161,13 @@ type PixelRect = [i32; 4];
 /// Pixel rects and their colours, in drawing order.
 type Batch = Vec<(PixelRect, GlColor)>;
 
-/// Primitives by shape, as addresses.
-static SHAPES: Mutex<BTreeMap<Shape, usize>> = Mutex::new(BTreeMap::new());
+/// Cached primitives by shape: each one's address and the use count when last drawn.
+struct Shapes {
+    cached: BTreeMap<Shape, (usize, u64)>,
+    uses: u64,
+}
+
+static SHAPES: Mutex<Shapes> = Mutex::new(Shapes { cached: BTreeMap::new(), uses: 0 });
 /// The batch being collected; None while none is.
 static BATCH: Mutex<Option<Batch>> = Mutex::new(None);
 
@@ -256,6 +263,14 @@ fn pixel_rect(x: f32, y: f32, w: f32, h: f32) -> Option<PixelRect> {
     };
     let ((x0, x1), (y0, y1)) = (span(x, w), span(y, h));
     (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
+}
+
+/// The rects `draw` fills and their colours, in drawing order, drawn nowhere.
+#[cfg(test)]
+pub fn rects_of(draw: impl FnOnce()) -> Vec<([i32; 4], GlColor)> {
+    *BATCH.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
+    draw();
+    BATCH.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default()
 }
 
 /// Runs `draw` collecting the rects it fills, then draws each run of one colour as one cached
@@ -577,42 +592,64 @@ fn build_primitive(rects: &[Rect]) -> Option<usize> {
     (!p.is_null()).then_some(p as usize)
 }
 
+impl Shapes {
+    /// Frees the SHAPES_EVICT primitives drawn longest ago, ties with the last of them
+    /// included.
+    fn evict(&mut self) {
+        let mut uses: Vec<u64> = self.cached.values().map(|&(_, used)| used).collect();
+        if uses.len() < SHAPES_EVICT {
+            return;
+        }
+        let (_, &mut last, _) = uses.select_nth_unstable(SHAPES_EVICT - 1);
+        self.cached.retain(|_, &mut (p, used)| {
+            if used <= last {
+                // SAFETY: a primitive built in shape_primitive and drawn no more.
+                unsafe { (api().destroy_primitive)(p as Ptr) };
+            }
+            used > last
+        });
+    }
+}
+
 /// The game primitive of a shape, built white on first use; None when the game builds none.
 /// A mark's layers and flips are all built with it.
 fn shape_primitive(shape: &Shape) -> Option<Ptr> {
     let mut shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(&p) = shapes.get(shape) {
-        return Some(p as Ptr);
+    shapes.uses += 1;
+    let now = shapes.uses;
+    if let Some(entry) = shapes.cached.get_mut(shape) {
+        entry.1 = now;
+        return Some(entry.0 as Ptr);
     }
-    if shapes.len() >= SHAPES_MAX {
-        for (_, p) in std::mem::take(&mut *shapes) {
-            // SAFETY: a primitive built below and drawn no more.
-            unsafe { (api().destroy_primitive)(p as Ptr) };
-        }
+    if shapes.cached.len() >= SHAPES_MAX {
+        shapes.evict();
     }
-    match shape {
-        Shape::Ring(r) => {
-            if let Some(p) = build_primitive(&ring_rects(*r)) {
-                shapes.insert(shape.clone(), p);
-            }
-        }
+    let cached = &mut shapes.cached;
+    let built = match shape {
+        Shape::Ring(r) => build_primitive(&ring_rects(*r)),
         Shape::Mark(m) => {
             for (layer, rects) in mark_layers(m.mark).iter().enumerate() {
                 for &(flip_x, flip_y) in m.mark.flips() {
+                    let key = Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..*m });
+                    if cached.contains_key(&key) {
+                        continue;
+                    }
                     if let Some(p) = build_primitive(&flipped(rects, flip_x, flip_y)) {
-                        shapes.insert(Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..*m }), p);
+                        cached.insert(key, (p, now));
                     }
                 }
             }
+            None
         }
         Shape::Rects(rects) => {
             let rects: Vec<Rect> = rects.iter().map(|&[x, y, w, h]| Rect { x, y, w, h }).collect();
-            if let Some(p) = build_primitive(&rects) {
-                shapes.insert(shape.clone(), p);
-            }
+            build_primitive(&rects)
         }
+    };
+    if let Some(p) = built {
+        cached.insert(shape.clone(), (p, now));
     }
-    shapes.get(shape).map(|&p| p as Ptr)
+    cached.get(shape).map(|&(p, _)| p as Ptr)
 }
 
 /// Draws `shape` with its origin at (`x`, `y`), `k` times its size.
@@ -752,8 +789,19 @@ impl Images {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{live_strings, with_game};
+    use crate::game::fake::{calls, live_strings, with_game, Call};
     use std::collections::BTreeSet;
+
+    /// The primitives the calls since the last look built, and those they destroyed.
+    fn built_and_destroyed() -> (usize, usize) {
+        let calls = calls();
+        let count = |f: fn(&Call) -> bool| calls.iter().filter(|c| f(c)).count();
+        (count(|c| matches!(c, Call::BuildPrimitive(_))), count(|c| matches!(c, Call::DestroyPrimitive(_))))
+    }
+
+    fn empty_cache() {
+        SHAPES.lock().unwrap_or_else(|e| e.into_inner()).cached.clear();
+    }
 
     /// The pixels a ring's rects cover, each once.
     fn pixels(r: Ring) -> BTreeSet<(i32, i32)> {
@@ -889,6 +937,28 @@ mod tests {
         assert_eq!(pixel_rect(13.0, 20.0, -3.0, 1.0), Some([10, 20, 3, 1]));
         assert_eq!(pixel_rect(10.0, 20.0, 0.0, 1.0), None);
         assert_eq!(pixel_rect(10.6, 20.0, 0.3, 1.0), None);
+    }
+
+    #[test]
+    fn a_full_cache_frees_the_shapes_drawn_longest_ago() {
+        with_game(|_| {
+            empty_cache();
+            let hot = Shape::Rects(vec![[0, 0, 1, 1]]);
+            let cold = |i: usize| Shape::Rects(vec![[0, 0, 2, i as i32]]);
+            let hot_at = shape_primitive(&hot);
+            for i in 0..=SHAPES_MAX {
+                shape_primitive(&cold(i));
+                shape_primitive(&hot);
+            }
+            assert_eq!(shape_primitive(&hot), hot_at, "drawn all along");
+            let shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(!shapes.cached.contains_key(&cold(0)));
+            assert!(shapes.cached.contains_key(&cold(SHAPES_MAX)));
+            assert!(shapes.cached.len() <= SHAPES_MAX);
+            drop(shapes);
+            let (built, destroyed) = built_and_destroyed();
+            assert_eq!((built, destroyed), (SHAPES_MAX + 2, SHAPES_EVICT));
+        });
     }
 
     #[test]
