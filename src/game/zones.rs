@@ -8,13 +8,18 @@ use super::mem::Obj;
 use super::offsets::*;
 use super::state;
 use crate::core::layer::Layer;
+use crate::core::util::log;
 use crate::ui::text;
 
 const DOOR_HALF: i32 = 10;
 /// Half the side of the square a beacon counts as.
 const BEACON_HALF: i32 = 12;
-const MAX_ZONES: usize = 64;
+/// The most rooms of a ship in the game: the rebel flagship's.
+const MAX_SHIP_ROOMS: usize = 21;
 const MAX_BUTTONS: usize = 64;
+/// Every zone of the busiest screen: a fight's rooms on both ships, the armament boxes and the
+/// buttons.
+const MAX_ZONES: usize = 2 * MAX_SHIP_ROOMS + (WEAPON_SLOTS + DRONE_SLOTS) as usize + MAX_BUTTONS;
 /// Small unplaced buttons the game parks in this corner.
 const CORNER_BUTTON_MAX: i32 = 40;
 const CORNER_BUTTON_SIZE: i32 = 24;
@@ -75,15 +80,22 @@ pub struct Zones {
     pub list: Vec<Zone>,
     /// The last whole set of buttons the game hit-tested.
     pub buttons: Vec<Button>,
+    /// Zones the build under way left out past MAX_ZONES, and whether the last set of buttons
+    /// ran out of room.
+    dropped: (usize, bool),
+    /// `dropped` as last logged.
+    logged: (usize, bool),
 }
 
-/// Buttons the game hit-tested since the last frame, and whether it tested any.
+/// Buttons the game hit-tested since the last frame, whether it tested any, and whether one
+/// found no room.
 struct Seen {
     buttons: Vec<Button>,
     tested: bool,
+    full: bool,
 }
 
-static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false });
+static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false, full: false });
 
 /// Records a button the game hit-tests, with its box moved to the screen. Touches only the
 /// seen set: a hook may hold the layer meanwhile.
@@ -93,12 +105,15 @@ pub fn record_button(button: Obj) {
     let gui = state::gui();
     let in_crew_control = gui.is_some_and(|g| g.at(GUI_CREW_CONTROL).contains(CREW_CONTROL_SIZE, button.addr()));
     let drawn = !button.flag(BUTTON_RENDER_OFF);
-    if seen.buttons.len() >= MAX_BUTTONS
-        || !button.flag(BUTTON_ACTIVE)
+    if !button.flag(BUTTON_ACTIVE)
         || !drawn
         || in_crew_control
         || seen.buttons.iter().any(|b| b.object == button.addr())
     {
+        return;
+    }
+    if seen.buttons.len() >= MAX_BUTTONS {
+        seen.full = true;
         return;
     }
     let mut r = button.rect(BUTTON_HITBOX);
@@ -197,7 +212,19 @@ impl Zones {
     fn push(&mut self, rect: Rect, id: i32, kind: ZoneKind) {
         if self.list.len() < MAX_ZONES {
             self.list.push(Zone { rect, id, kind });
+        } else {
+            self.dropped.0 += 1;
         }
+    }
+
+    /// Logs what the last build left out when it changed, and starts a new count.
+    fn report_dropped(&mut self) {
+        if self.dropped != self.logged {
+            let (zones, full) = self.dropped;
+            log!("zones: {zones} left out past MAX_ZONES, buttons full {}", full as i32);
+            self.logged = self.dropped;
+        }
+        self.dropped.0 = 0;
     }
 
     fn add_door_list(&mut self, doors: Obj, origin: Point) {
@@ -334,11 +361,13 @@ impl Layer {
     /// game hit-tests come on top.
     pub fn build_zones(&mut self) {
         let zones = &mut self.zones;
+        zones.report_dropped();
         zones.list.clear();
         {
             let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
             if seen.tested {
                 zones.buttons = std::mem::take(&mut seen.buttons);
+                zones.dropped.1 = std::mem::take(&mut seen.full);
                 seen.tested = false;
             }
         }
@@ -497,6 +526,33 @@ mod tests {
             assert_eq!(last, Some((ZoneKind::Armament, 1, rect)), "the filled box by its slot");
             g.mouse.set(MOUSE_AIMING, 1i32);
             assert!(built(&mut l).iter().all(|&(k, ..)| k != ZoneKind::Armament));
+        });
+    }
+
+    #[test]
+    fn the_biggest_fight_lists_every_room_armament_box_and_button() {
+        with_game(|g| {
+            let ships = [g.player_manager(), g.enemy_manager()].map(|m| m.at(SHIPMANAGER_SHIP));
+            for ship in ships {
+                let rooms: Vec<_> = (0..MAX_SHIP_ROOMS).map(|i| Some(g.room(i as i32, rect(0, 0)))).collect();
+                g.arena.ptr_vector(ship, SHIP_ROOMS, &rooms);
+            }
+            for (bar, slots) in [(COMBAT_WEAPON_CONTROL, WEAPON_SLOTS), (COMBAT_DRONE_CONTROL, DRONE_SLOTS)] {
+                let mut boxes = Vec::new();
+                for _ in 0..slots {
+                    let item = g.arena.alloc(WEAPON_POWERED.max(DRONE_POWERED) + size_of::<u8>());
+                    let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
+                    filled.set(ARMAMENTBOX_ITEM, item.addr());
+                    boxes.push(Some(filled));
+                }
+                g.arena.ptr_vector(g.gui.at(GUI_COMBAT_CONTROL + bar), ARMAMENT_BOXES, &boxes);
+            }
+            let buttons = (1..=MAX_BUTTONS).map(|object| Button { rect: rect(0, 0), object }).collect();
+            *SEEN.lock().unwrap_or_else(|e| e.into_inner()) = Seen { buttons, tested: true, full: false };
+            let mut l = Layer::default();
+            let listed = built(&mut l);
+            assert_eq!(listed.len(), MAX_ZONES);
+            assert_eq!(listed.iter().filter(|&&(k, ..)| k == ZoneKind::Button).count(), MAX_BUTTONS);
         });
     }
 
