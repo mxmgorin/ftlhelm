@@ -29,6 +29,7 @@ use super::hook::{
 use super::layer::with_layer;
 use super::util::{line_buffer_stdout, log, now_s, open_log_file};
 use crate::config::layout::DEFAULT_LAYOUT;
+use crate::config::settings::layout_path;
 use crate::game::actions::shift_held;
 use crate::game::api::{self, api, Api, FontData, GlColor, Point, Ptr, SYMBOLS};
 use crate::game::mem::Obj;
@@ -557,6 +558,7 @@ pub extern "C" fn init() {
         l.actions.step_cap = step_cap;
         // SAFETY: the float redirect_step_cap placed, holding the game's cap.
         l.actions.step_cap_normal = step_cap.map_or(0.0, |c| unsafe { (c as *const f32).read() });
+        l.files.path = layout_path();
         l.load_layout(DEFAULT_LAYOUT, "built-in default");
         l.poll_files(now_s());
         l.pad.load_sdl_map();

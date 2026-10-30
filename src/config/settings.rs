@@ -3,7 +3,7 @@
 //! values back into that section.
 
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
@@ -449,12 +449,19 @@ fn name_of<T: PartialEq>(names: &[(&str, T)], value: T) -> String {
 /// When the layout file was last polled, and its mtime then.
 #[derive(Default)]
 pub struct FileWatch {
+    /// The layout file; none: nothing is read or written.
+    pub path: Option<PathBuf>,
     last_poll: Option<f64>,
     layout_mtime: Option<SystemTime>,
     /// The settings as the layout file holds them.
     written: Option<Values>,
     /// Writing the default layout failed; no retry until a file appears at the path.
     default_failed: bool,
+}
+
+/// The layout file the environment names.
+pub fn layout_path() -> Option<PathBuf> {
+    std::env::var_os(LAYOUT_ENV).map(PathBuf::from)
 }
 
 /// The section a "[NAME]" line opens, as the layout parser reads it.
@@ -601,7 +608,7 @@ impl Layer {
     /// Writes the settings that differ from what the layout file holds into its [config]
     /// section.
     pub fn save_tuned(&mut self) {
-        let Ok(path) = std::env::var(LAYOUT_ENV) else {
+        let Some(path) = self.files.path.clone() else {
             return;
         };
         let now = self.tuned();
@@ -610,12 +617,11 @@ impl Layer {
         if changed.is_empty() {
             return;
         }
-        let path = Path::new(&path);
-        match std::fs::read_to_string(path).and_then(|text| write_whole(path, &set_config(&text, &changed))) {
+        match std::fs::read_to_string(&path).and_then(|text| write_whole(&path, &set_config(&text, &changed))) {
             Ok(()) => {
                 self.files.written = Some(now);
                 // The layer's own write is no edit to reload.
-                self.files.layout_mtime = mtime(path);
+                self.files.layout_mtime = mtime(&path);
                 log!("saved:{}", changed.iter().map(|(key, value)| format!(" {key}={value}")).collect::<String>());
             }
             Err(e) => log!("cannot save {}: {e}", path.display()),
@@ -673,18 +679,18 @@ impl Layer {
             return;
         }
         self.files.last_poll = Some(t);
-        if let Ok(path) = std::env::var(LAYOUT_ENV) {
-            self.restore_default(Path::new(&path));
-            if changed(Path::new(&path), &mut self.files.layout_mtime) {
+        if let Some(path) = self.files.path.clone() {
+            self.restore_default(&path);
+            if changed(&path, &mut self.files.layout_mtime) {
                 match std::fs::read_to_string(&path) {
                     // An empty file is a save caught midway; the current layout stays.
                     Ok(text) if text.is_empty() => {}
                     Ok(text) => {
-                        let text = self.upgrade_layout(Path::new(&path), text);
-                        self.load_layout(&text, &path);
+                        let text = self.upgrade_layout(&path, text);
+                        self.load_layout(&text, &path.display().to_string());
                         self.files.written = Some(self.tuned());
                     }
-                    Err(_) => log!("layout: cannot open {path}"),
+                    Err(_) => log!("layout: cannot open {}", path.display()),
                 }
             }
         }
