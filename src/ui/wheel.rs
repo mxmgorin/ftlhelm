@@ -1209,12 +1209,18 @@ impl Layer {
         self.wheel.open.is_some_and(|w| self.wheel_allowed(w))
     }
 
+    /// Whether the open wheel is a settings wheel, which saves the tuned values on its close.
+    pub fn settings_open(&self) -> bool {
+        self.wheel.open.is_some_and(|w| self.layout.wheels.get(w).is_some_and(|w| w.kind == WheelKind::Settings))
+    }
+
     /// Closes the open wheel, unpausing what it paused unless an aim taken on it keeps the
     /// pause as its own; a settings wheel saves its values.
     pub fn close_wheel(&mut self) {
-        let Some(closed) = self.wheel.open.take() else {
+        let settings = self.settings_open();
+        if self.wheel.open.take().is_none() {
             return;
-        };
+        }
         if self.wheel.paused && state::game_paused() {
             let aiming = state::aiming() || self.actions.volley.is_some();
             if self.cfg.autopauses(AUTOPAUSE_AIM) && aiming {
@@ -1228,7 +1234,7 @@ impl Layer {
         self.wheel.parent = None;
         self.wheel.picking = false;
         self.wheel.grab = None;
-        if self.layout.wheels.get(closed).is_some_and(|w| w.kind == WheelKind::Settings) {
+        if settings {
             self.save_tuned();
         }
     }

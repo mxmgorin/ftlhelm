@@ -218,9 +218,18 @@ impl Layer {
                 self.zoom_peek(down);
             }
             Builtin::DpadMode if down => self.bind.dpad_mouse = !self.bind.dpad_mouse,
-            Builtin::Zoom if down => self.zoom_cycle(),
-            Builtin::TextSize if down => self.text_size_cycle(),
-            Builtin::Autopause if down => self.tune_autopause(None),
+            Builtin::Zoom if down => {
+                self.zoom_cycle();
+                self.save_unless_settings_open();
+            }
+            Builtin::TextSize if down => {
+                self.text_size_cycle();
+                self.save_unless_settings_open();
+            }
+            Builtin::Autopause if down => {
+                self.tune_autopause(None);
+                self.save_unless_settings_open();
+            }
             Builtin::FastForward => {
                 if down && state::game_paused() {
                     toggle_pause();
@@ -371,6 +380,13 @@ impl Layer {
         self.tune(tunable(AUTOPAUSE_KEY).expect("autopause is a number with a step"), up);
     }
 
+    /// Saves the tuned values, unless the open settings wheel will on its close.
+    fn save_unless_settings_open(&mut self) {
+        if !self.settings_open() {
+            self.save_tuned();
+        }
+    }
+
     /// Runs a plate's builtin as a tap.
     pub fn builtin_tap(&mut self, b: Builtin) {
         self.builtin(b, Source::Plate, true);
@@ -488,6 +504,27 @@ mod tests {
             l.release(Input::Select);
             l.press(Input::Select, 1.0);
             assert_eq!(l.wheel.open, None);
+        });
+    }
+
+    #[test]
+    fn a_tuning_builtin_saves_at_once_or_on_the_close_of_an_open_settings_wheel() {
+        with_game(|_| {
+            let path = std::env::temp_dir().join(format!("ftlhelm-test-tuning-{}.ini", std::process::id()));
+            std::fs::write(&path, "[config]\n").expect("a writable temp dir");
+            let mut l = Layer { layout: Layout::parse("[wheel:s]\nkind = settings\n").0, ..Layer::default() };
+            l.files.path = Some(path.clone());
+            let saved = || Layout::parse(&std::fs::read_to_string(&path).unwrap_or_default()).1.autopause;
+            let autopause = Action::Builtin(Builtin::Autopause);
+            l.perform(autopause, Source::Input(Input::FaceLeft), true);
+            assert_eq!(saved(), l.cfg.autopause);
+            l.open_wheel(0, Source::Plate);
+            let before = saved();
+            l.perform(autopause, Source::Input(Input::FaceLeft), true);
+            assert_eq!(saved(), before, "the wheel is open");
+            l.close_wheel();
+            assert_eq!(saved(), l.cfg.autopause);
+            let _ = std::fs::remove_file(&path);
         });
     }
 }
