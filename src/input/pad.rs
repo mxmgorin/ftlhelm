@@ -400,7 +400,9 @@ impl Layer {
         }
         self.settle_pending(t);
         self.apply_buttons(&p, t, in_wheel, snapping);
-        if !in_wheel {
+        if in_wheel {
+            self.spend_flicks(&p, t);
+        } else {
             self.move_pointers(&p, mode, t, dt);
         }
         self.follow_game_modes();
@@ -515,6 +517,17 @@ impl Layer {
         }
     }
 
+    /// Spends the flick of every stick off centre, as a flick would: it flicks again once
+    /// re-centred, or after flick_repeat.
+    fn spend_flicks(&mut self, p: &PadFrame, t: f64) {
+        for (k, [x, y]) in p.stick.into_iter().enumerate() {
+            if x.hypot(y) >= FLICK_OFF {
+                self.pad.flick_armed[k] = false;
+                self.pad.flick_last[k] = t;
+            }
+        }
+    }
+
     /// Reacts to mode changes read from the game: a new aim moves the cursor to the enemy
     /// ship, a new crew selection with crew_follow to the member's room. A volley is one aim;
     /// an aim taken in an open wheel counts once the wheel closes.
@@ -553,8 +566,15 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::layout::Layout;
+    use crate::core::util::now_s;
+    use crate::game::api::Rect;
     use crate::game::fake::{calls, set_pad, set_pads, with_game, Call, FakePad};
     use crate::game::offsets::{layout, KEY_SPACE, MOUSE_AIMING};
+    use crate::game::zones::{Zone, ZoneKind};
+    use crate::input::bindings::Source;
+
+    const DT: f32 = 1.0 / 60.0;
 
     /// Sets the stand-in pad's raw buttons apart from the SIL buttons they stand behind.
     const RAW_OFFSET: i32 = 100;
@@ -676,6 +696,31 @@ mod tests {
             frame(&mut l, 1, false);
             frame(&mut l, 1, false);
             assert_eq!(frame(&mut l, 0, true), [], "paused by hand after a resume by hand");
+        });
+    }
+
+    #[test]
+    fn a_stick_held_through_a_wheel_flicks_only_after_it_recentres() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[controls]\nleft_analog = flick\n[wheel:settings]\nkind = settings\nup = set overlay\n";
+            l.layout = Layout::parse(layout).0;
+            let zone = |x| Zone { rect: Rect { x, y: 100, w: 40, h: 40 }, id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![zone(100), zone(200)];
+            (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+            l.send_cursor();
+            let stick = |l: &mut Layer, x: f32| {
+                let mut p = PadFrame::default();
+                p.stick[0] = [x, 0.0];
+                l.apply_pad(p, now_s(), DT);
+                l.zone_under_cursor()
+            };
+            l.open_wheel(0, Source::Plate);
+            assert_eq!(stick(&mut l, 1.0), Some(0), "the stick points the wheel");
+            l.close_wheel();
+            assert_eq!(stick(&mut l, 1.0), Some(0), "held through the close");
+            stick(&mut l, 0.0);
+            assert_eq!(stick(&mut l, 1.0), Some(1), "a fresh flick");
         });
     }
 
