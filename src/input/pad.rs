@@ -2,7 +2,7 @@
 //! inputs, flicks, and the per-frame dispatch.
 
 use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLOT_COUNT};
-use crate::config::settings::FLICK_OFF;
+use crate::config::settings::{AUTOPAUSE_AIM, FLICK_OFF};
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::actions::{mouse_move, toggle_pause};
@@ -526,7 +526,7 @@ impl Layer {
                         self.send_cursor();
                     }
                 }
-                if self.cfg.autopause_aim && !state::game_paused() {
+                if self.cfg.autopauses(AUTOPAUSE_AIM) && !state::game_paused() {
                     toggle_pause();
                 }
             }

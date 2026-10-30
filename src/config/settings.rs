@@ -30,6 +30,12 @@ pub const CREW_MARKER_KEY: &str = "crew_marker";
 pub const HUD_SHIFT_KEY: &str = "hud_shift";
 pub const FRAME_FILTER_KEY: &str = "frame_filter";
 pub const IPAD_BEACONS_KEY: &str = "ipad_beacons";
+pub const AUTOPAUSE_KEY: &str = "autopause";
+/// Autopause flags: the game pauses while a wheel is open, and when a weapon or ability
+/// starts waiting for a target.
+pub const AUTOPAUSE_WHEEL: i32 = 1;
+pub const AUTOPAUSE_AIM: i32 = 2;
+pub const AUTOPAUSE_ALL: i32 = AUTOPAUSE_WHEEL | AUTOPAUSE_AIM;
 const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
@@ -81,11 +87,17 @@ const TOUCH_PX_MAX: f32 = 100.0;
 const POINTER_SCALE_MAX: f32 = 2.0;
 const POINTER_SCALE_LIMIT: f32 = 4.0;
 /// The numbers `set` moves, by key, and their steps.
-const STEPS: &[(&str, f32)] =
-    &[(RUMBLE_KEY, RUMBLE_STEP), (SHARPEN_KEY, SHARPEN_STEP), (SPEED_LEVEL_KEY, SPEED_LEVEL_STEP)];
+const STEPS: &[(&str, f32)] = &[
+    (RUMBLE_KEY, RUMBLE_STEP),
+    (SHARPEN_KEY, SHARPEN_STEP),
+    (SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
+    (AUTOPAUSE_KEY, AUTOPAUSE_STEP),
+];
 const RUMBLE_STEP: f32 = 0.5;
 const SHARPEN_STEP: f32 = 0.25;
 const SPEED_LEVEL_STEP: f32 = 1.0;
+/// Each step is the next combination of autopause flags.
+const AUTOPAUSE_STEP: f32 = 1.0;
 /// Room for float error when a value is matched to a step.
 const STEP_SLACK: f32 = 0.001;
 
@@ -105,8 +117,8 @@ pub struct Settings {
     /// The most times its size the game's pointer is drawn where the frame is shown smaller.
     pub pointer_scale_max: f32,
     pub snap_dpad: bool,
-    pub autopause_wheel: bool,
-    pub autopause_aim: bool,
+    /// When the game pauses itself, as AUTOPAUSE_* flags.
+    pub autopause: i32,
     pub speed_level: i32,
     /// Pulse strength in times RUMBLE_STRENGTH; 0: no pulses.
     pub rumble: f32,
@@ -174,8 +186,7 @@ impl Default for Settings {
             crew_marker: true,
             pointer_scale_max: POINTER_SCALE_MAX,
             snap_dpad: true,
-            autopause_wheel: true,
-            autopause_aim: false,
+            autopause: AUTOPAUSE_WHEEL,
             speed_level: SPEED_LEVEL_MAX as i32,
             rumble: RUMBLE,
             flick_threshold: FLICK_ON,
@@ -232,8 +243,7 @@ const OPTIONS: &[(&str, Field)] = &[
     (CREW_MARKER_KEY, Field::Bool(|c| &mut c.crew_marker)),
     ("pointer_scale_max", Field::Float(|c| &mut c.pointer_scale_max, 1.0, POINTER_SCALE_LIMIT)),
     ("snap_dpad", Field::Bool(|c| &mut c.snap_dpad)),
-    ("autopause_wheel", Field::Bool(|c| &mut c.autopause_wheel)),
-    ("autopause_aim", Field::Bool(|c| &mut c.autopause_aim)),
+    (AUTOPAUSE_KEY, Field::Int(|c| &mut c.autopause, 0.0, AUTOPAUSE_ALL as f32)),
     (SPEED_LEVEL_KEY, Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
     (RUMBLE_KEY, Field::Float(|c| &mut c.rumble, 0.0, RUMBLE_MAX)),
     ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
@@ -304,6 +314,11 @@ fn step_of(i: usize) -> Option<f32> {
 }
 
 impl Settings {
+    /// Whether autopause has `flag` on.
+    pub fn autopauses(&self, flag: i32) -> bool {
+        self.autopause & flag != 0
+    }
+
     /// Sets one option from a "key = value" line; unknown keys and unreadable values are
     /// logged and skipped.
     pub fn apply(&mut self, key: &str, value: &str) {

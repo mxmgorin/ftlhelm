@@ -9,8 +9,8 @@ use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    is_switch, option_name, Tuning, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY,
-    IPAD_BEACONS_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
+    is_switch, option_name, Tuning, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
+    FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
@@ -191,6 +191,8 @@ const ON_BADGE: &str = "On";
 /// A switch plate's one pip, lit while the switch is on.
 const SWITCH_PIPS: i32 = 1;
 const OFF_BADGE: &str = "Off";
+/// The autopause plate's badge for each combination of the flags.
+const AUTOPAUSE_BADGES: [&str; AUTOPAUSE_ALL as usize + 1] = [OFF_BADGE, "Wheels", "Aim", "Both"];
 
 /// What lies under a wheel's plates.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -733,7 +735,7 @@ fn times(k: f32) -> String {
 /// Whether a settings plate's action steps a setting by the D-pad, the wheel staying open.
 fn is_knob(action: Action) -> bool {
     match action {
-        Action::Builtin(b) => matches!(b, Builtin::Zoom | Builtin::TextSize),
+        Action::Builtin(b) => matches!(b, Builtin::Zoom | Builtin::TextSize | Builtin::Autopause),
         Action::Set(i) => !is_switch(i),
         _ => false,
     }
@@ -1078,7 +1080,7 @@ impl Layer {
         let (zoom, text_scale) = (self.zoom.level, self.cfg.text_scale);
         let shrunk = self.frame_per_window() > 1.0;
         let narrow = zoom::narrower_than_frame();
-        let autopause = self.autopause();
+        let autopause = self.cfg.autopause;
         for pl in &mut self.wheel.plates {
             if let Some(Action::Set(i)) = pl.action {
                 show_tuning(pl, self.cfg.tuning(i));
@@ -1096,7 +1098,10 @@ impl Layer {
             };
             match b {
                 Builtin::DpadMode => show_tuning(pl, Tuning::Switch(cursor)),
-                Builtin::Autopause => show_tuning(pl, Tuning::Switch(autopause)),
+                Builtin::Autopause => {
+                    (pl.powered, pl.pips, pl.pips_on) = (autopause != 0, AUTOPAUSE_ALL, autopause);
+                    pl.badge = AUTOPAUSE_BADGES[autopause as usize].to_string();
+                }
                 Builtin::Zoom => {
                     let level = zoom::resolved_level(zoom, self.zoom.span);
                     pl.powered = zoom != ZOOM_AUTO;
@@ -1165,7 +1170,7 @@ impl Layer {
         self.wheel.picking = false;
         self.refresh_wheel();
         self.wheel.sel = (0..WHEEL_SLOTS).find(|&i| self.wheel.pickable(i));
-        if self.cfg.autopause_wheel && state::ship_view() && !state::game_paused() {
+        if self.cfg.autopauses(AUTOPAUSE_WHEEL) && state::ship_view() && !state::game_paused() {
             toggle_pause();
             self.wheel.paused = true;
         }
@@ -1281,7 +1286,7 @@ impl Layer {
             match action {
                 Action::Builtin(Builtin::Zoom) => self.zoom_step(dir > 0),
                 Action::Builtin(Builtin::TextSize) => self.text_size_step(dir > 0),
-                Action::Builtin(Builtin::Autopause) => self.set_autopause(dir > 0),
+                Action::Builtin(Builtin::Autopause) => self.tune_autopause(Some(dir > 0)),
                 Action::Builtin(Builtin::DpadMode) => self.bind.dpad_mouse = dir > 0,
                 Action::Set(i) => {
                     self.tune(i, Some(dir > 0));
@@ -1715,17 +1720,23 @@ mod tests {
     }
 
     #[test]
-    fn the_autopause_plate_switches_both_pauses() {
+    fn the_autopause_plate_steps_through_the_modes() {
         with_game(|_| {
             let mut l = Layer::default();
             let p = plates(&mut l, "[wheel:settings]\nkind = settings\nup = autopause\n");
-            let shown = (p[0].powered, p[0].badge.as_str(), p[0].glyph);
-            assert_eq!(shown, (true, ON_BADGE, Some(Glyph::Pause)), "the wheel's pause alone is on");
+            let shown = (p[0].powered, p[0].badge.as_str(), p[0].pips_on, p[0].glyph);
+            assert_eq!(shown, (true, "Wheels", AUTOPAUSE_WHEEL, Some(Glyph::Pause)), "the wheel's pause alone is on");
             l.wheel.sel = Some(0);
             l.adjust_plate(1);
-            assert!(l.cfg.autopause_wheel && l.cfg.autopause_aim);
+            l.adjust_plate(1);
+            assert_eq!((l.cfg.autopause, l.wheel.plates[0].badge.as_str()), (AUTOPAUSE_ALL, "Both"));
+            l.adjust_plate(1);
+            assert_eq!(l.cfg.autopause, AUTOPAUSE_ALL, "the top mode stays");
             l.act_on_plate();
-            assert!(!l.cfg.autopause_wheel && !l.cfg.autopause_aim && l.wheel.open.is_none());
+            assert_eq!((l.cfg.autopause, l.wheel.plates[0].powered), (0, false), "past the top mode, off");
+            assert!(l.wheel.open.is_some(), "the wheel stays open");
+            l.act_on_plate();
+            assert_eq!(l.cfg.autopause, AUTOPAUSE_WHEEL);
         });
     }
 

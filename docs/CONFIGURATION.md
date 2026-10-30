@@ -51,8 +51,7 @@ controls table first closes, `help_at_start = 0`.
 | `wheels_ship_only` | 1 | switch | wheels open only on the ship view; the settings wheel opens anywhere |
 | `wheel_place` | center | `center`, `cursor` | where a wheel opens: the middle of the screen, or around the cursor |
 | `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | under a wheel's plates: an octagon or a circle in the game's window frame, mocha or dark; the whole frame dimmed; a dark disc |
-| `autopause_wheel` | 1 | switch | pause while a wheel is open |
-| `autopause_aim` | 0 | switch | pause when a weapon or ability starts waiting for a target |
+| `autopause` | 1 | 0 to 3 | when the game pauses itself, flags added up: 1 while a wheel is open, 2 when a weapon or ability starts waiting for a target; 0: never |
 | `speed_level` | 6 | 1 to 6 | game speed while fast forward is held; each game step is scaled by (16 + 7 * level) / 16 |
 
 ### Pad
@@ -152,7 +151,7 @@ state.
 | `help` | show the controls table; any button but the D-pad closes it |
 | `zoom` | the next zoom level, back to auto after the last |
 | `text_size` | the next text size, back to auto after the largest |
-| `autopause` | `autopause_wheel` and `autopause_aim` both off when either is on, else both on |
+| `autopause` | the next `autopause` value, 0 after 3 |
 
 ## Wheels
 
@@ -167,7 +166,7 @@ state.
 | `power` | from the section, with power pips; D-pad up and down add and take power, and pick a powered weapon and drop it |
 | `crew` | filled from the ship's crew |
 | `systems` | filled from the ship's systems |
-| `settings` | from the section; opens on any screen; D-pad up and down step `zoom`, `text_size` and stepped `set` plates, and turn `autopause` and `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
+| `settings` | from the section; opens on any screen; D-pad up and down step `zoom`, `text_size`, `autopause` and stepped `set` plates, and turn `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
 
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name

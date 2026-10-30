@@ -103,7 +103,7 @@ opens the settings wheel on any screen. A wheel stays open after the button is r
 | the wheel's own button | close, with any wheel opened from it |
 | hold another wheel's button | switch to that wheel |
 
-`autopause_wheel` pauses the game while a wheel is open; `wheels_ship_only = 0` opens
+`autopause` 1 or 3 pauses the game while a wheel is open; `wheels_ship_only = 0` opens
 wheels over menus, screens and the map too; `wheel_place = cursor` opens them around the
 cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 
@@ -113,14 +113,15 @@ cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 | --- | --- | --- |
 | Mouse | switch the D-pad and sticks between zones and mouse mode | mouse mode on, off |
 | Zoom | next zoom level, back to auto after the last | zoom in, out; auto below the whole frame |
-| Autopause | both autopauses off when either is on, else both on: while a wheel is open, and while a weapon or ability waits for a target | on, off |
+| Autopause | next mode: Wheels, Aim, Both, Off | next, previous mode |
 | Fast speed | next fast forward speed, the slowest after the fastest | faster, slower |
 | Help | the controls table | |
 | Rumble | next rumble strength, off after the strongest; a pulse at the new strength | stronger, weaker |
 | View | the view wheel | |
 | Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
 
-Autopause is lit while `autopause_wheel` or `autopause_aim` is on. Mouse mode resets each
+Autopause modes: Wheels pauses while a wheel is open, Aim when a weapon or ability starts
+waiting for a target, Both does both; the plate is lit unless Off. Mouse mode resets each
 run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
 
 ## View wheel

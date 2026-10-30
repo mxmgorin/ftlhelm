@@ -2,6 +2,7 @@
 //! wheels may open.
 
 use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
+use crate::config::settings::{tunable, AUTOPAUSE_KEY};
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, toggle_pause, MouseButton};
@@ -212,7 +213,7 @@ impl Layer {
             Builtin::DpadMode if down => self.bind.dpad_mouse = !self.bind.dpad_mouse,
             Builtin::Zoom if down => self.zoom_cycle(),
             Builtin::TextSize if down => self.text_size_cycle(),
-            Builtin::Autopause if down => self.set_autopause(!self.autopause()),
+            Builtin::Autopause if down => self.tune_autopause(None),
             Builtin::FastForward => {
                 if down && state::game_paused() {
                     toggle_pause();
@@ -358,16 +359,9 @@ impl Layer {
         }
     }
 
-    /// Whether either autopause is on: while a wheel is open, or while the game waits for a
-    /// target.
-    pub fn autopause(&self) -> bool {
-        self.cfg.autopause_wheel || self.cfg.autopause_aim
-    }
-
-    /// Turns both autopauses on or off.
-    pub fn set_autopause(&mut self, on: bool) {
-        (self.cfg.autopause_wheel, self.cfg.autopause_aim) = (on, on);
-        log!("autopause {}", on as i32);
+    /// Moves autopause a step up or down, or without `up` to its next mode.
+    pub fn tune_autopause(&mut self, up: Option<bool>) {
+        self.tune(tunable(AUTOPAUSE_KEY).expect("autopause is a number with a step"), up);
     }
 
     /// Runs a plate's builtin as a tap.
