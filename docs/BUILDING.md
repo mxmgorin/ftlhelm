@@ -25,7 +25,7 @@ A release tag is the `Cargo.toml` version, with or without a leading `v`.
 
 ## Test channel
 
-With `FTLHELM_CMD` naming a FIFO, ftlhelm runs the lines written to it once a frame and logs
+With `FTLHELM_CMD` naming a FIFO, FTLHELM runs the lines written to it once a frame and logs
 to standard error. Commands are the cases of `run_command` in `src/debug/commands.rs`,
 e.g. `dump` (zones), `state` (state stack), `move X Y` (cursor), `focus DX DY` (a D-pad step),
 `touch down|move|up|cancel X Y [ID]` (a touch event at window pixels, as the engine reports

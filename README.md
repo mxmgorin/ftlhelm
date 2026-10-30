@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/ftlhelm-banner.png" alt="ftlhelm, gamepad and touch for FTL: Faster Than Light" width="640">
+  <img src="docs/images/ftlhelm-banner.png" alt="FTLHELM, gamepad and touch for FTL: Faster Than Light" width="640">
 </p>
 
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/mxmgorin/ftlhelm/issues">Issues</a>
 </p>
 
-ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
+**FTLHELM** is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
 <p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets through the ship's rooms, the weapons wheel arms the Burst Laser, a volley takes down the enemy's shield, the Artemis hits its weapons room, and the beacon map jumps the ship away" width="800"><br><sub>The D-pad, the weapons wheel, a volley and a jump, all on a gamepad</sub></p>
 
@@ -47,7 +47,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 
 <p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="640"><br><sub><b>Zoom</b> on a 640x480 screen: the settings wheel sets the level, the view follows the cursor, the beacon map enlarged to fit</sub></p>
 
-<p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without ftlhelm on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without ftlhelm on the left, with it on the right</sub></p>
+<p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without FTLHELM on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without FTLHELM on the left, with it on the right</sub></p>
 
 ## Controls
 
@@ -70,7 +70,7 @@ ftlhelm is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://
 
 ## Install
 
-Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG, and glibc 2.35 or later. The Windows and macOS builds are not supported. On another Linux build, ftlhelm stays inactive and the game runs without it.
+Requires the native Linux build of FTL: 1.6.13 from Steam or 1.6.12 from GOG, and glibc 2.35 or later. The Windows and macOS builds are not supported. On another Linux build, FTLHELM stays inactive and the game runs without it.
 
 Download [`ftlhelm-linux-x86_64.tar.gz`](https://github.com/mxmgorin/ftlhelm/releases/latest/download/ftlhelm-linux-x86_64.tar.gz) from the [latest release](https://github.com/mxmgorin/ftlhelm/releases/latest) and unpack it anywhere, e.g. `~/ftlhelm/`. `ftlhelm.sh` expects the other files where the archive puts them.
 
@@ -102,9 +102,9 @@ A Steam copy runs from its own directory:
 
 ### PortMaster
 
-On aarch64 handhelds, ftlhelm comes with the [FTL port for PortMaster](https://portmaster.games/detail.html?name=ftl).
+On aarch64 handhelds, FTLHELM comes with the [FTL port for PortMaster](https://portmaster.games/detail.html?name=ftl).
 
-If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
+If FTLHELM does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
 
@@ -118,15 +118,15 @@ If ftlhelm does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 If you find the project useful, here is how you can help:
 
 - **Tell other people about it.** Sharing the project helps it reach more users.
-- **Report bugs and request features** in [Issues](https://github.com/mxmgorin/ftlhelm/issues). Feedback is welcome. Attach `ftlhelm.log` from the ftlhelm folder to a bug report.
+- **Report bugs and request features** in [Issues](https://github.com/mxmgorin/ftlhelm/issues). Feedback is welcome. Attach `ftlhelm.log` from the folder of `ftlhelm.sh` to a bug report.
 - **Star the repo.** It helps the project get noticed and keeps me motivated.
 - **[Buy me a coffee](https://ko-fi.com/mxmgorin)** on Ko-fi.
 
 ## License
 
-Copyright (C) 2026 Maxim Gorin. ftlhelm is free software under the
+Copyright (C) 2026 Maxim Gorin. FTLHELM is free software under the
 [GNU General Public License v3.0 or later](LICENSE), with the additional terms in
 [NOTICE](NOTICE). The name, logo and icon: [TRADEMARKS.md](TRADEMARKS.md).
 
-ftlhelm is an unofficial mod, not affiliated with or endorsed by Subset Games.
+FTLHELM is an unofficial mod, not affiliated with or endorsed by Subset Games.
 FTL: Faster Than Light is a trademark of Subset Games.
