@@ -667,12 +667,24 @@ fn label_scale(plates: &[Plate]) -> f32 {
     plates.iter().filter(|p| shows_label(p)).map(|p| room / p.widths.0).fold(1.0, f32::min)
 }
 
-/// Draws a plate, its label `label_k` times the font's size; an empty slot shows nothing.
-fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: bool) {
-    let (x, y) = (cx - WHEEL_TILE / 2.0, cy - WHEEL_TILE / 2.0);
-    if pl.empty || !pl.bound {
-        return;
+/// Whether a slot shows a plate: an empty or unbound one shows nothing.
+fn shows_plate(pl: &Plate) -> bool {
+    !pl.empty && pl.bound
+}
+
+/// A plate's fill as `selected` or not, by its state.
+fn plate_fill(pl: &Plate, selected: bool) -> GlColor {
+    if !pl.available {
+        BUTTON_OFF_COLOR
+    } else if selected {
+        BUTTON_SELECTED_COLOR
+    } else {
+        BUTTON_PALE_COLOR
     }
+}
+
+/// The frame of a plate centred at cx,cy: grown while selected, styled by its state.
+fn plate_frame(pl: &Plate, cx: f32, cy: f32, selected: bool) -> Frame<'static> {
     let style = if !pl.available {
         &PLATE_DISABLED_FRAME
     } else if pl.picked {
@@ -682,33 +694,52 @@ fn draw_plate(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: b
     } else {
         &PLATE_FRAME
     };
-    let (fill, grow) = if !pl.available {
-        (BUTTON_OFF_COLOR, 0.0)
-    } else if selected {
-        (BUTTON_SELECTED_COLOR, SELECTED_GROW)
+    let grow = if pl.available && selected { SELECTED_GROW } else { 0.0 };
+    let half = WHEEL_TILE / 2.0 + grow;
+    (cx - half, cy - half, 2.0 * half, 2.0 * half, style, plate_fill(pl, selected))
+}
+
+/// The size and the centre height of the icon box of a plate centred at cy.
+fn icon_box(pl: &Plate, cy: f32) -> (f32, f32) {
+    if pl.pips > 0 {
+        (PIP_ICON, cy - WHEEL_TILE / 2.0 + CONTENT_INSET + PIP_ICON / 2.0)
     } else {
-        (BUTTON_PALE_COLOR, 0.0)
-    };
-    let side = WHEEL_TILE + 2.0 * grow;
-    draw_frame(x - grow, y - grow, side, side, style, fill);
-    let (icon, icon_cy) = if pl.pips > 0 { (PIP_ICON, y + CONTENT_INSET + PIP_ICON / 2.0) } else { (TILE_ICON, cy) };
+        (TILE_ICON, cy)
+    }
+}
+
+/// Draws a plate's icon, portrait or label, its label `label_k` times the font's size, and
+/// its corner icon; its glyph and pips are drawn apart.
+fn draw_plate_art(pl: &Plate, font: i32, label_k: f32, cx: f32, cy: f32, selected: bool) {
+    let (icon, icon_cy) = icon_box(pl, cy);
     if pl.icon.is_some() || pl.portrait.is_some() {
-        draw_plate_icon(pl, cx, icon_cy, icon, art_tint(fill));
-    } else if let Some(glyph) = pl.glyph {
-        draw_batched(|| draw_glyph(glyph, font, cx, icon_cy, icon));
-    } else if shows_label(pl) {
+        draw_plate_icon(pl, cx, icon_cy, icon, art_tint(plate_fill(pl, selected)));
+    } else if pl.glyph.is_none() && shows_label(pl) {
         set_color(INK_COLOR);
         draw_text_scaled(font, cx, icon_cy, label_k, &pl.label);
         set_color(TEXT_COLOR);
     }
     if let Some(corner) = pl.corner_icon {
-        let (ix, iy) = (x + WHEEL_TILE - CORNER_ICON - CONTENT_INSET, y + WHEEL_TILE - CORNER_ICON - CONTENT_INSET);
+        let inset = WHEEL_TILE / 2.0 - CORNER_ICON - CONTENT_INSET;
+        let (ix, iy) = (cx + inset, cy + inset);
         draw_rect(ix, iy, CORNER_ICON, CORNER_ICON, INK_COLOR);
         // SAFETY: the renderer's blit on a game texture.
         unsafe { (api().blit)(corner, ix, iy, CORNER_ICON, CORNER_ICON, 0.0, TEXT_COLOR, false) };
     }
+}
+
+/// Draws a plate's glyph when it has one and no icon.
+fn draw_plate_glyph(pl: &Plate, font: i32, cx: f32, cy: f32) {
+    if let (Some(glyph), None, None) = (pl.glyph, pl.icon, pl.portrait) {
+        let (icon, icon_cy) = icon_box(pl, cy);
+        draw_glyph(glyph, font, cx, icon_cy, icon);
+    }
+}
+
+/// Draws a plate's power pips when it has any.
+fn draw_plate_pips(pl: &Plate, cx: f32, cy: f32) {
     if pl.pips > 0 {
-        draw_pips(pl.pips, pl.pips_on, cx, y + WHEEL_TILE - CONTENT_INSET - PIP_H, pl.available);
+        draw_pips(pl.pips, pl.pips_on, cx, cy + WHEEL_TILE / 2.0 - CONTENT_INSET - PIP_H, pl.available);
     }
 }
 
@@ -969,7 +1000,9 @@ impl Layer {
             WheelPlace::Center => self.zoom.view.map_or((GAME_W as f32 / 2.0, GAME_H as f32 / 2.0), |v| v.center()),
             WheelPlace::Cursor => (self.cursor.x, self.cursor.y),
         };
-        wheel_origin(x, y)
+        // On whole pixels: the plates keep their offsets, and their cached shapes.
+        let (x, y) = wheel_origin(x, y);
+        (x.round(), y.round())
     }
 
     pub fn draw_wheel(&self) {
@@ -1010,10 +1043,21 @@ impl Layer {
             }
         }
         set_color(TEXT_COLOR);
-        for (i, pl) in self.wheel.plates.iter().enumerate() {
-            let (cx, cy) = plate_center(origin, i);
-            draw_plate(pl, font, self.wheel.label_k, cx, cy, Some(i) == self.wheel.sel);
+        // The plates do not overlap: frames by layer, then their art, glyphs and pips.
+        let shown = || {
+            let sel = self.wheel.sel;
+            self.wheel.plates.iter().enumerate().filter(|(_, pl)| shows_plate(pl)).map(move |(i, pl)| {
+                let (cx, cy) = plate_center(origin, i);
+                (pl, cx, cy, Some(i) == sel)
+            })
+        };
+        let frames: Vec<Frame> = shown().map(|(pl, cx, cy, selected)| plate_frame(pl, cx, cy, selected)).collect();
+        draw_frames(&frames);
+        for (pl, cx, cy, selected) in shown() {
+            draw_plate_art(pl, font, self.wheel.label_k, cx, cy, selected);
         }
+        draw_batched(|| shown().for_each(|(pl, cx, cy, _)| draw_plate_glyph(pl, font, cx, cy)));
+        draw_batched(|| shown().for_each(|(pl, cx, cy, _)| draw_plate_pips(pl, cx, cy)));
     }
 
     /// Points the wheel from the stronger stick; the selection stays when both are centred

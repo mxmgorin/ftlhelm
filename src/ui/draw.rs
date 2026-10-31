@@ -174,6 +174,8 @@ enum Shape {
     Mark(MarkLayer),
     /// Pixel rects from the origin.
     Rects(Vec<PixelRect>),
+    /// Rings placed from the origin.
+    Rings(Vec<PlacedRing>),
     Pie(Pie),
 }
 
@@ -189,6 +191,8 @@ struct Pie {
 
 /// A rect on whole pixels: x, y, w, h.
 type PixelRect = [i32; 4];
+/// A ring and its top left corner: x, y, ring.
+type PlacedRing = (i32, i32, Ring);
 /// Pixel rects and their colours, in drawing order.
 type Batch = Vec<(PixelRect, GlColor)>;
 
@@ -692,6 +696,11 @@ fn shape_primitive(shape: &Shape) -> Option<Ptr> {
             let rects: Vec<Rect> = rects.iter().map(|&[x, y, w, h]| Rect { x, y, w, h }).collect();
             build_primitive(&rects)
         }
+        Shape::Rings(rings) => {
+            let at =
+                |&(x, y, r): &PlacedRing| ring_rects(r).into_iter().map(move |q| Rect { x: q.x + x, y: q.y + y, ..q });
+            build_primitive(&rings.iter().flat_map(at).collect::<Vec<_>>())
+        }
         Shape::Pie(pie) => build_pie(*pie),
     };
     if let Some(p) = built {
@@ -728,19 +737,24 @@ fn draw_ring(x: i32, y: i32, r: Ring, color: GlColor) {
     }
 }
 
-/// Draws a frame of `style` with its band's outer edge at `x, y, w, h`, on whole pixels, filled
-/// with `fill`; the glow reaches FRAME_GLOW's length past it.
-pub fn draw_frame(x: f32, y: f32, w: f32, h: f32, style: &FrameStyle, fill: GlColor) {
+/// A frame as draw_frame takes it: its band's outer edge, its style and its fill.
+pub type Frame<'a> = (f32, f32, f32, f32, &'a FrameStyle, GlColor);
+
+/// The layers of `frame` on whole pixels: each ring's top left corner, the ring and its colour.
+fn frame_layers((x, y, w, h, style, fill): Frame) -> Vec<(i32, i32, Ring, GlColor)> {
     let [x, y, w, h] = [x, y, w, h].map(|v| v.round() as i32);
+    let mut layers = Vec::new();
     // The layer from `inset` pixels in, `width` wide or all the rest.
-    let layer = |inset: i32, width: Option<i32>, color: GlColor| {
+    let mut layer = |inset: i32, width: Option<i32>, color: GlColor| {
         let r = Ring {
             w: w - 2 * inset,
             h: h - 2 * inset,
             cut: cut_at(style.cut, inset),
             hole: width.map(|t| (t, cut_at(style.cut, inset + t))),
         };
-        draw_ring(x + inset, y + inset, r, color);
+        if r.w > 0 && r.h > 0 {
+            layers.push((x + inset, y + inset, r, color));
+        }
     };
     if let Some(glow) = style.glow {
         for (i, &alpha) in FRAME_GLOW.iter().enumerate() {
@@ -754,6 +768,33 @@ pub fn draw_frame(x: f32, y: f32, w: f32, h: f32, style: &FrameStyle, fill: GlCo
         layer(style.band, Some(style.line), INK_COLOR);
     }
     layer(style.band + style.line, None, fill);
+    layers
+}
+
+/// Draws a frame of `style` with its band's outer edge at `x, y, w, h`, on whole pixels, filled
+/// with `fill`; the glow reaches FRAME_GLOW's length past it.
+pub fn draw_frame(x: f32, y: f32, w: f32, h: f32, style: &FrameStyle, fill: GlColor) {
+    for (x, y, r, color) in frame_layers((x, y, w, h, style, fill)) {
+        draw_ring(x, y, r, color);
+    }
+    reset_fixed_color();
+}
+
+/// Draws frames as draw_frame does, all layers of one colour as one primitive.
+/// The frames must not overlap one another.
+pub fn draw_frames(frames: &[Frame]) {
+    let mut runs: Vec<(GlColor, Vec<PlacedRing>)> = Vec::new();
+    for (x, y, r, color) in frames.iter().flat_map(|&f| frame_layers(f)) {
+        match runs.iter_mut().find(|(c, _)| *c == color) {
+            Some((_, rings)) => rings.push((x, y, r)),
+            None => runs.push((color, vec![(x, y, r)])),
+        }
+    }
+    for (color, rings) in runs {
+        let (x0, y0, _) = rings[0];
+        let local = rings.iter().map(|&(x, y, r)| (x - x0, y - y0, r)).collect();
+        draw_shape(x0 as f32, y0 as f32, 1.0, Shape::Rings(local), color);
+    }
     reset_fixed_color();
 }
 
@@ -1041,6 +1082,31 @@ mod tests {
             drop(shapes);
             let (built, destroyed) = built_and_destroyed();
             assert_eq!((built, destroyed), (SHAPES_MAX + 2, SHAPES_EVICT));
+        });
+    }
+
+    #[test]
+    fn frames_drawn_together_take_a_primitive_per_colour_wherever_they_are() {
+        with_game(|_| {
+            empty_cache();
+            let pair = |x: f32, fill| {
+                [
+                    (x, 50.0, 60.0, 60.0, &BUTTON_FRAME, BUTTON_PALE_COLOR),
+                    (x + 80.0, 50.0, 60.0, 60.0, &BUTTON_FRAME, fill),
+                ]
+            };
+            let mut colors: Vec<GlColor> = Vec::new();
+            for (.., color) in frame_layers(pair(0.0, BUTTON_PALE_COLOR)[0]) {
+                if !colors.contains(&color) {
+                    colors.push(color);
+                }
+            }
+            draw_frames(&pair(10.0, BUTTON_PALE_COLOR));
+            assert_eq!(built_and_destroyed(), (colors.len(), 0), "one per colour for both");
+            draw_frames(&pair(300.4, BUTTON_PALE_COLOR));
+            assert_eq!(built_and_destroyed(), (0, 0), "moved");
+            draw_frames(&pair(10.0, BUTTON_SELECTED_COLOR));
+            assert_eq!(built_and_destroyed(), (2, 0), "the pale run without one fill, and that fill");
         });
     }
 
