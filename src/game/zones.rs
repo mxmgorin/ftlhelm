@@ -183,28 +183,26 @@ pub fn hud_boxes() -> Vec<HudBox> {
             HudBox { rect: open_rect(from, side, side), powered: None }
         })
         .collect();
-    boxes.extend(armament_boxes().into_iter().map(|(rect, _, powered)| HudBox { rect, powered: Some(powered) }));
+    boxes.extend(armament_boxes().map(|(rect, _, powered)| HudBox { rect, powered: Some(powered) }));
     boxes
 }
 
 /// The weapon boxes, then the drone boxes, that hold an item: each box on screen, its slot
 /// counted on from the weapon slots for a drone, and whether its item is powered.
-fn armament_boxes() -> Vec<(Rect, usize, bool)> {
-    let mut boxes = Vec::new();
+fn armament_boxes() -> impl Iterator<Item = (Rect, usize, bool)> {
     let bars =
         [(state::weapon_control(), WEAPON_POWERED, 0), (state::drone_control(), DRONE_POWERED, WEAPON_SLOTS as usize)];
-    for (bar, powered, first) in bars.into_iter().filter_map(|(bar, powered, first)| Some((bar?, powered, first))) {
-        let at = bar.point(ARMAMENT_LOCATION);
-        for (slot, b) in bar.at(ARMAMENT_BOXES).vec_objs() {
-            let Some(item) = b.obj(ARMAMENTBOX_ITEM) else {
-                continue;
-            };
-            let hit = b.point(ARMAMENTBOX_HIT);
-            let rect = open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H);
-            boxes.push((rect, first + slot, item.flag(powered)));
-        }
-    }
-    boxes
+    bars.into_iter().filter_map(|(bar, powered, first)| Some((bar?, powered, first))).flat_map(
+        |(bar, powered, first)| {
+            let at = bar.point(ARMAMENT_LOCATION);
+            bar.at(ARMAMENT_BOXES).vec_objs().filter_map(move |(slot, b)| {
+                let item = b.obj(ARMAMENTBOX_ITEM)?;
+                let hit = b.point(ARMAMENTBOX_HIT);
+                let rect = open_rect(Point { x: at.x + hit.x, y: at.y + hit.y }, ARMAMENTBOX_HIT_W, ARMAMENTBOX_HIT_H);
+                Some((rect, first + slot, item.flag(powered)))
+            })
+        },
+    )
 }
 
 /// Bounding box centre of a ship's rooms on screen.

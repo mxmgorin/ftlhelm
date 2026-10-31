@@ -861,6 +861,9 @@ pub struct Images {
 impl Images {
     /// The texture of a game image, or None when the game has none.
     pub fn get(&mut self, path: &str) -> Option<Ptr> {
+        if let Some(&texture) = self.cache.get(path) {
+            return (texture != 0).then_some(texture as Ptr);
+        }
         let texture = *self.cache.entry(path.to_string()).or_insert_with(|| {
             let s = GameString::new(path);
             let a = api();

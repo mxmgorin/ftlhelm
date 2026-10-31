@@ -206,14 +206,31 @@ fn shrinks(screen: (f32, f32), span: Span) -> bool {
     fit_scale(screen) * span_level(screen, span) < 1.0
 }
 
+/// Levels as built for one screen and span.
+struct LevelCache {
+    screen: (f32, f32),
+    span: Span,
+    levels: Vec<f32>,
+}
+
+/// Runs `f` on the levels for `screen` over `span`, built anew only when either changes.
+fn with_levels<R>(screen: (f32, f32), span: Span, f: impl FnOnce(&[f32]) -> R) -> R {
+    static LAST: Mutex<Option<LevelCache>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = match last.take() {
+        Some(c) if c.screen == screen && c.span == span => c,
+        _ => LevelCache { screen, span, levels: levels(screen, span) },
+    };
+    let out = f(&cache.levels);
+    *last = Some(cache);
+    out
+}
+
 /// The level ZOOM_AUTO takes on a screen of `screen` pixels over `span`: the first past the
 /// lowest where the screen shows the frame shrunk there, else the lowest.
 fn auto_level(screen: (f32, f32), span: Span) -> f32 {
-    let all = levels(screen, span);
-    if !shrinks(screen, span) {
-        return all[0];
-    }
-    step(&all, all[0], true)
+    let shrunk = shrinks(screen, span);
+    with_levels(screen, span, |all| if shrunk { step(all, all[0], true) } else { all[0] })
 }
 
 /// What the view shows for a window covering `rect` on a screen of `screen` pixels: on a
@@ -628,6 +645,7 @@ mod tests {
             &[1.333, 1.778, 1.5]
         ));
         assert_eq!(auto_level(WIDE, Span::FRAME), ZOOM_MIN);
+        assert!(close(&[auto_level(SMALL, Span::FRAME)], &[1.333]), "the first screen again");
         assert_eq!(resolve(ZOOM_AUTO, WIDE, Span::FRAME), ZOOM_MIN);
         assert_eq!(resolve(2.0, SMALL, Span::FRAME), 2.0);
     }

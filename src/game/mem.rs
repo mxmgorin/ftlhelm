@@ -3,7 +3,7 @@
 //! ever built from a game address or a pointer field of another `Obj`, so the reads below
 //! trust the game's layout.
 
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void, CStr};
 use std::ptr::NonNull;
 
 use super::api::{Point, Ptr, Rect};
@@ -115,20 +115,17 @@ impl Obj {
     /// The non-null elements of the std::vector of pointers at this address, with their
     /// indices.
     pub fn vec_objs(self) -> impl Iterator<Item = (usize, Obj)> {
-        (0..self.ptr_count()).filter_map(move |i| Some((i, self.vec_obj(i)?)))
-    }
-
-    /// Element i of the std::vector of `T` at this address, None past the end.
-    pub fn vec_get<T: Copy>(self, i: usize) -> Option<T> {
-        if i >= self.vec_len(std::mem::size_of::<T>()) {
-            return None;
-        }
-        Some(self.obj(VECTOR_BEGIN)?.get(i * std::mem::size_of::<T>()))
+        let begin = self.obj(VECTOR_BEGIN);
+        let n = if begin.is_some() { self.ptr_count() } else { 0 };
+        (0..n).filter_map(move |i| Some((i, begin?.obj(i * PTR_SIZE)?)))
     }
 
     /// The elements of the std::vector of `T` at this address.
     pub fn vec_items<T: Copy>(self) -> impl Iterator<Item = T> {
-        (0..self.vec_len(std::mem::size_of::<T>())).filter_map(move |i| self.vec_get(i))
+        let size = std::mem::size_of::<T>();
+        let begin = self.obj(VECTOR_BEGIN);
+        let n = if begin.is_some() { self.vec_len(size) } else { 0 };
+        (0..n).filter_map(move |i| Some(begin?.get(i * size)))
     }
 
     /// Whether `p` lies within `size` bytes from this object.
@@ -141,6 +138,16 @@ impl Obj {
     pub fn string(self, off: usize) -> String {
         // SAFETY: a std::string's data is NUL-terminated.
         unsafe { chars_text(self.get(off)) }
+    }
+
+    /// Whether the game's std::string at a field offset holds `text`.
+    pub fn string_is(self, off: usize, text: &str) -> bool {
+        let chars: Ptr = self.get(off);
+        if chars.is_null() {
+            return text.is_empty();
+        }
+        // SAFETY: a std::string's data is NUL-terminated.
+        unsafe { CStr::from_ptr(chars as *const c_char) }.to_bytes() == text.as_bytes()
     }
 }
 
@@ -177,13 +184,23 @@ mod tests {
     }
 
     #[test]
+    fn a_string_field_is_compared_in_place() {
+        let mut arena = Arena::default();
+        let owner = arena.alloc(2 * PTR);
+        let en = arena.c_string("en");
+        owner.set(0, en.addr());
+        assert!(owner.string_is(0, "en"));
+        assert!(!owner.string_is(0, "e") && !owner.string_is(0, "eng"));
+        assert!(owner.string_is(PTR, "") && !owner.string_is(PTR, "en"), "a null string is empty");
+    }
+
+    #[test]
     fn a_vector_of_values_reads_each_element() {
         let mut arena = Arena::default();
         let owner = arena.alloc(VECTOR_END + PTR);
         let rects = [Rect { x: 1, y: 2, w: 3, h: 4 }, Rect { x: 5, y: 6, w: 7, h: 8 }];
         arena.vector(owner, VECTOR_BEGIN, &rects);
         assert_eq!(owner.vec_len(size_of::<Rect>()), 2);
-        assert_eq!([0, 1, 2].map(|i| owner.vec_get::<Rect>(i)), [Some(rects[0]), Some(rects[1]), None]);
         assert_eq!(owner.vec_items::<Rect>().collect::<Vec<_>>(), rects);
     }
 

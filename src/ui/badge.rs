@@ -194,10 +194,10 @@ fn place(banner: Option<(f32, f32, f32)>, line_w: Option<f32>, paused: bool, vie
 impl Layer {
     /// Looks the banners up anew when the game's language changes.
     pub fn update_banner_art(&mut self) {
-        let language = state::language();
-        if self.banner_art.language.as_deref() == Some(language.as_str()) {
+        if self.banner_art.language.as_deref().is_some_and(state::language_is) {
             return;
         }
+        let language = state::language();
         let mut images = Images::default();
         self.banner_art.art = Banner::ALL.map(|b| images.get(b.image()).map(|t| (t, banner_rows(&language, b))));
         self.banner_art.language = Some(language);

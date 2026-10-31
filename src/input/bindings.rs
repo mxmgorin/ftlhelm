@@ -64,24 +64,22 @@ impl Bindings {
     }
 
     /// The states from the top of the stack down to the base, as far as lookups reach.
-    fn chain<'a>(&self, layout: &'a Layout) -> Vec<&'a State> {
-        let mut chain = Vec::new();
-        for level in (0..=self.stack.len()).rev() {
-            let index = if level == 0 { 0 } else { self.stack[level - 1].0 };
-            let Some(s) = layout.states.get(index) else {
-                break;
-            };
-            chain.push(s);
-            if level > 0 && !s.parent {
-                break;
+    fn chain<'a>(&'a self, layout: &'a Layout) -> impl Iterator<Item = &'a State> + 'a {
+        let mut reaching = true;
+        (0..=self.stack.len()).rev().map_while(move |level| {
+            if !reaching {
+                return None;
             }
-        }
-        chain
+            let index = if level == 0 { 0 } else { self.stack[level - 1].0 };
+            let s = layout.states.get(index)?;
+            reaching = level == 0 || s.parent;
+            Some(s)
+        })
     }
 
     /// The binding an input resolves to in the active state chain.
     pub fn lookup(&self, layout: &Layout, input: Input) -> Option<Binding> {
-        self.chain(layout).into_iter().find_map(|s| s.bind[input as usize])
+        self.chain(layout).find_map(|s| s.bind[input as usize])
     }
 
     /// What a pointer source does in the active state chain: keys once any state binds its

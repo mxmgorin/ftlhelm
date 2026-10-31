@@ -303,6 +303,12 @@ pub fn language() -> String {
     unsafe { Obj::from_addr(api().text_library) }.map_or_else(String::new, |l| l.string(TEXTLIB_LANGUAGE))
 }
 
+/// Whether the game's current language is `code`.
+pub fn language_is(code: &str) -> bool {
+    // SAFETY: the text library is a game global.
+    unsafe { Obj::from_addr(api().text_library) }.map_or(code.is_empty(), |l| l.string_is(TEXTLIB_LANGUAGE, code))
+}
+
 /// A TextString's display text: literal ones as they are, keys through the game's text
 /// library in its current language.
 pub fn display_text(text: Obj) -> String {
