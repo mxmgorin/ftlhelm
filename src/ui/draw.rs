@@ -7,8 +7,8 @@
 //! as a game primitive at the origin and drawn moved and tinted.
 //!
 //! Marks (corner brackets, the down marker) are layers of rects the same way, one primitive
-//! per layer and corner: the band, a dark edge around it, then a glow ring per pixel out, none
-//! overlapping another.
+//! per layer with all four corners of a bracket, built at its size on screen: the band, a dark
+//! edge around it, then a glow ring per pixel out, none overlapping another.
 //!
 //! Pixel-art shapes built of many small rects (glyphs, pip rows) are drawn in a batch: the
 //! rects are collected, snapped to the pixels the renderer would fill, and each run of one
@@ -129,14 +129,35 @@ enum Mark {
     Down(Marker),
 }
 
-/// One layer of a mark, mirrored across the axes at the origin as asked: the band, the edge,
-/// then each glow ring.
+/// One layer of a mark in whole pixels from its point, `k` times its size as f32 bits: the
+/// band, the edge, then each glow ring.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct MarkLayer {
     mark: Mark,
-    flip_x: bool,
-    flip_y: bool,
+    copies: Copies,
+    k: u32,
     layer: usize,
+}
+
+/// Where a mark's copies go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Copies {
+    /// One at the point, mirrored across the axes as asked.
+    One { flip_x: bool, flip_y: bool },
+    /// A bracket's four corners on a `w` by `h` box from the point.
+    Corners { w: i32, h: i32 },
+}
+
+impl Copies {
+    /// Each copy's point and its mirroring.
+    fn placed(self) -> Vec<(i32, i32, bool, bool)> {
+        match self {
+            Copies::One { flip_x, flip_y } => vec![(0, 0, flip_x, flip_y)],
+            Copies::Corners { w, h } => {
+                vec![(0, 0, false, false), (w, 0, true, false), (0, h, false, true), (w, h, true, true)]
+            }
+        }
+    }
 }
 
 const MARK_BAND: usize = 0;
@@ -145,8 +166,6 @@ const MARK_GLOW: usize = 2;
 const MARK_LAYERS: usize = MARK_GLOW + FRAME_GLOW.len();
 /// How far a mark's layers reach past its band: the edge's line, then the glow.
 const MARK_REACH: i32 = OVERLAY_LINE as i32 + FRAME_GLOW.len() as i32;
-const NO_FLIP: [(bool, bool); 1] = [(false, false)];
-const ALL_FLIPS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
 
 /// What a cached primitive draws.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -345,33 +364,43 @@ fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color:
     draw_shape(cx.round(), cy.round(), 1.0, Shape::Pie(pie), color);
 }
 
-/// Corner brackets in the game's style on the corners of `x, y, w, h`, `k` times their size:
-/// `color` arms with cut corners over a dark edge, in a glow of their colour.
-pub fn draw_brackets(x: f32, y: f32, w: f32, h: f32, bracket: Bracket, k: f32, color: GlColor) {
+/// Corner brackets in the game's style on the corners of box `x, y, w, h`, `k` times their
+/// size: `color` arms with cut corners over a dark edge, in a glow of their colour.
+/// Brackets `moving` go corner by corner: a box changing size builds nothing new.
+pub fn draw_brackets((x, y, w, h): (f32, f32, f32, f32), bracket: Bracket, k: f32, moving: bool, color: GlColor) {
     let (left, top, right, bottom) = (x.round(), y.round(), (x + w).round(), (y + h).round());
-    let corners = [
-        (left, top, false, false),
-        (right, top, true, false),
-        (left, bottom, false, true),
-        (right, bottom, true, true),
-    ];
-    draw_mark(&corners, Mark::Corner(bracket), k, color);
+    let mark = Mark::Corner(bracket);
+    if moving {
+        let corner = |x, y, flip_x, flip_y| (x, y, Copies::One { flip_x, flip_y });
+        let corners = [
+            corner(left, top, false, false),
+            corner(right, top, true, false),
+            corner(left, bottom, false, true),
+            corner(right, bottom, true, true),
+        ];
+        draw_mark(&corners, mark, k, color);
+    } else {
+        let copies = Copies::Corners { w: (right - left) as i32, h: (bottom - top) as i32 };
+        draw_mark(&[(left, top, copies)], mark, k, color);
+    }
 }
 
 /// A triangle pointing down in the game's style, its tip at (`cx`, `tip`), `k` times its size:
 /// `color` over a dark edge, in a glow of its colour.
 pub fn draw_marker(cx: f32, tip: f32, marker: Marker, k: f32, color: GlColor) {
-    let at = ((cx - marker.w as f32 * k / 2.0).round(), (tip - marker.h as f32 * k).round(), false, false);
-    draw_mark(&[at], Mark::Down(marker), k, color);
+    let (x, y) = ((cx - marker.w as f32 * k / 2.0).round(), (tip - marker.h as f32 * k).round());
+    let copies = Copies::One { flip_x: false, flip_y: false };
+    draw_mark(&[(x, y, copies)], Mark::Down(marker), k, color);
 }
 
-/// Draws `mark` at each (x, y, flip_x, flip_y), `k` times its size, its band in `color`.
-fn draw_mark(at: &[(f32, f32, bool, bool)], mark: Mark, k: f32, color: GlColor) {
+/// Draws `mark` at each point on whole pixels with its copies, `k` times its size, its band in
+/// `color`.
+fn draw_mark(at: &[(f32, f32, Copies)], mark: Mark, k: f32, color: GlColor) {
     let colors = [MARK_BAND, MARK_EDGE].into_iter().zip([color, PLATE_BEVEL_COLOR]);
     let glow = FRAME_GLOW.iter().enumerate().map(|(i, &alpha)| (MARK_GLOW + i, faded(color, alpha)));
     for (layer, shade) in colors.chain(glow) {
-        for &(x, y, flip_x, flip_y) in at {
-            draw_shape(x, y, k, Shape::Mark(MarkLayer { mark, flip_x, flip_y, layer }), shade);
+        for &(x, y, copies) in at {
+            draw_shape(x, y, 1.0, Shape::Mark(MarkLayer { mark, copies, k: k.to_bits(), layer }), shade);
         }
     }
     reset_fixed_color();
@@ -538,14 +567,6 @@ impl Mark {
             }
         }
     }
-
-    /// The mirrored copies it is drawn in.
-    fn flips(self) -> &'static [(bool, bool)] {
-        match self {
-            Mark::Corner(_) => &ALL_FLIPS,
-            Mark::Down(_) => &NO_FLIP,
-        }
-    }
 }
 
 /// The rects of each layer of a mark, unflipped, row by row.
@@ -591,6 +612,19 @@ fn flipped(rects: &[Rect], flip_x: bool, flip_y: bool) -> Vec<Rect> {
     rects.iter().map(|r| Rect { x: flip(r.x, r.w, flip_x), y: flip(r.y, r.h, flip_y), ..*r }).collect()
 }
 
+/// Layer `rects` of a mark placed as `m` asks: each copy mirrored, scaled and moved to its
+/// point, on the pixels the renderer fills for the scaled rects.
+fn placed(m: &MarkLayer, rects: &[Rect]) -> Vec<Rect> {
+    let k = f32::from_bits(m.k);
+    let scaled = |r: &Rect| pixel_rect(r.x as f32 * k, r.y as f32 * k, r.w as f32 * k, r.h as f32 * k);
+    let mut out = Vec::new();
+    for (dx, dy, flip_x, flip_y) in m.copies.placed() {
+        let copy = flipped(rects, flip_x, flip_y);
+        out.extend(copy.iter().filter_map(scaled).map(|[x, y, w, h]| Rect { x: x + dx, y: y + dy, w, h }));
+    }
+    out
+}
+
 /// A game primitive of `rects`, white; None when the game builds none.
 fn build_primitive(rects: &[Rect]) -> Option<usize> {
     // SAFETY: the renderer reads the rects, alive for the call, into a primitive of its own.
@@ -626,7 +660,7 @@ impl Shapes {
 }
 
 /// The game primitive of a shape, built white on first use; None when the game builds none.
-/// A mark's layers and flips are all built with it.
+/// A mark's layers are all built with it.
 fn shape_primitive(shape: &Shape) -> Option<Ptr> {
     let mut shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner());
     shapes.uses += 1;
@@ -643,14 +677,13 @@ fn shape_primitive(shape: &Shape) -> Option<Ptr> {
         Shape::Ring(r) => build_primitive(&ring_rects(*r)),
         Shape::Mark(m) => {
             for (layer, rects) in mark_layers(m.mark).iter().enumerate() {
-                for &(flip_x, flip_y) in m.mark.flips() {
-                    let key = Shape::Mark(MarkLayer { layer, flip_x, flip_y, ..*m });
-                    if cached.contains_key(&key) {
-                        continue;
-                    }
-                    if let Some(p) = build_primitive(&flipped(rects, flip_x, flip_y)) {
-                        cached.insert(key, (p, now));
-                    }
+                let layer = MarkLayer { layer, ..*m };
+                let key = Shape::Mark(layer);
+                if cached.contains_key(&key) {
+                    continue;
+                }
+                if let Some(p) = build_primitive(&placed(&layer, rects)) {
+                    cached.insert(key, (p, now));
                 }
             }
             None
@@ -680,7 +713,9 @@ fn draw_shape(x: f32, y: f32, k: f32, shape: Shape, color: GlColor) {
     unsafe {
         (a.push_matrix)();
         (a.translate)(x, y, 0.0);
-        (a.scale)(k, k, 1.0);
+        if k != 1.0 {
+            (a.scale)(k, k, 1.0);
+        }
         (a.render_primitive_color)(p, color);
         (a.pop_matrix)();
     }
@@ -926,6 +961,38 @@ mod tests {
         assert!(band.contains(&(middle - 1, tip)) && band.contains(&(middle, tip)), "the tip in the middle");
         for layer in &layers {
             assert_eq!(layer.iter().map(|&(x, y)| (marker.w - 1 - x, y)).collect::<BTreeSet<_>>(), *layer);
+        }
+    }
+
+    #[test]
+    fn a_placed_bracket_covers_the_pixels_of_its_corners_scaled_by_the_renderer() {
+        let b = Bracket { arm: 10, thick: 2, cut: 4 };
+        let copies = Copies::Corners { w: 57, h: 31 };
+        // A pixel the renderer fills: its centre inside the rect, the far edges excluded.
+        let fills = |lo: f32, len: f32, px: i32| {
+            let c = px as f32 + 0.5;
+            c >= lo.min(lo + len) && c < lo.max(lo + len)
+        };
+        for k in [1.0, 1.33, 1.5, 2.0] {
+            for (layer, rects) in mark_layers(Mark::Corner(b)).iter().enumerate() {
+                let m = MarkLayer { mark: Mark::Corner(b), copies, k: f32::to_bits(k), layer };
+                let got: BTreeSet<_> = rect_pixels(&placed(&m, rects)).collect();
+                let mut want = BTreeSet::new();
+                for (dx, dy, flip_x, flip_y) in copies.placed() {
+                    for r in flipped(rects, flip_x, flip_y) {
+                        let (x0, y0, w, h) = (r.x as f32 * k, r.y as f32 * k, r.w as f32 * k, r.h as f32 * k);
+                        let reach = (b.arm as f32 * k) as i32 + MARK_REACH * 2 + 2;
+                        for px in -reach..=reach {
+                            for py in -reach..=reach {
+                                if fills(x0, w, px) && fills(y0, h, py) {
+                                    want.insert((px + dx, py + dy));
+                                }
+                            }
+                        }
+                    }
+                }
+                assert_eq!(got, want, "k {k} layer {layer}");
+            }
         }
     }
 

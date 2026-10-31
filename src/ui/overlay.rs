@@ -249,7 +249,8 @@ impl Layer {
         let out = (FOCUS_GAP + FOCUS_THICK as f32 + FOCUS_SLIDE * (1.0 - settle)) * k;
         let pad = if zone.kind == ZoneKind::Choice { FOCUS_TEXT_PAD * k } else { 0.0 };
         let (x, y) = (r.x as f32 - out - pad, r.y as f32 - out);
-        draw_brackets(x, y, w + 2.0 * (out + pad), h + 2.0 * out, bracket, k, BUTTON_SELECTED_COLOR);
+        let around = (x, y, w + 2.0 * (out + pad), h + 2.0 * out);
+        draw_brackets(around, bracket, k, settle < 1.0, BUTTON_SELECTED_COLOR);
     }
 
     /// Marks each selected crew member on the ship view with a triangle over it.
