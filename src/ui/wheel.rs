@@ -362,6 +362,8 @@ pub struct Plate {
     pub action: Option<Action>,
     pub label: String,
     pub badge: String,
+    /// The label's and the badge's widths in the plate font, as measured at the last refill.
+    widths: (f32, f32),
     icon: Option<Ptr>,
     /// The icon's region in texture pixels, when only part of it is the icon.
     region: Option<[f32; 4]>,
@@ -402,6 +404,11 @@ pub struct WheelUi {
     /// The act button is held on a weapon or drone plate, which acts on its release; true
     /// once D-pad left or right was pressed meanwhile, and then it does not act.
     pub grab: Option<bool>,
+    /// The open wheel's title and its width, and the size its plate labels fit at, as of the
+    /// last refill.
+    title: String,
+    title_w: f32,
+    label_k: f32,
 }
 
 impl WheelUi {
@@ -481,15 +488,15 @@ fn draw_pips(n: i32, lit: i32, cx: f32, y: f32, available: bool) {
     let pw = PIP_MAX_W.min((WHEEL_TILE - 2.0 * CONTENT_INSET - (n_f - 1.0) * PIP_GAP) / n_f).trunc();
     let left = (cx - (n_f * pw + (n_f - 1.0) * PIP_GAP) / 2.0).round();
     let y = y.round();
-    let xs: Vec<f32> = (0..n).scan(left, |x, _| Some(std::mem::replace(x, *x + pw + PIP_GAP))).collect();
+    let x_of = |i: i32| left + i as f32 * (pw + PIP_GAP);
     let fill = if available { POWER_COLOR } else { TEXT_DISABLED_COLOR };
     draw_batched(|| {
         // Every fill before every outline: one run per colour.
-        for &x in xs.iter().take(lit.max(0) as usize) {
-            draw_rect(x, y, pw, PIP_H, fill);
+        for i in 0..lit.clamp(0, n) {
+            draw_rect(x_of(i), y, pw, PIP_H, fill);
         }
-        for &x in &xs {
-            draw_outline(x, y, pw, PIP_H, OVERLAY_LINE, INK_COLOR);
+        for i in 0..n {
+            draw_outline(x_of(i), y, pw, PIP_H, OVERLAY_LINE, INK_COLOR);
         }
     });
 }
@@ -655,9 +662,9 @@ fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
 }
 
 /// The size, up to the font's own, at which every label shown in a plate fits its width.
-fn label_scale(plates: &[Plate], font: i32) -> f32 {
+fn label_scale(plates: &[Plate]) -> f32 {
     let room = WHEEL_TILE - 2.0 * CONTENT_INSET;
-    plates.iter().filter(|p| shows_label(p)).map(|p| room / text_width(font, &p.label)).fold(1.0, f32::min)
+    plates.iter().filter(|p| shows_label(p)).map(|p| room / p.widths.0).fold(1.0, f32::min)
 }
 
 /// Draws a plate, its label `label_k` times the font's size; an empty slot shows nothing.
@@ -966,15 +973,14 @@ impl Layer {
     }
 
     pub fn draw_wheel(&self) {
-        let Some(def) = self.wheel.open.and_then(|w| self.layout.wheels.get(w)) else {
+        if self.wheel.open.and_then(|w| self.layout.wheels.get(w)).is_none() {
             return;
-        };
+        }
         let origin = self.open_wheel_origin();
         let (ox, oy) = origin;
         let font = self.plate_font;
         draw_backdrop(self.cfg.wheel_backdrop, origin);
         // The middle: the wheel's title alone, or above the pick's name and detail.
-        let title = def.name.to_ascii_uppercase();
         let sel = self.wheel.sel.map(|s| &self.wheel.plates[s]);
         let lines = match sel {
             None => 1,
@@ -984,16 +990,16 @@ impl Layer {
         let body_h = if lines > 1 { CARD_GAP + (lines - 2) as f32 * WHEEL_LINE + WHEEL_FONT_H } else { 0.0 };
         let header_h = WHEEL_FONT_H + 2.0 * HEADER_PAD;
         let card_h = 2.0 * CARD_PAD + header_h + body_h;
-        let mut text_w = text_width(font, &title);
+        let mut text_w = self.wheel.title_w;
         if let Some(p) = sel {
-            text_w = text_w.max(text_width(font, &p.label)).max(text_width(font, &p.badge));
+            text_w = text_w.max(p.widths.0).max(p.widths.1);
         }
         let card_w = text_w + 2.0 * (WHEEL_TEXT_PAD + CARD_PAD);
         let (x, y) = ((ox - card_w / 2.0).round(), (oy - card_h / 2.0).round());
         draw_frame(x, y, card_w, card_h, &BOX_FRAME, BUTTON_PALE_COLOR);
         draw_frame(x + CARD_PAD, y + CARD_PAD, card_w - 2.0 * CARD_PAD, header_h, &HEADER_FRAME, HEADER_COLOR);
         set_color(TEXT_COLOR);
-        draw_text_center(font, ox, y + CARD_PAD + HEADER_PAD, &title);
+        draw_text_center(font, ox, y + CARD_PAD + HEADER_PAD, &self.wheel.title);
         if let Some(p) = sel {
             let top = y + CARD_PAD + header_h + CARD_GAP;
             set_color(INK_COLOR);
@@ -1004,10 +1010,9 @@ impl Layer {
             }
         }
         set_color(TEXT_COLOR);
-        let label_k = label_scale(&self.wheel.plates, font);
         for (i, pl) in self.wheel.plates.iter().enumerate() {
             let (cx, cy) = plate_center(origin, i);
-            draw_plate(pl, font, label_k, cx, cy, Some(i) == self.wheel.sel);
+            draw_plate(pl, font, self.wheel.label_k, cx, cy, Some(i) == self.wheel.sel);
         }
     }
 
@@ -1118,6 +1123,14 @@ impl Layer {
             WheelKind::Action => self.show_repeat(),
             _ => {}
         }
+        let font = self.plate_font;
+        let width = |text: &str| if text.is_empty() { 0.0 } else { text_width(font, text) };
+        self.wheel.title = self.layout.wheels[w].name.to_ascii_uppercase();
+        self.wheel.title_w = width(&self.wheel.title);
+        for pl in &mut self.wheel.plates {
+            pl.widths = (width(&pl.label), width(&pl.badge));
+        }
+        self.wheel.label_k = label_scale(&self.wheel.plates);
     }
 
     /// Makes the repeat plates pickable once an ability was used from a wheel, its plate's
