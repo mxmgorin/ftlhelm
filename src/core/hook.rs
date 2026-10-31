@@ -44,10 +44,11 @@ const NOTE_ALIGN: usize = 4;
 const NT_GNU_BUILD_ID: u32 = 3;
 const NOTE_OWNER_GNU: &[u8] = b"GNU\0";
 
-const TRAMPOLINE_HINT: usize = 0x7000_0000;
-const TRAMPOLINE_PAGE: usize = 4096;
-/// Spacing of the addresses tried for the trampoline page.
-const TRAMPOLINE_STEP: usize = 0x100_0000;
+/// Pages mapped within rel32 reach of the game's code: where the first is tried, its size,
+/// and the spacing of the addresses tried around the code.
+const NEAR_PAGE_HINT: usize = 0x7000_0000;
+const NEAR_PAGE: usize = 4096;
+const NEAR_PAGE_STEP: usize = 0x100_0000;
 const JMP_REL32: u8 = 0xe9;
 const JMP_LEN: usize = 1 + std::mem::size_of::<i32>();
 /// "mov $imm64,%rax" and "jmp *%rax".
@@ -85,6 +86,9 @@ const XI_ALL_MASTER_DEVICES: u32 = 1;
 
 /// The trampoline page and how much of it is taken, as addresses.
 static TRAMPOLINES: Mutex<(usize, usize)> = Mutex::new((0, 0));
+/// The page of data the game's code reads and the layer writes, the same way: apart from the
+/// trampolines, as box64 drops the translated code of a page that is written to.
+static DATA: Mutex<(usize, usize)> = Mutex::new((0, 0));
 
 fn read_u16(f: &File, at: u64) -> Option<u16> {
     let mut b = [0u8; 2];
@@ -361,65 +365,69 @@ unsafe fn put_far_jmp(at: usize, to: usize) {
     put_code(at, &[&MOVABS_RAX, &(to as u64).to_le_bytes(), &JMP_RAX]);
 }
 
-fn map_trampolines(at: usize, flags: libc::c_int) -> Option<usize> {
+fn map_near_page(at: usize, flags: libc::c_int, prot: libc::c_int) -> Option<usize> {
     // SAFETY: an anonymous private mapping touches nothing else.
     let page = unsafe {
-        libc::mmap(
-            at as *mut libc::c_void,
-            TRAMPOLINE_PAGE,
-            libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
-            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | flags,
-            -1,
-            0,
-        )
+        libc::mmap(at as *mut libc::c_void, NEAR_PAGE, prot, libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | flags, -1, 0)
     };
     (page != libc::MAP_FAILED).then_some(page as usize)
 }
 
 fn unmap(page: usize) {
-    // SAFETY: page is a mapping made by map_trampolines.
-    unsafe { libc::munmap(page as *mut libc::c_void, TRAMPOLINE_PAGE) };
+    // SAFETY: page is a mapping made by map_near_page.
+    unsafe { libc::munmap(page as *mut libc::c_void, NEAR_PAGE) };
 }
 
-/// Maps the trampoline page within a rel32 jump of `near`: at the hint, else at the first
+/// Maps a page with `prot` within a rel32 reach of `near`: at the hint, else at the first
 /// free step around it.
-fn place_trampolines(near: usize) -> Option<usize> {
-    if let Some(page) = map_trampolines(TRAMPOLINE_HINT, 0) {
+fn place_near_page(near: usize, prot: libc::c_int) -> Option<usize> {
+    if let Some(page) = map_near_page(NEAR_PAGE_HINT, 0, prot) {
         if fits_rel32(near, page) {
             return Some(page);
         }
         unmap(page);
     }
-    let base = near & !(TRAMPOLINE_STEP - 1);
-    let mut d = TRAMPOLINE_STEP;
+    let base = near & !(NEAR_PAGE_STEP - 1);
+    let mut d = NEAR_PAGE_STEP;
     while d < i32::MAX as usize / 2 {
         for candidate in [base.checked_add(d), base.checked_sub(d)].into_iter().flatten() {
             // Kernels without MAP_FIXED_NOREPLACE take the address as a hint.
-            if let Some(page) = map_trampolines(candidate, libc::MAP_FIXED_NOREPLACE) {
+            if let Some(page) = map_near_page(candidate, libc::MAP_FIXED_NOREPLACE, prot) {
                 if fits_rel32(near, page) {
                     return Some(page);
                 }
                 unmap(page);
             }
         }
-        d += TRAMPOLINE_STEP;
+        d += NEAR_PAGE_STEP;
     }
     None
 }
 
-/// Takes `len` bytes of the trampoline page, aligned to `align`, within rel32 reach of
-/// `near`; places the page on first use.
-fn take_trampoline(near: usize, len: usize, align: usize) -> Option<usize> {
-    let mut t = TRAMPOLINES.lock().unwrap_or_else(|e| e.into_inner());
+/// Takes `len` bytes of the near page in `slot`, aligned to `align`, within rel32 reach of
+/// `near`; maps the page with `prot` on first use.
+fn take_near(slot: &Mutex<(usize, usize)>, prot: libc::c_int, near: usize, len: usize, align: usize) -> Option<usize> {
+    let mut t = slot.lock().unwrap_or_else(|e| e.into_inner());
     if t.0 == 0 {
-        t.0 = place_trampolines(near)?;
+        t.0 = place_near_page(near, prot)?;
     }
     let at = (t.1 + align - 1) & !(align - 1);
-    if at + len > TRAMPOLINE_PAGE || !fits_rel32(near, t.0 + at) {
+    if at + len > NEAR_PAGE || !fits_rel32(near, t.0 + at) {
         return None;
     }
     t.1 = at + len;
     Some(t.0 + at)
+}
+
+/// Takes `len` bytes of the trampoline page, aligned to `align`, within rel32 reach of
+/// `near`.
+fn take_trampoline(near: usize, len: usize, align: usize) -> Option<usize> {
+    take_near(&TRAMPOLINES, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC, near, len, align)
+}
+
+/// Takes `len` bytes of the data page, aligned to `align`, within rel32 reach of `near`.
+fn take_data(near: usize, len: usize, align: usize) -> Option<usize> {
+    take_near(&DATA, libc::PROT_READ | libc::PROT_WRITE, near, len, align)
 }
 
 /// Diverts the function at `func` to `repl` after checking its first bytes; returns an
@@ -562,8 +570,8 @@ pub fn query_all_touch_devices(graphics_init: usize, query: usize) -> bool {
     true
 }
 
-/// Points CFPS::OnLoop's step cap load at a float in the trampoline page, so the fast
-/// speed can raise the cap; returns that float's address, or None with the reason logged.
+/// Points CFPS::OnLoop's step cap load at a float of the data page, so the fast speed can
+/// raise the cap; returns that float's address, or None with the reason logged.
 pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     let insn = STEP_CAP_LOAD.len() + std::mem::size_of::<i32>();
     // SAFETY: the scan stays within the start of CFPS::OnLoop's code.
@@ -585,11 +593,11 @@ pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     // SAFETY: disp_at holds the rel32 of the load, inside the code read above.
     let disp = unsafe { (disp_at as *const i32).read_unaligned() };
     let cap = (next as i64 + disp as i64) as usize;
-    let Some(redirected) = take_trampoline(next, std::mem::size_of::<f32>(), std::mem::align_of::<f32>()) else {
+    let Some(redirected) = take_data(next, std::mem::size_of::<f32>(), std::mem::align_of::<f32>()) else {
         log!("step cap: no room near the code");
         return None;
     };
-    // SAFETY: cap is the game's constant; redirected lies in the writable trampoline page.
+    // SAFETY: cap is the game's constant; redirected lies in the writable data page.
     unsafe { (redirected as *mut f32).write((cap as *const f32).read()) };
     if !protect(disp_at, std::mem::size_of::<i32>(), libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
         log!("step cap: code not writable");
@@ -863,6 +871,22 @@ mod tests {
         assert!(!query_all_touch_devices(func, query), "patched once");
         // SAFETY: unmaps the mapping made above.
         unsafe { libc::munmap(page, pages * len) };
+    }
+
+    #[test]
+    fn data_near_the_code_is_writable_aligned_and_in_reach() {
+        // SAFETY: sysconf has no preconditions.
+        let len = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        let code = map_near_page(0, 0, libc::PROT_READ).expect("a page for the code");
+        let a = take_data(code, 1, 1).expect("room near the code");
+        let b = take_data(code, std::mem::size_of::<f32>(), std::mem::align_of::<f32>()).expect("room for more");
+        assert!(b > a && b.is_multiple_of(std::mem::align_of::<f32>()) && fits_rel32(code, b));
+        // SAFETY: b lies in the data page, writable for a float.
+        unsafe { (b as *mut f32).write(1.5) };
+        // SAFETY: as above.
+        assert_eq!(unsafe { (b as *const f32).read() }, 1.5);
+        assert_ne!(b / len, code / len);
+        unmap(code);
     }
 
     #[test]
