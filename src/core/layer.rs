@@ -14,7 +14,7 @@ use crate::input::bindings::Bindings;
 use crate::input::cursor::{Cursor, FirstFocus};
 use crate::input::pad::PadState;
 use crate::input::touch::Touch;
-use crate::ui::badge::BannerArt;
+use crate::ui::badge::{BadgeLine, BannerArt};
 use crate::ui::draw::{Images, WHEEL_FONT};
 use crate::ui::overlay::Notice;
 use crate::ui::wheel::WheelUi;
@@ -40,6 +40,7 @@ pub struct Layer {
     pub ipad_art: IpadArt,
     pub images: Images,
     pub banner_art: BannerArt,
+    pub badge: BadgeLine,
     /// The font of the wheel's text.
     pub plate_font: i32,
     pub help_shown: bool,
@@ -68,6 +69,7 @@ impl Default for Layer {
             ipad_art: IpadArt::default(),
             images: Images::default(),
             banner_art: BannerArt::default(),
+            badge: BadgeLine::default(),
             plate_font: WHEEL_FONT,
             help_shown: false,
             notice: None,

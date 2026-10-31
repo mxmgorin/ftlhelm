@@ -161,7 +161,7 @@ fn is_hold_action(a: Action) -> bool {
 impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
     /// should be drawn, as they would cover an open wheel or the help.
-    pub fn draw_overlay(&self) -> bool {
+    pub fn draw_overlay(&mut self) -> bool {
         if !self.wheel_at_cursor() && !self.help_shown && self.cfg.overlay {
             if self.cfg.crew_marker {
                 self.draw_crew_marks();

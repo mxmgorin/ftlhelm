@@ -377,6 +377,8 @@ extern "C" fn set_fixed_color(_color: *const GlColor) {}
 
 extern "C" fn set_color(_color: GlColor) {}
 
+extern "C" fn print_center(_font: c_int, _x: f32, _y: f32, _text: *const Ptr) {}
+
 extern "C" fn print_left(font: c_int, x: f32, y: f32, _text: *const Ptr) {
     record(Call::PrintLeft(font, x, y));
 }
@@ -511,6 +513,7 @@ fn install_api() -> Statics {
     stand_in.button_init = button_init;
     stand_in.set_color = set_color;
     stand_in.print_left = print_left;
+    stand_in.print_center = print_center;
     stand_in.string_ctor = string_ctor;
     stand_in.string_dtor = string_dtor;
     stand_in.get_text = get_text;

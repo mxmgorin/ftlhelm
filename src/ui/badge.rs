@@ -97,6 +97,34 @@ pub struct BannerArt {
     art: [Option<(Ptr, f32)>; Banner::ALL.len()],
 }
 
+/// What the badge's line names: its banner, the pause, and the modes and game objects behind
+/// its words.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LineKey {
+    banner: Option<Banner>,
+    paused: bool,
+    aiming: bool,
+    armed: usize,
+    volley: Option<(usize, bool)>,
+    crew: (usize, usize),
+    ship_view: bool,
+    precision: bool,
+    fast_forward: bool,
+    dpad_mouse: bool,
+}
+
+/// A badge line as built: what it names, its text, width and glow.
+struct BuiltLine {
+    key: LineKey,
+    text: String,
+    width: f32,
+    glow: GlColor,
+}
+
+/// The badge's line as last built.
+#[derive(Default)]
+pub struct BadgeLine(Option<BuiltLine>);
+
 /// The badge's crew part on the ship view: the selected crew member's name, or how many are
 /// selected.
 fn crew_part() -> Option<String> {
@@ -258,14 +286,40 @@ impl Layer {
         }
     }
 
-    pub fn draw_badge(&self) {
+    /// What a line with `banner` shown, `paused` or not, names now.
+    fn line_key(&self, banner: Option<Banner>, paused: bool) -> LineKey {
+        LineKey {
+            banner,
+            paused,
+            aiming: state::mouse().i32(MOUSE_AIMING) != 0,
+            armed: state::weapon_control().and_then(|c| c.obj(WEAPONCTRL_ARMED)).map_or(0, |w| w.addr()),
+            volley: self.actions.volley.as_ref().map(|v| (v.slots.len(), v.all)),
+            crew: (state::selected_count(), state::first_selected_crew().map_or(0, |c| c.addr())),
+            ship_view: state::ship_view(),
+            precision: self.bind.precision,
+            fast_forward: self.actions.fast_forward,
+            dpad_mouse: self.bind.dpad_mouse,
+        }
+    }
+
+    /// Draws the badge, its line built anew only when what it names changes.
+    pub fn draw_badge(&mut self) {
         if !self.badge_on() {
             return;
         }
         let paused = state::game_paused();
         let shown = self.shown_banner();
-        let line = self.badge_line(shown.map(|(b, ..)| b), paused);
-        let line_w = (!line.is_empty()).then(|| text_width(WHEEL_FONT, &line));
+        let banner = shown.map(|(b, ..)| b);
+        let key = self.line_key(banner, paused);
+        let line = match self.badge.0.take() {
+            Some(line) if line.key == key => line,
+            _ => {
+                let text = self.badge_line(banner, paused);
+                let width = if text.is_empty() { 0.0 } else { text_width(WHEEL_FONT, &text) };
+                BuiltLine { key, text, width, glow: self.line_glow() }
+            }
+        };
+        let line_w = (!line.text.is_empty()).then_some(line.width);
         let size = shown.map(|(_, t, rows)| {
             let (w, h) = texture_size(t);
             (w, h, rows)
@@ -275,8 +329,9 @@ impl Layer {
             draw_image_top(texture, x, y, rows);
         }
         if let Some((x, y)) = p.line {
-            draw_text_glow(WHEEL_FONT, x, y, &line, self.line_glow());
+            draw_text_glow(WHEEL_FONT, x, y, &line.text, line.glow);
         }
+        self.badge.0 = Some(line);
     }
 }
 
@@ -378,6 +433,30 @@ mod tests {
             assert_eq!(l.badge_line(None, false), "TARGET: 2 WEAPONS / DOORS / MOUSE", "a volley of picked weapons");
             l.actions.volley.as_mut().expect("set above").all = true;
             assert_eq!(l.badge_line(None, false), "TARGET: ALL WEAPONS / DOORS / MOUSE");
+        });
+    }
+
+    #[test]
+    fn the_badge_builds_its_line_anew_only_when_what_it_names_changes() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            l.cursor.synced = true;
+            g.player_manager();
+            let text = |l: &Layer| l.badge.0.as_ref().map(|b| b.text.clone());
+            let ann = g.crew("Ann", "human", PLAYER_SHIP_ID, false);
+            let bob = g.crew("Bob", "human", PLAYER_SHIP_ID, false);
+            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(ann)]);
+            l.draw_badge();
+            assert_eq!(text(&l).as_deref(), Some("CREW: ANN"));
+            g.literal(ann, CREW_BLUEPRINT + CREWBP_NAME, "Zed");
+            l.draw_badge();
+            assert_eq!(text(&l).as_deref(), Some("CREW: ANN"), "the same member");
+            g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &[Some(bob)]);
+            l.draw_badge();
+            assert_eq!(text(&l).as_deref(), Some("CREW: BOB"));
+            l.bind.dpad_mouse = true;
+            l.draw_badge();
+            assert_eq!(text(&l).as_deref(), Some("CREW: BOB / MOUSE"));
         });
     }
 

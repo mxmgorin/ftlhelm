@@ -234,18 +234,21 @@ pub fn draw_text_center(font: i32, x: f32, y: f32, text: &str) {
 /// Prints text centred at x with its top at y in the look of the game's pause banners: pale
 /// over a dark edge, in a `glow` halo.
 pub fn draw_text_glow(font: i32, x: f32, y: f32, text: &str, glow: GlColor) {
+    let s = GameString::new(text);
+    // SAFETY: the game's centred print of a string alive for the call.
+    let print = |x: f32, y: f32| unsafe { (api().print_center)(font, x, y, s.as_ptr()) };
     for (r, a) in GLOW_RINGS {
         set_color(GlColor { a, ..glow });
         for (dx, dy) in RING_STEPS {
-            draw_text_center(font, x + dx * r, y + dy * r, text);
+            print(x + dx * r, y + dy * r);
         }
     }
     set_color(BANNER_EDGE_COLOR);
     for (dx, dy) in EDGE_STEPS {
-        draw_text_center(font, x + dx, y + dy, text);
+        print(x + dx, y + dy);
     }
     set_color(BUTTON_PALE_COLOR);
-    draw_text_center(font, x, y, text);
+    print(x, y);
     set_color(TEXT_COLOR);
 }
 
