@@ -120,32 +120,94 @@ fn le_u64(b: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(b[at..at + 8].try_into().expect("slice of eight bytes"))
 }
 
-/// Looks up the wanted symbols in the executable's .symtab; returns their addresses in
-/// order, 0 for each one missing.
-pub fn resolve_symbols(wanted: &[&str]) -> Vec<usize> {
-    let mut found = vec![0usize; wanted.len()];
-    match open_exe() {
-        Some(f) => {
-            scan_symtab(&f, wanted, &mut found);
-        }
-        None => log!("cannot open the executable"),
+/// An ELF file with its section header table, read once for every lookup.
+pub struct Exe {
+    file: File,
+    sections: Sections,
+}
+
+impl Exe {
+    /// The executable FTLHELM_EXE names, else this process's own; None when it cannot be read.
+    pub fn open() -> Option<Exe> {
+        let path = std::env::var(EXE_ENV).unwrap_or_else(|_| EXE_FALLBACK.to_string());
+        Exe::read(File::open(path).ok()?)
     }
-    found
-}
 
-/// Reads the executable's GNU build ID; None when it has none or cannot be read.
-pub fn build_id() -> Option<Vec<u8>> {
-    read_build_id(&open_exe()?)
-}
+    fn read(file: File) -> Option<Exe> {
+        let sections = Sections::read(&file)?;
+        Some(Exe { file, sections })
+    }
 
-/// Reads an ELF file's GNU build ID; None when it has none.
-fn read_build_id(f: &File) -> Option<Vec<u8>> {
-    Sections::read(f)?.of_kind(SHT_NOTE).find_map(|s| find_build_id(&s.data(f)?))
-}
+    /// Looks up the wanted symbols in .symtab; returns their addresses in order, 0 for each
+    /// one missing.
+    pub fn symbols(&self, wanted: &[&str]) -> Vec<usize> {
+        let mut found = vec![0usize; wanted.len()];
+        self.scan_symtab(wanted, &mut found);
+        found
+    }
 
-fn open_exe() -> Option<File> {
-    let path = std::env::var(EXE_ENV).unwrap_or_else(|_| EXE_FALLBACK.to_string());
-    File::open(path).ok()
+    /// The GNU build ID; None when there is none.
+    pub fn build_id(&self) -> Option<Vec<u8>> {
+        self.sections.of_kind(SHT_NOTE).find_map(|s| find_build_id(&s.data(&self.file)?))
+    }
+
+    fn scan_symtab(&self, wanted: &[&str], found: &mut [usize]) -> Option<()> {
+        let index: HashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, n)| (n.as_bytes(), i)).collect();
+        let (f, sections) = (&self.file, &self.sections);
+        for symtab in sections.of_kind(SHT_SYMTAB) {
+            let Some(strtab) = sections.get(symtab.link()) else {
+                continue;
+            };
+            let names = strtab.data(f)?;
+            let syms = symtab.data(f)?;
+            for sym in syms.as_chunks::<SYM_SIZE>().0 {
+                let value = le_u64(sym, ST_VALUE) as usize;
+                if value == 0 {
+                    continue;
+                }
+                let Some(name) = table_str(&names, le_u32(sym, ST_NAME) as usize) else {
+                    continue;
+                };
+                if let Some(&w) = index.get(name) {
+                    if found[w] == 0 {
+                        found[w] = value;
+                    }
+                }
+            }
+        }
+        Some(())
+    }
+
+    /// Finds the PLT slot through which the file calls the library function `name`; returns
+    /// the slot's address.
+    pub fn plt_slot(&self, name: &str) -> Option<usize> {
+        let (f, sections) = (&self.file, &self.sections);
+        for rela_table in sections.of_kind(SHT_RELA) {
+            let Some(dynsym) = sections.get(rela_table.link()).filter(|s| s.kind() == SHT_DYNSYM) else {
+                continue;
+            };
+            let Some(strtab) = sections.get(dynsym.link()) else {
+                continue;
+            };
+            let names = strtab.data(f)?;
+            let syms = dynsym.data(f)?;
+            let relas = rela_table.data(f)?;
+            for rela in relas.as_chunks::<RELA_SIZE>().0 {
+                let info = le_u64(rela, R_INFO);
+                if info as u32 != R_X86_64_JUMP_SLOT {
+                    continue;
+                }
+                let sym_at = (info >> R_SYM_SHIFT) as usize * SYM_SIZE;
+                let Some(sym) = syms.get(sym_at..sym_at + SYM_SIZE) else {
+                    continue;
+                };
+                if table_str(&names, le_u32(sym, ST_NAME) as usize) == Some(name.as_bytes()) {
+                    return Some(le_u64(rela, R_OFFSET) as usize);
+                }
+            }
+        }
+        None
+    }
 }
 
 /// An ELF file's section header table.
@@ -214,70 +276,6 @@ fn find_build_id(notes: &[u8]) -> Option<Vec<u8>> {
             return Some(notes[desc_at..desc_at + descsz].to_vec());
         }
         at = end;
-    }
-    None
-}
-
-fn scan_symtab(f: &File, wanted: &[&str], found: &mut [usize]) -> Option<()> {
-    let index: HashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, n)| (n.as_bytes(), i)).collect();
-    let sections = Sections::read(f)?;
-    for symtab in sections.of_kind(SHT_SYMTAB) {
-        let Some(strtab) = sections.get(symtab.link()) else {
-            continue;
-        };
-        let names = strtab.data(f)?;
-        let syms = symtab.data(f)?;
-        for sym in syms.as_chunks::<SYM_SIZE>().0 {
-            let value = le_u64(sym, ST_VALUE) as usize;
-            if value == 0 {
-                continue;
-            }
-            let Some(name) = table_str(&names, le_u32(sym, ST_NAME) as usize) else {
-                continue;
-            };
-            if let Some(&w) = index.get(name) {
-                if found[w] == 0 {
-                    found[w] = value;
-                }
-            }
-        }
-    }
-    Some(())
-}
-
-/// Finds the PLT slot through which the executable calls the library function `name`;
-/// returns the slot's address.
-pub fn plt_slot(name: &str) -> Option<usize> {
-    find_plt_slot(&open_exe()?, name)
-}
-
-/// Finds the PLT slot through which an ELF file calls the library function `name`;
-/// returns the slot's address.
-fn find_plt_slot(f: &File, name: &str) -> Option<usize> {
-    let sections = Sections::read(f)?;
-    for rela_table in sections.of_kind(SHT_RELA) {
-        let Some(dynsym) = sections.get(rela_table.link()).filter(|s| s.kind() == SHT_DYNSYM) else {
-            continue;
-        };
-        let Some(strtab) = sections.get(dynsym.link()) else {
-            continue;
-        };
-        let names = strtab.data(f)?;
-        let syms = dynsym.data(f)?;
-        let relas = rela_table.data(f)?;
-        for rela in relas.as_chunks::<RELA_SIZE>().0 {
-            let info = le_u64(rela, R_INFO);
-            if info as u32 != R_X86_64_JUMP_SLOT {
-                continue;
-            }
-            let sym_at = (info >> R_SYM_SHIFT) as usize * SYM_SIZE;
-            let Some(sym) = syms.get(sym_at..sym_at + SYM_SIZE) else {
-                continue;
-            };
-            if table_str(&names, le_u32(sym, ST_NAME) as usize) == Some(name.as_bytes()) {
-                return Some(le_u64(rela, R_OFFSET) as usize);
-            }
-        }
     }
     None
 }
@@ -731,9 +729,8 @@ mod tests {
         let syms = symbols(&[(at[0], 0x1000), (at[1], 0x2000), (at[2], 0), (at[0], 0x3000), (past_strings, 0x4000)]);
         elf.section(SHT_SYMTAB, strings + 99, &syms);
         elf.section(SHT_SYMTAB, strings, &syms);
-        let mut found = [0; 3];
-        scan_symtab(&elf.file(), &["wanted_a", "wanted_b", "missing"], &mut found);
-        assert_eq!(found, [0x1000, 0, 0]);
+        let exe = Exe::read(elf.file()).expect("a section table");
+        assert_eq!(exe.symbols(&["wanted_a", "wanted_b", "missing"]), [0x1000, 0, 0]);
     }
 
     #[test]
@@ -751,10 +748,10 @@ mod tests {
             (0x5018, 9, R_X86_64_JUMP_SLOT),
         ]);
         elf.section(SHT_RELA, dynsym, &relocs);
-        let f = elf.file();
-        assert_eq!(find_plt_slot(&f, "snd_pcm_recover"), Some(0x5000));
-        assert_eq!(find_plt_slot(&f, "snd_pcm_open"), Some(0x5010));
-        assert_eq!(find_plt_slot(&f, "snd_pcm_close"), None);
+        let exe = Exe::read(elf.file()).expect("a section table");
+        assert_eq!(exe.plt_slot("snd_pcm_recover"), Some(0x5000));
+        assert_eq!(exe.plt_slot("snd_pcm_open"), Some(0x5010));
+        assert_eq!(exe.plt_slot("snd_pcm_close"), None);
     }
 
     #[test]
@@ -765,13 +762,14 @@ mod tests {
         notes.extend(note(NOTE_OWNER_GNU, NT_GNU_BUILD_ID, &id));
         let mut elf = Elf::new();
         elf.section(SHT_NOTE, 0, &notes);
-        assert_eq!(read_build_id(&elf.file()), Some(id.to_vec()));
+        let build_id = |elf: Elf| Exe::read(elf.file()).expect("a section table").build_id();
+        assert_eq!(build_id(elf), Some(id.to_vec()));
         let mut cut = note(NOTE_OWNER_GNU, NT_GNU_BUILD_ID, &id);
         cut.truncate(cut.len() - 1);
         let mut elf = Elf::new();
         elf.section(SHT_NOTE, 0, &cut);
-        assert_eq!(read_build_id(&elf.file()), None);
-        assert_eq!(read_build_id(&Elf::new().file()), None);
+        assert_eq!(build_id(elf), None);
+        assert_eq!(build_id(Elf::new()), None);
     }
 
     #[no_mangle]
@@ -784,17 +782,24 @@ mod tests {
         2
     }
 
+    /// This test binary as read for lookups.
+    fn this_binary() -> Exe {
+        Exe::read(File::open(EXE_FALLBACK).expect("the test binary is readable")).expect("a section table")
+    }
+
     /// The markers' link-time addresses in this binary's .symtab, and their runtime ones.
-    fn markers(f: &File) -> ([usize; 2], [usize; 2]) {
-        let mut found = [0; 2];
-        scan_symtab(f, &["ftlhelm_test_marker_a", "ftlhelm_test_marker_b"], &mut found);
+    fn markers(exe: &Exe) -> ([usize; 2], [usize; 2]) {
+        let found = exe.symbols(&["ftlhelm_test_marker_a", "ftlhelm_test_marker_b"]);
         assert!(found.iter().all(|&a| a != 0), "markers missing from .symtab: {found:x?}");
-        (found, [ftlhelm_test_marker_a as *const () as usize, ftlhelm_test_marker_b as *const () as usize])
+        (
+            [found[0], found[1]],
+            [ftlhelm_test_marker_a as *const () as usize, ftlhelm_test_marker_b as *const () as usize],
+        )
     }
 
     #[test]
     fn this_binary_resolves_its_own_symbols_at_one_load_bias() {
-        let (linked, runtime) = markers(&File::open(EXE_FALLBACK).expect("the test binary is readable"));
+        let (linked, runtime) = markers(&this_binary());
         assert_eq!(runtime[0].wrapping_sub(linked[0]), runtime[1].wrapping_sub(linked[1]));
     }
 
@@ -803,12 +808,12 @@ mod tests {
 
     #[test]
     fn this_binarys_plt_slots_hold_what_the_loader_bound() {
-        let f = File::open(EXE_FALLBACK).expect("the test binary is readable");
-        let (linked, runtime) = markers(&f);
+        let exe = this_binary();
+        let (linked, runtime) = markers(&exe);
         let bias = runtime[0].wrapping_sub(linked[0]);
         let mut checked = 0;
         for name in PLT_CALLEES {
-            let Some(slot) = find_plt_slot(&f, name.to_str().expect("an ASCII name")) else {
+            let Some(slot) = exe.plt_slot(name.to_str().expect("an ASCII name")) else {
                 continue;
             };
             // SAFETY: dlsym with a NUL-terminated name.

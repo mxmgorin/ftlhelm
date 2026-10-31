@@ -22,10 +22,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use super::crash::{self, Phase};
-use super::hook::{
-    accept_buttons_only_pads, build_id, hook, mapped_executable, query_all_touch_devices, redirect_step_cap,
-    resolve_symbols,
-};
+use super::hook::{accept_buttons_only_pads, hook, mapped_executable, query_all_touch_devices, redirect_step_cap, Exe};
 use super::layer::with_layer;
 use super::util::{line_buffer_stdout, log, now_s, open_log_file};
 use crate::config::layout::DEFAULT_LAYOUT;
@@ -357,7 +354,14 @@ fn install(name: &str, func: usize, repl: usize, prologue: &[u8], slot: &AtomicU
 /// a process that is not the game.
 pub extern "C" fn init() {
     let debug = std::env::var_os(DEBUG_ENV).is_some();
-    let addrs = resolve_symbols(SYMBOLS);
+    let Some(exe) = Exe::open() else {
+        log!("cannot open the executable");
+        return;
+    };
+    // One pass over the symbol table for the game's API and the sound recovery.
+    let wanted: Vec<&str> = SYMBOLS.iter().chain(sound::SYMBOLS).copied().collect();
+    let found = exe.symbols(&wanted);
+    let (addrs, sound_addrs) = found.split_at(SYMBOLS.len());
     if addrs.iter().all(|&a| a == 0) {
         // Not the game but a launcher or a tool it runs: stay silent.
         if debug {
@@ -369,7 +373,7 @@ pub extern "C" fn init() {
         open_log_file(Path::new(&path));
     }
     log!("ftlhelm {VERSION} ({REV})");
-    let missing: Vec<_> = SYMBOLS.iter().zip(&addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
+    let missing: Vec<_> = SYMBOLS.iter().zip(addrs).filter(|(_, &a)| a == 0).map(|(n, _)| *n).collect();
     if !missing.is_empty() {
         for name in missing {
             log!("symbol missing: {name}");
@@ -377,7 +381,7 @@ pub extern "C" fn init() {
         log!("unknown build, inactive");
         return;
     }
-    let id = build_id().unwrap_or_default();
+    let id = exe.build_id().unwrap_or_default();
     let Some(build) = build_by_id(&id) else {
         let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
         log!("build id {hex}: unknown build, inactive");
@@ -386,7 +390,7 @@ pub extern "C" fn init() {
     crash::log_panics();
     install_layout(&build.layout);
     // SAFETY: every symbol resolved in this FTL build, in SYMBOLS order.
-    api::install(unsafe { Api::from_addresses(&addrs) });
+    api::install(unsafe { Api::from_addresses(addrs) });
     let a = api();
     if !mapped_executable(a.onloop) {
         log!("game not mapped in this process, inactive");
@@ -528,7 +532,7 @@ pub extern "C" fn init() {
     ipad_art::set_hooked(ipad);
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
-    let sound_recovery = sound::install();
+    let sound_recovery = sound::install(&exe, sound_addrs);
     let on = |b: bool| if b { "on" } else { "off" };
     log!(
         "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \

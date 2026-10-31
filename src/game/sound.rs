@@ -17,13 +17,13 @@ use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use crate::core::hook::{plt_slot, redirect_slot, resolve_symbols, slot_target};
+use crate::core::hook::{redirect_slot, slot_target, Exe};
 use crate::core::util::{log, now_s};
 
 const RECOVER: &str = "snd_pcm_recover";
 const OPEN: &str = "snd_pcm_open";
 /// The game's PCM handle, its stream setup, and the rate and sizes that setup chose.
-const SYMBOLS: &[&str] = &["pcm_handle", "configure_pcm", "hw_sound_rate", "hw_buffer_size", "hw_period_size"];
+pub const SYMBOLS: &[&str] = &["pcm_handle", "configure_pcm", "hw_sound_rate", "hw_buffer_size", "hw_period_size"];
 /// A dump line that is not a plugin's header.
 const DUMP_SETUP_HEADER: &str = "Its setup is:";
 const SND_PCM_STREAM_PLAYBACK: c_int = 0;
@@ -214,20 +214,19 @@ extern "C" fn open_hook(pcm: *mut Pcm, name: *const c_char, stream: c_int, mode:
 
 /// Points the game's snd_pcm_open and snd_pcm_recover calls at open_hook and
 /// recover_hook; returns false with the reason logged when ALSA, a game symbol or a PLT
-/// slot is missing.
-pub fn install() -> bool {
+/// slot is missing. `addrs` are the addresses of SYMBOLS in `exe`, in order.
+pub fn install(exe: &Exe, addrs: &[usize]) -> bool {
     let Some(alsa) = Alsa::resolve() else {
         log!("sound: ALSA functions not found");
         return false;
     };
-    let addrs = resolve_symbols(SYMBOLS);
     if let Some(i) = addrs.iter().position(|&a| a == 0) {
         log!("sound: symbol missing: {}", SYMBOLS[i]);
         return false;
     }
     let [pcm_handle, configure, sound_rate, buffer_size, period_size]: [usize; SYMBOLS.len()] =
-        addrs.try_into().expect("resolve_symbols gives one address per symbol");
-    let (Some(recover_slot), Some(open_slot)) = (plt_slot(RECOVER), plt_slot(OPEN)) else {
+        addrs.try_into().expect("the caller passes one address per symbol");
+    let (Some(recover_slot), Some(open_slot)) = (exe.plt_slot(RECOVER), exe.plt_slot(OPEN)) else {
         log!("sound: no PLT slot for {RECOVER} or {OPEN}");
         return false;
     };
