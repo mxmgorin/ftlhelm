@@ -87,23 +87,48 @@ pub struct Zones {
     logged: (usize, bool),
 }
 
-/// Buttons the game hit-tested since the last frame, whether it tested any, and whether one
-/// found no room.
+/// Buttons the game hit-tested since the last frame, whether it tested any, whether one
+/// found no room, and where they may sit, resolved at the first of them.
 struct Seen {
     buttons: Vec<Button>,
     tested: bool,
     full: bool,
+    containers: Option<Containers>,
 }
 
-static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false, full: false });
+static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false, full: false, containers: None });
+
+/// What holds hit-tested buttons, as the address and size of each: the crew control, whose
+/// buttons are no zones; the armament bars and the star map, which keep their buttons' boxes
+/// relative to the point beside each.
+#[derive(Clone, Copy)]
+struct Containers {
+    crew: Option<(usize, usize)>,
+    moved: [Option<(usize, usize, Point)>; 3],
+}
+
+impl Containers {
+    fn now() -> Containers {
+        let moving = |holder: Option<Obj>, size, at| holder.map(|h| (h.addr(), size, h.point(at)));
+        Containers {
+            crew: state::gui().map(|g| (g.at(GUI_CREW_CONTROL).addr(), CREW_CONTROL_SIZE)),
+            moved: [
+                moving(state::weapon_control(), WEAPON_CONTROL_SIZE, ARMAMENT_LOCATION),
+                moving(state::drone_control(), DRONE_CONTROL_SIZE, ARMAMENT_LOCATION),
+                moving(state::star_map(), STARMAP_SIZE, STARMAP_POSITION),
+            ],
+        }
+    }
+}
 
 /// Records a button the game hit-tests, with its box moved to the screen. Touches only the
 /// seen set: a hook may hold the layer meanwhile.
 pub fn record_button(button: Obj) {
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     seen.tested = true;
-    let gui = state::gui();
-    let in_crew_control = gui.is_some_and(|g| g.at(GUI_CREW_CONTROL).contains(CREW_CONTROL_SIZE, button.addr()));
+    let c = *seen.containers.get_or_insert_with(Containers::now);
+    let held = |(start, size): (usize, usize)| (start..start + size).contains(&button.addr());
+    let in_crew_control = c.crew.is_some_and(held);
     let drawn = !button.flag(BUTTON_RENDER_OFF);
     if !button.flag(BUTTON_ACTIVE)
         || !drawn
@@ -117,18 +142,7 @@ pub fn record_button(button: Obj) {
         return;
     }
     let mut r = button.rect(BUTTON_HITBOX);
-    // The armament bars keep their buttons' boxes relative to the bar.
-    let bars = [(state::weapon_control(), WEAPON_CONTROL_SIZE), (state::drone_control(), DRONE_CONTROL_SIZE)];
-    for (bar, size) in bars {
-        if let Some(bar) = bar.filter(|b| b.contains(size, button.addr())) {
-            let at = bar.point(ARMAMENT_LOCATION);
-            r.x += at.x;
-            r.y += at.y;
-        }
-    }
-    // So does the star map, relative to its position.
-    if let Some(map) = state::star_map().filter(|m| m.contains(STARMAP_SIZE, button.addr())) {
-        let at = map.point(STARMAP_POSITION);
+    for (_, _, at) in c.moved.into_iter().flatten().filter(|&(start, size, _)| held((start, size))) {
         r.x += at.x;
         r.y += at.y;
     }
@@ -366,8 +380,10 @@ impl Layer {
         {
             let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
             if seen.tested {
-                zones.buttons = std::mem::take(&mut seen.buttons);
+                std::mem::swap(&mut zones.buttons, &mut seen.buttons);
+                seen.buttons.clear();
                 zones.dropped.1 = std::mem::take(&mut seen.full);
+                seen.containers = None;
                 seen.tested = false;
             }
         }
@@ -548,11 +564,44 @@ mod tests {
                 g.arena.ptr_vector(g.gui.at(GUI_COMBAT_CONTROL + bar), ARMAMENT_BOXES, &boxes);
             }
             let buttons = (1..=MAX_BUTTONS).map(|object| Button { rect: rect(0, 0), object }).collect();
-            *SEEN.lock().unwrap_or_else(|e| e.into_inner()) = Seen { buttons, tested: true, full: false };
+            *SEEN.lock().unwrap_or_else(|e| e.into_inner()) =
+                Seen { buttons, tested: true, full: false, containers: None };
             let mut l = Layer::default();
             let listed = built(&mut l);
             assert_eq!(listed.len(), MAX_ZONES);
             assert_eq!(listed.iter().filter(|&&(k, ..)| k == ZoneKind::Button).count(), MAX_BUTTONS);
+        });
+    }
+
+    #[test]
+    fn hit_tested_buttons_take_their_holders_offsets_and_a_fresh_list_each_frame() {
+        // A button's offset inside its holder, clear of the holder's fields the readers use.
+        const BUTTON_AT: usize = 256;
+        with_game(|g| {
+            *SEEN.lock().unwrap_or_else(|e| e.into_inner()) =
+                Seen { buttons: Vec::new(), tested: false, full: false, containers: None };
+            let bar = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let bar_at = |x| Point { x, y: 600 };
+            bar.set(ARMAMENT_LOCATION, bar_at(300));
+            let button = |b: Obj, r: Rect| {
+                b.set(BUTTON_HITBOX, r);
+                b.set(BUTTON_ACTIVE, 1u8);
+                b
+            };
+            let plain = button(g.arena.alloc(BUTTON_ACTIVE + size_of::<u8>()), rect(100, 100));
+            let in_bar = button(bar.at(BUTTON_AT), rect(10, 5));
+            let in_crew = button(g.gui.at(GUI_CREW_CONTROL + BUTTON_AT), rect(200, 200));
+            for b in [plain, in_bar, in_crew, plain] {
+                record_button(b);
+            }
+            let mut l = Layer::default();
+            l.build_zones();
+            let rects = |l: &Layer| l.zones.buttons.iter().map(|b| b.rect).collect::<Vec<_>>();
+            assert_eq!(rects(&l), [rect(100, 100), moved(rect(10, 5), bar_at(300))]);
+            bar.set(ARMAMENT_LOCATION, bar_at(320));
+            record_button(in_bar);
+            l.build_zones();
+            assert_eq!(rects(&l), [moved(rect(10, 5), bar_at(320))], "the bar read anew");
         });
     }
 
