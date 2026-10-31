@@ -56,6 +56,8 @@ pub struct PadState {
     sdl: Option<SdlMap>,
     /// The mapping resolved for one pad, keyed by SIL pad and input device.
     resolved: Option<((i32, i32), Resolved)>,
+    /// The engine's raw button behind each SIL button of one pad, keyed the same way.
+    sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
     held: [bool; INPUT_COUNT],
     dpad_spent: [bool; 4],
     flick_last: [f64; 2],
@@ -88,6 +90,7 @@ impl Default for PadState {
         PadState {
             sdl: None,
             resolved: None,
+            sil_mapping: None,
             held: [false; INPUT_COUNT],
             dpad_spent: [false; 4],
             flick_last: [0.0; 2],
@@ -136,6 +139,18 @@ fn each(pads: PadSet) -> impl Iterator<Item = i32> {
 fn joystick(dev: i32) -> Option<Obj> {
     // SAFETY: SIL's pad table, indexed by a connected pad.
     unsafe { Obj::table_entry(api().sil_joysticks, dev, SILJOY_SIZE) }
+}
+
+/// Whether pad `dev` is connected.
+fn pad_connected(dev: i32) -> bool {
+    let a = api();
+    // SAFETY: the engine's pad count, and its query on an index below it.
+    unsafe { dev < (a.joy_count)() && (a.joy_connected)(dev) != 0 }
+}
+
+/// Whether a frame of a pad holds a SIL button or a D-pad direction down.
+fn holds_press(p: &PadFrame) -> bool {
+    p.down[..SIL_BUTTONS].iter().any(|&d| d) || p.dpad != [0, 0]
 }
 
 /// Whether a button or D-pad direction of a connected pad is down.
@@ -238,9 +253,22 @@ impl PadState {
         self.resolved = Some(((dev, event_dev), r));
     }
 
+    /// Reads the engine's mapping of the pad's SIL buttons, once per pad and device.
+    fn resolve_sil_mapping(&mut self, dev: i32) {
+        let key = (dev, joystick(dev).map_or(-1, |j| j.i32(SILJOY_EVENT_DEV)));
+        if self.sil_mapping.is_some_and(|(k, _)| k == key) {
+            return;
+        }
+        let a = api();
+        // SAFETY: the engine's button mapping on a connected pad.
+        let mapping = std::array::from_fn(|b| unsafe { (a.joy_button_mapping)(dev, b as i32) });
+        self.sil_mapping = Some((key, mapping));
+    }
+
     /// Follows the connected pads, logging each that comes or goes. The active pad gives way
     /// to one starting a press while it has none down; a lost one to the first left.
-    fn follow_pads(&mut self) -> PadChange {
+    /// `active_held` stands in for the active pad's own scan, read from its frame.
+    fn follow_pads(&mut self, active_held: Option<bool>) -> PadChange {
         let a = api();
         // SAFETY: the engine's pad count.
         let count = unsafe { (a.joy_count)() }.clamp(0, SIL_TABLE_LEN as i32);
@@ -249,7 +277,11 @@ impl PadState {
             // SAFETY: the engine's joystick queries take any index below the count.
             if unsafe { (a.joy_connected)(dev) } != 0 {
                 connected |= bit(dev);
-                if any_button_down(dev) {
+                let held = match active_held {
+                    Some(held) if Some(dev) == self.index => held,
+                    _ => any_button_down(dev),
+                };
+                if held {
                     down |= bit(dev);
                 }
             }
@@ -289,7 +321,10 @@ impl Layer {
     /// is connected. The first pad brings the help at start; losing the active pad pauses the
     /// ship view; `dt` ages the notices.
     pub fn poll_pad(&mut self, dt: f32) -> PadFrame {
-        let change = self.pad.follow_pads();
+        // The active pad first: whether it holds a press decides a handover.
+        let was = self.pad.index.filter(|&dev| pad_connected(dev));
+        let first = was.map(|dev| self.read_active(dev));
+        let change = self.pad.follow_pads(first.as_ref().map(holds_press));
         self.age_notice(dt, change.pressed);
         if change.gained && self.cfg.help_at_start {
             self.help_shown = true;
@@ -304,7 +339,16 @@ impl Layer {
         let Some(dev) = self.pad.index else {
             return PadFrame::default();
         };
+        match first {
+            Some(p) if was == Some(dev) => p,
+            _ => self.read_active(dev),
+        }
+    }
+
+    /// Reads pad `dev`, its mappings resolved on first sight.
+    fn read_active(&mut self, dev: i32) -> PadFrame {
         self.pad.resolve_sdl_map(dev);
+        self.pad.resolve_sil_mapping(dev);
         self.read_pad(dev)
     }
 
@@ -312,12 +356,12 @@ impl Layer {
         let a = api();
         let mut p = PadFrame::default();
         let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).map(|(_, r)| r);
-        // SAFETY: the engine's button queries on a connected pad.
+        let mapping = self.pad.sil_mapping.filter(|(k, _)| k.0 == dev).map(|(_, m)| m);
         let raw_button = |b: usize| match sdl {
             Some(r) => r.buttons[b].unwrap_or(-1),
-            None => unsafe { (a.joy_button_mapping)(dev, b as i32) },
+            None => mapping.map_or(-1, |m| m[b]),
         };
-        // SAFETY: as above.
+        // SAFETY: the engine's button queries on a connected pad.
         let pressed = |raw: i32| raw >= 0 && unsafe { (a.joy_button_state)(dev, raw) } != 0;
         for b in 0..SIL_BUTTONS {
             p.down[b] = pressed(raw_button(b));
