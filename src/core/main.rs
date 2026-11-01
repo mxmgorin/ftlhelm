@@ -340,14 +340,244 @@ extern "C" fn button_move_hook(this: Ptr, x: i32, y: i32, silent: bool) {
     unsafe { orig::<extern "C" fn(Ptr, i32, i32, bool)>(&BUTTON_MOVE_ORIG)(this, x, y, silent) };
 }
 
-fn install(name: &str, func: usize, repl: usize, prologue: &[u8], slot: &AtomicUsize) -> bool {
-    match hook(name, func, repl, prologue) {
-        Some(entry) => {
-            slot.store(entry, Ordering::Relaxed);
-            true
-        }
-        None => false,
+/// What a run of hooks gives the layer; a feature works only with all of its hooks in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Feature {
+    Overlay,
+    Shift,
+    Buttons,
+    Touch,
+    Pointer,
+    PointerTooltip,
+    EventText,
+    TooltipText,
+    Zoom,
+    HudLeft,
+    PauseBanner,
+    IpadArt,
+}
+
+const FEATURES: usize = Feature::IpadArt as usize + 1;
+/// Each feature's name in the log, in Feature order.
+const FEATURE_NAMES: [&str; FEATURES] = [
+    "overlay",
+    "shift",
+    "buttons",
+    "touch",
+    "pointer",
+    "pointer tooltip",
+    "event text",
+    "tooltip text",
+    "zoom",
+    "hud left",
+    "pause banner",
+    "ipad art",
+];
+/// Features that work only on top of another: each one, then the one it needs.
+const NEEDS: [(Feature, Feature); 3] = [
+    (Feature::TooltipText, Feature::Overlay),
+    (Feature::PointerTooltip, Feature::Pointer),
+    (Feature::PauseBanner, Feature::Overlay),
+];
+
+/// A function the layer hooks: its feature and name, its address in the API, the
+/// replacement, the prologue it must start with, and the slot for the entry that runs the
+/// original; none for a stub whose original never runs.
+struct Hook {
+    feature: Feature,
+    name: &'static str,
+    func: fn(&Api) -> usize,
+    repl: *const (),
+    prologue: &'static [u8],
+    orig: Option<&'static AtomicUsize>,
+}
+
+/// The hooks placed after CApp::OnLoop, in order; a feature's are tried until one fails.
+const HOOKS: &[Hook] = &[
+    Hook {
+        feature: Feature::Overlay,
+        name: "MouseControl::OnRender",
+        func: |a| a.mouse_render,
+        repl: mouse_render_hook as *const (),
+        prologue: &MOUSE_RENDER_PROLOGUE,
+        orig: Some(&MOUSE_RENDER_ORIG),
+    },
+    Hook {
+        feature: Feature::Shift,
+        name: "GetShiftState",
+        func: |a| a.get_shift,
+        repl: get_shift_hook as *const (),
+        prologue: &GET_SHIFT_PROLOGUE,
+        orig: Some(&GET_SHIFT_ORIG),
+    },
+    Hook {
+        feature: Feature::Buttons,
+        name: "GenericButton::MouseMove",
+        func: |a| a.button_move,
+        repl: button_move_hook as *const (),
+        prologue: &BUTTON_MOVE_PROLOGUE,
+        orig: Some(&BUTTON_MOVE_ORIG),
+    },
+    Hook {
+        feature: Feature::Touch,
+        name: "CApp::OnTouchDown",
+        func: |a| a.touch_down,
+        repl: touch_down_hook as *const (),
+        prologue: &TOUCH_STUB_PROLOGUE,
+        orig: None,
+    },
+    Hook {
+        feature: Feature::Touch,
+        name: "CApp::OnTouchMove",
+        func: |a| a.touch_move,
+        repl: touch_move_hook as *const (),
+        prologue: &TOUCH_STUB_PROLOGUE,
+        orig: None,
+    },
+    Hook {
+        feature: Feature::Touch,
+        name: "CApp::OnTouchUp",
+        func: |a| a.touch_up,
+        repl: touch_up_hook as *const (),
+        prologue: &TOUCH_STUB_PROLOGUE,
+        orig: None,
+    },
+    Hook {
+        feature: Feature::Touch,
+        name: "CApp::OnTouchCancel",
+        func: |a| a.touch_cancel,
+        repl: touch_cancel_hook as *const (),
+        prologue: &TOUCH_STUB_PROLOGUE,
+        orig: None,
+    },
+    // The pointer hook goes in first: a box drawn scaled must also hit-test scaled.
+    Hook {
+        feature: Feature::EventText,
+        name: "ChoiceBox::MouseMove",
+        func: |a| a.choice_mouse_move,
+        repl: choice_mouse_move_hook as *const (),
+        prologue: &CHOICE_MOUSE_MOVE_PROLOGUE,
+        orig: Some(&CHOICE_MOUSE_MOVE_ORIG),
+    },
+    Hook {
+        feature: Feature::EventText,
+        name: "ChoiceBox::OnRender",
+        func: |a| a.choice_render,
+        repl: choice_render_hook as *const (),
+        prologue: &CHOICE_RENDER_PROLOGUE,
+        orig: Some(&CHOICE_RENDER_ORIG),
+    },
+    Hook {
+        feature: Feature::EventText,
+        name: "WindowFrame::Draw",
+        func: |a| a.frame_draw,
+        repl: frame_draw_hook as *const (),
+        prologue: &FRAME_DRAW_PROLOGUE,
+        orig: Some(&FRAME_DRAW_ORIG),
+    },
+    // The measure hook goes in first: a tooltip drawn scaled must be measured scaled.
+    Hook {
+        feature: Feature::TooltipText,
+        name: "MouseControl::MeasureTooltip",
+        func: |a| a.measure_tooltip,
+        repl: measure_tooltip_hook as *const (),
+        prologue: &MEASURE_TOOLTIP_PROLOGUE,
+        orig: Some(&MEASURE_TOOLTIP_ORIG),
+    },
+    Hook {
+        feature: Feature::TooltipText,
+        name: "GetFontData",
+        func: |a| a.font_data,
+        repl: font_data_hook as *const (),
+        prologue: &FONT_DATA_PROLOGUE,
+        orig: Some(&FONT_DATA_ORIG),
+    },
+    Hook {
+        feature: Feature::Zoom,
+        name: "CSurface::GL_BlitFrameBuffer",
+        func: |a| a.blit_frame,
+        repl: blit_frame_hook as *const (),
+        prologue: &BLIT_FRAME_PROLOGUE,
+        orig: Some(&BLIT_FRAME_ORIG),
+    },
+    Hook {
+        feature: Feature::Pointer,
+        name: "CSurface::GL_BlitPixelImage",
+        func: |a| a.blit_pixel,
+        repl: blit_pixel_hook as *const (),
+        prologue: &BLIT_PIXEL_PROLOGUE,
+        orig: Some(&BLIT_PIXEL_ORIG),
+    },
+    Hook {
+        feature: Feature::PointerTooltip,
+        name: "MouseControl::RenderTooltip",
+        func: |a| a.render_tooltip,
+        repl: render_tooltip_hook as *const (),
+        prologue: &RENDER_TOOLTIP_PROLOGUE,
+        orig: Some(&RENDER_TOOLTIP_ORIG),
+    },
+    Hook {
+        feature: Feature::HudLeft,
+        name: "CrewBox::CrewBox",
+        func: |a| a.crew_box_ctor,
+        repl: crew_box_hook as *const (),
+        prologue: &CREW_BOX_PROLOGUE,
+        orig: Some(&CREW_BOX_ORIG),
+    },
+    Hook {
+        feature: Feature::HudLeft,
+        name: "ShipStatus::OnMouseMove",
+        func: |a| a.status_mouse_move,
+        repl: status_mouse_hook as *const (),
+        prologue: &STATUS_MOUSE_PROLOGUE,
+        orig: Some(&STATUS_MOUSE_ORIG),
+    },
+    Hook {
+        feature: Feature::HudLeft,
+        name: "CrewControl::OnRender",
+        func: |a| a.crew_render,
+        repl: crew_render_hook as *const (),
+        prologue: &CREW_RENDER_PROLOGUE,
+        orig: Some(&CREW_RENDER_ORIG),
+    },
+    Hook {
+        feature: Feature::PauseBanner,
+        name: "CommandGui::RenderPause",
+        func: |a| a.render_pause,
+        repl: render_pause_hook as *const (),
+        prologue: &RENDER_PAUSE_PROLOGUE,
+        orig: Some(&RENDER_PAUSE_ORIG),
+    },
+    Hook {
+        feature: Feature::IpadArt,
+        name: "ResourceControl::GetImageId",
+        func: |a| a.image_id as usize,
+        repl: image_id_hook as *const (),
+        prologue: &IMAGE_ID_PROLOGUE,
+        orig: Some(&IMAGE_ID_ORIG),
+    },
+];
+
+/// Places `h` on the game; false when it cannot be.
+fn place(h: &Hook, a: &Api) -> bool {
+    let Some(entry) = hook(h.name, (h.func)(a), h.repl as usize, h.prologue) else {
+        return false;
+    };
+    if let Some(slot) = h.orig {
+        slot.store(entry, Ordering::Relaxed);
     }
+    true
+}
+
+/// Places HOOKS on the game; returns which features are in, in Feature order.
+fn place_hooks(a: &Api) -> [bool; FEATURES] {
+    let mut on = [true; FEATURES];
+    for h in HOOKS {
+        let f = h.feature as usize;
+        let base_in = NEEDS.iter().all(|&(top, base)| top != h.feature || on[base as usize]);
+        on[f] = on[f] && base_in && place(h, a);
+    }
+    on
 }
 
 /// Runs at load: resolves the game, places the hooks and reads the files. Stays inactive in
@@ -400,162 +630,28 @@ pub extern "C" fn init() {
     // The engine drops joystick events while the X window lacks focus.
     // SAFETY: the engine's joystick switch.
     unsafe { (a.joy_enable_unfocused)(1) };
-    if !install("OnLoop", a.onloop, onloop_hook as *const () as usize, &ONLOOP_PROLOGUE, &ONLOOP_ORIG) {
+    let Some(onloop) = hook("OnLoop", a.onloop, onloop_hook as *const () as usize, &ONLOOP_PROLOGUE) else {
         log!("inactive");
         return;
-    }
-    let overlay = install(
-        "MouseControl::OnRender",
-        a.mouse_render,
-        mouse_render_hook as *const () as usize,
-        &MOUSE_RENDER_PROLOGUE,
-        &MOUSE_RENDER_ORIG,
-    );
-    let shift = install(
-        "GetShiftState",
-        a.get_shift,
-        get_shift_hook as *const () as usize,
-        &GET_SHIFT_PROLOGUE,
-        &GET_SHIFT_ORIG,
-    );
-    let buttons = install(
-        "GenericButton::MouseMove",
-        a.button_move,
-        button_move_hook as *const () as usize,
-        &BUTTON_MOVE_PROLOGUE,
-        &BUTTON_MOVE_ORIG,
-    );
-    let touch_hooks = [
-        ("CApp::OnTouchDown", a.touch_down, touch_down_hook as *const () as usize),
-        ("CApp::OnTouchMove", a.touch_move, touch_move_hook as *const () as usize),
-        ("CApp::OnTouchUp", a.touch_up, touch_up_hook as *const () as usize),
-        ("CApp::OnTouchCancel", a.touch_cancel, touch_cancel_hook as *const () as usize),
-    ];
-    let touch = touch_hooks.map(|(name, func, repl)| hook(name, func, repl, &TOUCH_STUB_PROLOGUE).is_some());
-    let touch = touch.iter().all(|&on| on);
+    };
+    ONLOOP_ORIG.store(onloop, Ordering::Relaxed);
+    let on = place_hooks(a);
+    let feature = |f: Feature| on[f as usize];
+    let touch = feature(Feature::Touch);
     let touch_scan = touch && query_all_touch_devices(a.graphics_init, a.xi_query_device);
-    // The pointer hook goes in first: a box drawn scaled must also hit-test scaled.
-    let event_text = install(
-        "ChoiceBox::MouseMove",
-        a.choice_mouse_move,
-        choice_mouse_move_hook as *const () as usize,
-        &CHOICE_MOUSE_MOVE_PROLOGUE,
-        &CHOICE_MOUSE_MOVE_ORIG,
-    ) && install(
-        "ChoiceBox::OnRender",
-        a.choice_render,
-        choice_render_hook as *const () as usize,
-        &CHOICE_RENDER_PROLOGUE,
-        &CHOICE_RENDER_ORIG,
-    ) && install(
-        "WindowFrame::Draw",
-        a.frame_draw,
-        frame_draw_hook as *const () as usize,
-        &FRAME_DRAW_PROLOGUE,
-        &FRAME_DRAW_ORIG,
-    );
-    // The measure hook goes in first: a tooltip drawn scaled must be measured scaled.
-    let tooltip_text = overlay
-        && install(
-            "MouseControl::MeasureTooltip",
-            a.measure_tooltip,
-            measure_tooltip_hook as *const () as usize,
-            &MEASURE_TOOLTIP_PROLOGUE,
-            &MEASURE_TOOLTIP_ORIG,
-        )
-        && install(
-            "GetFontData",
-            a.font_data,
-            font_data_hook as *const () as usize,
-            &FONT_DATA_PROLOGUE,
-            &FONT_DATA_ORIG,
-        );
-    let zoom = install(
-        "CSurface::GL_BlitFrameBuffer",
-        a.blit_frame,
-        blit_frame_hook as *const () as usize,
-        &BLIT_FRAME_PROLOGUE,
-        &BLIT_FRAME_ORIG,
-    );
-    let pointer = install(
-        "CSurface::GL_BlitPixelImage",
-        a.blit_pixel,
-        blit_pixel_hook as *const () as usize,
-        &BLIT_PIXEL_PROLOGUE,
-        &BLIT_PIXEL_ORIG,
-    );
-    let pointer_tooltip = pointer
-        && install(
-            "MouseControl::RenderTooltip",
-            a.render_tooltip,
-            render_tooltip_hook as *const () as usize,
-            &RENDER_TOOLTIP_PROLOGUE,
-            &RENDER_TOOLTIP_ORIG,
-        );
-    POINTER_TOOLTIP.store(pointer_tooltip, Ordering::Relaxed);
-    let hud_left = install(
-        "CrewBox::CrewBox",
-        a.crew_box_ctor,
-        crew_box_hook as *const () as usize,
-        &CREW_BOX_PROLOGUE,
-        &CREW_BOX_ORIG,
-    ) && install(
-        "ShipStatus::OnMouseMove",
-        a.status_mouse_move,
-        status_mouse_hook as *const () as usize,
-        &STATUS_MOUSE_PROLOGUE,
-        &STATUS_MOUSE_ORIG,
-    ) && install(
-        "CrewControl::OnRender",
-        a.crew_render,
-        crew_render_hook as *const () as usize,
-        &CREW_RENDER_PROLOGUE,
-        &CREW_RENDER_ORIG,
-    );
-    hud::set_left_hooked(hud_left);
-    let pause_banner = overlay
-        && install(
-            "CommandGui::RenderPause",
-            a.render_pause,
-            render_pause_hook as *const () as usize,
-            &RENDER_PAUSE_PROLOGUE,
-            &RENDER_PAUSE_ORIG,
-        );
-    badge::set_pause_hooked(pause_banner);
-    let ipad = install(
-        "ResourceControl::GetImageId",
-        a.image_id as usize,
-        image_id_hook as *const () as usize,
-        &IMAGE_ID_PROLOGUE,
-        &IMAGE_ID_ORIG,
-    );
-    ipad_art::set_hooked(ipad);
+    POINTER_TOOLTIP.store(feature(Feature::PointerTooltip), Ordering::Relaxed);
+    hud::set_left_hooked(feature(Feature::HudLeft));
+    badge::set_pause_hooked(feature(Feature::PauseBanner));
+    ipad_art::set_hooked(feature(Feature::IpadArt));
     let step_cap = redirect_step_cap(a.fps_loop);
     let pad_scan = accept_buttons_only_pads(a.scan_joystick);
     let sound_recovery = sound::install(&exe, sound_addrs);
-    let on = |b: bool| if b { "on" } else { "off" };
-    log!(
-        "active on {}: overlay {}, shift {}, buttons {}, touch {}, touch scan {}, pointer {}, \
-         pointer tooltip {}, event text {}, tooltip text {}, zoom {}, hud left {}, pause banner {}, \
-         ipad art {}, step cap {}, pad scan {}, sound recovery {}",
-        build.name,
-        on(overlay),
-        on(shift),
-        on(buttons),
-        on(touch),
-        on(touch_scan),
-        on(pointer),
-        on(pointer_tooltip),
-        on(event_text),
-        on(tooltip_text),
-        on(zoom),
-        on(hud_left),
-        on(pause_banner),
-        on(ipad),
-        on(step_cap.is_some()),
-        on(pad_scan),
-        on(sound_recovery)
-    );
+    let mut parts: Vec<(&str, bool)> = FEATURE_NAMES.into_iter().zip(on).collect();
+    parts.insert(Feature::Touch as usize + 1, ("touch scan", touch_scan));
+    parts.extend([("step cap", step_cap.is_some()), ("pad scan", pad_scan), ("sound recovery", sound_recovery)]);
+    let parts: Vec<String> =
+        parts.iter().map(|(name, on)| format!("{name} {}", if *on { "on" } else { "off" })).collect();
+    log!("active on {}: {}", build.name, parts.join(", "));
     with_layer(|l| {
         l.debug = debug;
         l.touch.hooked = touch;
