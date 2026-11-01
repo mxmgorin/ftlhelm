@@ -854,7 +854,8 @@ impl Layer {
         }
         match kind {
             WheelKind::Crew => {
-                let Some(member) = state::crew_at((code - KEY_F1) as usize) else {
+                let hotkey = (code - KEY_F1) as usize;
+                let Some((_, member)) = state::boxed_crew().into_iter().find(|&(i, _)| i == hotkey) else {
                     return;
                 };
                 if dir > 0 {
@@ -1131,16 +1132,13 @@ mod tests {
             let door_icon = g.arena.alloc(size_of::<usize>());
             l.images.insert("door.png", door_icon.addr());
             let layout = "[wheel:actions]\nup = p \"Lockdown\"\nright = z \"Open doors\" door.png@1,2,3,4\n";
-            let manager = g.player_manager();
+            g.player_manager();
             let lockdown_available = |l: &mut Layer| plates(l, layout)[0].available;
             assert!(!lockdown_available(&mut l));
-            let crew = [
-                Some(g.crew("Ann", "human", PLAYER_SHIP_ID, false)),
-                Some(g.crew("Cy", "crystal", PLAYER_SHIP_ID, true)),
-            ];
-            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &crew);
+            let crew = [g.crew("Ann", "human", PLAYER_SHIP_ID, false), g.crew("Cy", "crystal", PLAYER_SHIP_ID, true)];
+            g.crew_boxes(&crew);
             assert!(!lockdown_available(&mut l));
-            crew[1].expect("a crew member").set(CREW_DEAD, 0u8);
+            crew[1].set(CREW_DEAD, 0u8);
             assert!(lockdown_available(&mut l));
             let doors = &plates(&mut l, layout)[2];
             assert!(doors.available);
@@ -1158,10 +1156,10 @@ mod tests {
             let label: String = long.chars().take(LABEL_CHARS).collect();
             let weapon = armament(g, long, "laser", 1, false);
             g.arena.ptr_vector(g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL), ARMAMENT_BOXES, &[weapon]);
-            let manager = g.player_manager();
+            g.player_manager();
             let member = g.crew(long, "human", ENEMY_SHIP_ID, false);
             member.at(CREW_BLUEPRINT + CREWBP_NAME).set(TEXTSTRING_LITERAL, 0u8);
-            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &[Some(member)]);
+            g.crew_boxes(&[member]);
             let mut l = Layer::default();
             l.images.insert(&format!("{WEAPON_ICON_PREFIX}laser{ICON_SUFFIX}"), 0);
             l.images.insert(WEAPON_ICON_FALLBACK, 0);
@@ -1409,7 +1407,7 @@ mod tests {
     #[test]
     fn crew_plates_skip_the_dead_and_keep_their_f_keys() {
         with_game(|g| {
-            let manager = g.player_manager();
+            g.player_manager();
             let anim = g.arena.alloc(size_of::<usize>());
             let members = [
                 g.crew("Ann", "human", ENEMY_SHIP_ID, false),
@@ -1417,7 +1415,7 @@ mod tests {
                 g.crew("Cy", "rock", ENEMY_SHIP_ID, false),
             ];
             members[2].set(CREW_ANIM, anim.addr());
-            g.arena.ptr_vector(manager, SHIPMANAGER_CREW, &members.map(Some));
+            g.crew_boxes(&members);
             g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(members[2])]);
             let plates = plates(&mut Layer::default(), "[wheel:crew]\nkind = crew\n");
             let key = |n: i32| Some(Action::Key { code: KEY_F1 + n, shift: false });

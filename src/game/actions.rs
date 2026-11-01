@@ -522,14 +522,15 @@ fn next_room_pick(count: usize, selected: &[usize]) -> RoomPick {
 
 /// Selects the living crew member after the first selected one, wrapping.
 pub fn select_next_crew() {
-    let count = (0..CREW_HOTKEYS).take_while(|&i| state::crew_at(i).is_some()).count();
+    let crew: Vec<(usize, Obj)> = state::boxed_crew().into_iter().filter(|&(i, _)| i < CREW_HOTKEYS).collect();
+    let count = crew.len();
     if count == 0 {
         return;
     }
-    let start = (0..count).find(|&i| state::crew_at(i).is_some_and(state::crew_is_selected));
+    let start = crew.iter().position(|&(_, m)| state::crew_is_selected(m));
     for n in 1..=count {
-        let i = (start.unwrap_or(count - 1) + n) % count;
-        if state::crew_at(i).is_some_and(|m| !state::crew_dead(m)) {
+        let (i, m) = crew[(start.unwrap_or(count - 1) + n) % count];
+        if !state::crew_dead(m) {
             tap_key(KEY_F1 + i as i32, false);
             return;
         }
@@ -876,6 +877,24 @@ mod tests {
     fn select(g: &mut Game, crew: &[Obj]) {
         let items: Vec<_> = crew.iter().copied().map(Some).collect();
         g.arena.ptr_vector(g.gui, GUI_CREW_CONTROL + CREW_SELECTED, &items);
+    }
+
+    #[test]
+    fn the_next_crew_member_is_the_next_living_one_by_hotkey_wrapping() {
+        with_game(|g| {
+            let crew = [
+                g.crew("Ann", "human", PLAYER_SHIP_ID, false),
+                g.crew("Bo", "human", PLAYER_SHIP_ID, true),
+                g.crew("Cy", "human", PLAYER_SHIP_ID, false),
+            ];
+            g.crew_boxes(&crew);
+            select(g, &[crew[0]]);
+            select_next_crew();
+            assert_eq!(keys_down(), [KEY_F1 + 2], "past the dead");
+            select(g, &[crew[2]]);
+            select_next_crew();
+            assert_eq!(keys_down(), [KEY_F1], "round to the first");
+        });
     }
 
     #[test]

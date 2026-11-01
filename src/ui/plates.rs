@@ -168,13 +168,10 @@ fn setting_glyph(key: &str) -> Option<Glyph> {
 pub(super) fn crew_plates() -> [Plate; WHEEL_SLOTS] {
     let mut plates: [Plate; WHEEL_SLOTS] = Default::default();
     let mut slot = 0;
-    for i in 0..CREW_HOTKEYS {
+    for (i, member) in state::boxed_crew().into_iter().filter(|&(i, _)| i < CREW_HOTKEYS) {
         if slot == WHEEL_SLOTS {
             break;
         }
-        let Some(member) = state::crew_at(i) else {
-            break;
-        };
         if state::crew_dead(member) {
             continue;
         }

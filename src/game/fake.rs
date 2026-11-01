@@ -638,6 +638,19 @@ impl Game {
         text_string.set(TEXTSTRING_LITERAL, 1u8);
     }
 
+    /// Lays out the crew control's boxes, one per member in hotkey order.
+    pub fn crew_boxes(&mut self, members: &[Obj]) {
+        let boxes: Vec<Option<Obj>> = members
+            .iter()
+            .map(|m| {
+                let crew_box = self.arena.alloc(CREWBOX_CREW + size_of::<usize>());
+                crew_box.set(CREWBOX_CREW, m.addr());
+                Some(crew_box)
+            })
+            .collect();
+        self.arena.ptr_vector(self.gui, GUI_CREW_CONTROL + CREW_BOXES, &boxes);
+    }
+
     /// A CrewMember with a literal name, of a race, aboard a ship.
     pub fn crew(&mut self, name: &str, race: &str, ship: i32, dead: bool) -> Obj {
         let member = self.arena.alloc(CREW_SIZE);

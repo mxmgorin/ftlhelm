@@ -280,11 +280,6 @@ pub fn enemy_origin(gui: Obj) -> Point {
     Point { x: origin.x + target.x, y: origin.y + target.y }
 }
 
-/// The crew member at an F-key index into the ship's crew list.
-pub fn crew_at(index: usize) -> Option<Obj> {
-    player_manager()?.at(SHIPMANAGER_CREW).vec_obj(index)
-}
-
 /// The player's crew with the indices of their boxes, which the crew hotkeys follow.
 pub fn boxed_crew() -> Vec<(usize, Obj)> {
     let Some(gui) = gui() else {
@@ -391,7 +386,7 @@ pub fn keyed_system(key: i32) -> Option<Obj> {
 
 /// Whether the player's crew has a living crystal member.
 pub fn has_crystal_crew() -> bool {
-    (0..).map_while(crew_at).any(|m| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
+    boxed_crew().into_iter().any(|(_, m)| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
 }
 
 pub fn has_system(kind: i32) -> bool {

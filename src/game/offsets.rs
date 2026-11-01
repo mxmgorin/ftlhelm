@@ -266,7 +266,6 @@ pub const CROSSHAIR_ICON: &str = "misc/crosshairs_placed.png";
 pub const POINTER_ICON: &str = "mouse/pointerValid.png";
 pub const POINTER_REGION: [f32; 4] = [0.0, 0.0, 14.0, 21.0];
 
-pub const SHIPMANAGER_CREW: usize = 192;
 pub const SHIPMANAGER_SHIP: usize = 280;
 pub const COMPLETE_SHIP_MANAGER: usize = 16;
 pub const CREW_ANIM: usize = 192;
