@@ -766,7 +766,7 @@ impl Layer {
             }
             Some(Action::LClick) => self.click_tap(MouseButton::Left),
             Some(Action::RClick) => self.click_tap(MouseButton::Right),
-            Some(Action::Builtin(b)) => self.builtin_tap(b),
+            Some(Action::Builtin(b)) => self.perform_tap(Action::Builtin(b), Source::Plate),
             Some(Action::Set(i)) => {
                 self.tune(i, None);
                 self.buzz();

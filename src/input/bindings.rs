@@ -322,8 +322,7 @@ impl Layer {
             // Off the ship view a wheel button is its tap alone, at once.
             if self.wheel.open.is_none() && !self.wheel_allowed(w) {
                 if let Some(tap) = b.tap {
-                    self.perform(tap, Source::Input(input), true);
-                    self.perform(tap, Source::Input(input), false);
+                    self.perform_tap(tap, Source::Input(input));
                 }
                 return;
             }
@@ -343,8 +342,7 @@ impl Layer {
     pub fn release(&mut self, input: Input) {
         if let Some((b, _)) = self.bind.pending[input as usize].take() {
             if let Some(tap) = b.tap {
-                self.perform(tap, Source::Input(input), true);
-                self.perform(tap, Source::Input(input), false);
+                self.perform_tap(tap, Source::Input(input));
             }
             return;
         }
@@ -385,10 +383,10 @@ impl Layer {
         }
     }
 
-    /// Runs a plate's builtin as a tap.
-    pub fn builtin_tap(&mut self, b: Builtin) {
-        self.builtin(b, Source::Plate, true);
-        self.builtin(b, Source::Plate, false);
+    /// Performs an action's press and release at once.
+    pub fn perform_tap(&mut self, action: Action, source: Source) {
+        self.perform(action, source, true);
+        self.perform(action, source, false);
     }
 }
 

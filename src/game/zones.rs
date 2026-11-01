@@ -259,6 +259,19 @@ impl Zones {
         }
     }
 
+    /// The rooms of the player's ship and of the enemy's when there is one, the enemy's first
+    /// when `enemy_first`.
+    fn add_ship_rooms(&mut self, gui: Obj, player: Obj, enemy_first: bool) {
+        let ships =
+            [(Some(player), state::player_origin(gui), false), (state::enemy_ship(), state::enemy_origin(gui), true)];
+        let order = if enemy_first { [1, 0] } else { [0, 1] };
+        for (ship, origin, enemy) in order.map(|i| ships[i]) {
+            if let Some(ship) = ship {
+                self.add_rooms(ship, origin, enemy);
+            }
+        }
+    }
+
     fn add_rooms(&mut self, ship: Obj, origin: Point, enemy: bool) {
         for (_, room) in ship.at(SHIP_ROOMS).vec_objs() {
             let mut r = room.rect(ROOM_RECT);
@@ -270,8 +283,8 @@ impl Zones {
 
     /// Beacons, or the sector boxes while a new sector is being chosen; false when the map
     /// is closed.
-    fn add_map_zones(&mut self) -> bool {
-        let Some(map) = state::star_map().filter(|m| m.flag(FOCUS_OPEN)) else {
+    fn add_map_zones(&mut self, map: Option<Obj>) -> bool {
+        let Some(map) = map else {
             return false;
         };
         if map.flag(STARMAP_CHOOSING_SECTOR) {
@@ -397,21 +410,13 @@ impl Layer {
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
         let precision = self.bind.precision;
         if let Some(player) = player {
-            if !screen_open && !zones.add_map_zones() {
-                let enemy = state::enemy_ship();
-                let origin = state::player_origin(gui);
+            if !screen_open && !zones.add_map_zones(map) {
                 if state::aiming() {
-                    if let Some(enemy) = enemy {
-                        zones.add_rooms(enemy, state::enemy_origin(gui), true);
-                    }
-                    zones.add_rooms(player, origin, false);
+                    zones.add_ship_rooms(gui, player, true);
                 } else if precision && !state::any_crew_selected() {
-                    zones.add_doors(player, origin);
+                    zones.add_doors(player, state::player_origin(gui));
                 } else {
-                    zones.add_rooms(player, origin, false);
-                    if let Some(enemy) = enemy {
-                        zones.add_rooms(enemy, state::enemy_origin(gui), true);
-                    }
+                    zones.add_ship_rooms(gui, player, false);
                     zones.add_armament_zones();
                 }
             }
