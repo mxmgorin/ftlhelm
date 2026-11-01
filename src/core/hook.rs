@@ -348,12 +348,48 @@ unsafe fn put_code(at: usize, parts: &[&[u8]]) {
     }
 }
 
+/// "jmp rel32" from `at` to `to`, padded with nops to `len` bytes; `to` within rel32 reach.
+fn jmp_code(at: usize, to: usize, len: usize) -> Vec<u8> {
+    let rel = (to as i64 - (at + JMP_LEN) as i64) as i32;
+    let mut code = vec![JMP_REL32];
+    code.extend_from_slice(&rel.to_le_bytes());
+    code.resize(len.max(JMP_LEN), NOP);
+    code
+}
+
 /// Writes "jmp rel32" at `at`.
 /// # Safety
 /// `at` must be writable for JMP_LEN bytes, with `to` within rel32 reach.
 unsafe fn put_jmp(at: usize, to: usize) {
-    let rel = (to as i64 - (at + JMP_LEN) as i64) as i32;
-    put_code(at, &[&[JMP_REL32], &rel.to_le_bytes()]);
+    put_code(at, &[&jmp_code(at, to, JMP_LEN)]);
+}
+
+/// The one offset in `code` where a `site_len` byte site passes `matches`; None with the
+/// reason logged under `what` when there is none or more than one.
+fn unique_site(code: &[u8], site_len: usize, what: &str, matches: impl Fn(usize) -> bool) -> Option<usize> {
+    let mut sites = (0..=code.len().saturating_sub(site_len)).filter(|&i| matches(i));
+    let Some(site) = sites.next() else {
+        log!("{what} not found");
+        return None;
+    };
+    if sites.next().is_some() {
+        log!("{what} not unique");
+        return None;
+    }
+    Some(site)
+}
+
+/// Writes `bytes` over the game's code at `at`, its pages writable for the write only;
+/// false with the reason logged under `name` when they cannot be made writable.
+fn patch(name: &str, at: usize, bytes: &[u8]) -> bool {
+    if !protect(at, bytes.len(), libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
+        log!("{name}: code not writable");
+        return false;
+    }
+    // SAFETY: the bytes were just made writable; the game's code there is not running yet.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), at as *mut u8, bytes.len()) };
+    protect(at, bytes.len(), libc::PROT_READ | libc::PROT_EXEC);
+    true
 }
 
 /// Writes "mov $to,%rax; jmp *%rax" at `at`.
@@ -449,17 +485,7 @@ pub fn hook(name: &str, func: usize, repl: usize, prologue: &[u8]) -> Option<usi
         std::ptr::copy_nonoverlapping(prologue.as_ptr(), orig as *mut u8, prologue.len());
         put_jmp(orig + prologue.len(), func + prologue.len());
     }
-    if !protect(func, prologue.len(), libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
-        log!("{name}: code not writable");
-        return None;
-    }
-    // SAFETY: the prologue bytes were just made writable; the game is not running yet.
-    unsafe {
-        put_jmp(func, entry);
-        std::ptr::write_bytes((func + JMP_LEN) as *mut u8, NOP, prologue.len() - JMP_LEN);
-    }
-    protect(func, prologue.len(), libc::PROT_READ | libc::PROT_EXEC);
-    Some(orig)
+    patch(name, func, &jmp_code(func, entry, prologue.len())).then_some(orig)
 }
 
 fn bit_mask(code: i64) -> u8 {
@@ -473,19 +499,13 @@ pub fn accept_buttons_only_pads(scan: usize) -> bool {
     let mask = bit_mask(BTN_DPAD_UP);
     // SAFETY: the scan stays within the start of scan_joystick's code.
     let code = unsafe { std::slice::from_raw_parts(scan as *const u8, PAD_TEST_SCAN) };
-    let mut sites = (0..=PAD_TEST_SCAN - site_len).filter(|&i| {
+    let Some(site) = unique_site(code, site_len, "pad scan: test", |i| {
         code[i..i + TESTB_ABS.len()] == TESTB_ABS
             && code[i + TESTB_LEN - 1] == mask
             && code[i + TESTB_LEN..i + TESTB_LEN + JE_REL32.len()] == JE_REL32
-    });
-    let Some(site) = sites.next() else {
-        log!("pad scan: test not found");
+    }) else {
         return false;
     };
-    if sites.next().is_some() {
-        log!("pad scan: test not unique");
-        return false;
-    }
     let at = scan + site;
     let dpad_disp = le_u32(code, site + TESTB_ABS.len()) as i32;
     let je_rel = le_u32(code, site + TESTB_LEN + JE_REL32.len()) as i32;
@@ -517,17 +537,7 @@ pub fn accept_buttons_only_pads(scan: usize) -> bool {
         put_jmp(p, reject);
         put_jmp(accept, at + site_len);
     }
-    if !protect(at, site_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
-        log!("pad scan: code not writable");
-        return false;
-    }
-    // SAFETY: the test's bytes were just made writable; the input scan has not run yet.
-    unsafe {
-        put_jmp(at, t);
-        std::ptr::write_bytes((at + JMP_LEN) as *mut u8, NOP, site_len - JMP_LEN);
-    }
-    protect(at, site_len, libc::PROT_READ | libc::PROT_EXEC);
-    true
+    patch("pad scan", at, &jmp_code(at, t, site_len))
 }
 
 /// Makes sys_graphics_init look for a touchscreen among all input devices: a master device
@@ -540,7 +550,7 @@ pub fn query_all_touch_devices(graphics_init: usize, query: usize) -> bool {
     let site_len = call_at + CALL_RIP.len() + std::mem::size_of::<i32>();
     // SAFETY: the scan stays within sys_graphics_init's code and the function after it.
     let code = unsafe { std::slice::from_raw_parts(graphics_init as *const u8, TOUCH_QUERY_SCAN) };
-    let mut sites = (0..=TOUCH_QUERY_SCAN - site_len).filter(|&i| {
+    let Some(site) = unique_site(code, site_len, "touch scan: query", |i| {
         let call = i + call_at;
         let target = || (graphics_init + i + site_len) as i64 + le_u32(code, call + CALL_RIP.len()) as i32 as i64;
         code[i] == MOV_ESI_IMM32
@@ -548,24 +558,10 @@ pub fn query_all_touch_devices(graphics_init: usize, query: usize) -> bool {
             && code[i + mov_esi_len..i + mov_esi_len + MOV_RDI_RIP.len()] == MOV_RDI_RIP
             && code[call..call + CALL_RIP.len()] == CALL_RIP
             && target() == query as i64
-    });
-    let Some(site) = sites.next() else {
-        log!("touch scan: query not found");
+    }) else {
         return false;
     };
-    if sites.next().is_some() {
-        log!("touch scan: query not unique");
-        return false;
-    }
-    let imm = graphics_init + site + 1;
-    if !protect(imm, imm_len, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
-        log!("touch scan: code not writable");
-        return false;
-    }
-    // SAFETY: the immediate's bytes were just made writable; the display is not open yet.
-    unsafe { (imm as *mut u32).write_unaligned(XI_ALL_DEVICES) };
-    protect(imm, imm_len, libc::PROT_READ | libc::PROT_EXEC);
-    true
+    patch("touch scan", graphics_init + site + 1, &XI_ALL_DEVICES.to_le_bytes())
 }
 
 /// Points CFPS::OnLoop's step cap load at a float of the data page, so the fast speed can
@@ -574,18 +570,10 @@ pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     let insn = STEP_CAP_LOAD.len() + std::mem::size_of::<i32>();
     // SAFETY: the scan stays within the start of CFPS::OnLoop's code.
     let code = unsafe { std::slice::from_raw_parts(fps_loop as *const u8, STEP_CAP_SCAN) };
-    let mut sites = (0..=STEP_CAP_SCAN - insn - STEP_CAP_NEXT.len()).filter(|&i| {
+    let site = unique_site(code, insn + STEP_CAP_NEXT.len(), "step cap: load", |i| {
         code[i..i + STEP_CAP_LOAD.len()] == STEP_CAP_LOAD
             && code[i + insn..i + insn + STEP_CAP_NEXT.len()] == STEP_CAP_NEXT
-    });
-    let Some(site) = sites.next() else {
-        log!("step cap: load not found");
-        return None;
-    };
-    if sites.next().is_some() {
-        log!("step cap: load not unique");
-        return None;
-    }
+    })?;
     let disp_at = fps_loop + site + STEP_CAP_LOAD.len();
     let next = fps_loop + site + insn;
     // SAFETY: disp_at holds the rel32 of the load, inside the code read above.
@@ -597,14 +585,8 @@ pub fn redirect_step_cap(fps_loop: usize) -> Option<usize> {
     };
     // SAFETY: cap is the game's constant; redirected lies in the writable data page.
     unsafe { (redirected as *mut f32).write((cap as *const f32).read()) };
-    if !protect(disp_at, std::mem::size_of::<i32>(), libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC) {
-        log!("step cap: code not writable");
-        return None;
-    }
-    // SAFETY: the displacement bytes were just made writable.
-    unsafe { (disp_at as *mut i32).write_unaligned((redirected as i64 - next as i64) as i32) };
-    protect(disp_at, std::mem::size_of::<i32>(), libc::PROT_READ | libc::PROT_EXEC);
-    Some(redirected)
+    let rel = (redirected as i64 - next as i64) as i32;
+    patch("step cap", disp_at, &rel.to_le_bytes()).then_some(redirected)
 }
 
 #[cfg(test)]
