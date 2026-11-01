@@ -177,7 +177,10 @@ impl Layer {
             Builtin::Cancel if down => {
                 if self.wheel.open.is_some() {
                     self.back_wheel();
-                } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some()) {
+                } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
+                    || state::open_options().is_some()
+                    || state::ship_list_open()
+                {
                     tap_key(KEY_ESCAPE, false);
                 } else if state::aiming() {
                     // The right button cancels targeting.
@@ -473,6 +476,26 @@ mod tests {
             l.wheel.open = Some(0);
             assert_eq!(cancel(&mut l), []);
             assert_eq!(l.wheel.open, None);
+        });
+    }
+
+    #[test]
+    fn cancel_closes_the_main_menu_options_and_the_hangar_ship_list() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let hangar = menu.at(MAIN_MENU_HANGAR);
+            hangar.set(HANGAR_OPEN, 1u8);
+            l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
+            assert_eq!(calls(), [], "the hangar alone stays");
+            for flag in [hangar.at(HANGAR_SHIP_LIST + SHIP_LIST_OPEN), menu.at(MAIN_MENU_OPTIONS + FOCUS_OPEN)] {
+                flag.set(0, 1u8);
+                l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
+                assert_eq!(calls(), escape);
+                flag.set(0, 0u8);
+            }
         });
     }
 
