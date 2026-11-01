@@ -157,6 +157,10 @@ pub const STORE_SELL_TAB: i32 = 1;
 pub const MENU_CONFIRM: usize = 120;
 /// MenuScreen::bShowControls: the controls overview over the whole frame.
 pub const MENU_SHOW_CONTROLS: usize = 776;
+/// MenuScreen::shipAchievements, the current ship's achievement icons.
+pub const MENU_ACHIEVEMENTS: usize = 888;
+/// ShipAchievementInfo: the achievement, its icon's corner on screen and the icon's side.
+pub const ACHIEVEMENT_INFO_SIZE: usize = 24;
 /// OptionsScreen::bCustomizeControls: the hotkey screen over the whole frame.
 pub const OPTIONS_CUSTOMIZE_CONTROLS: usize = 672;
 
@@ -179,6 +183,7 @@ pub const MAIN_MENU_HANGAR: usize = 1096;
 pub const HANGAR_OPEN: usize = 4280;
 pub const HANGAR_EQUIP_BOXES: usize = 4360;
 pub const HANGAR_SHIP_LIST: usize = 5120;
+pub const HANGAR_ACHIEVEMENTS: usize = 7672;
 pub const SHIP_LIST_OPEN: usize = 88;
 
 pub const STARMAP_SIZE: usize = 3280;

@@ -41,6 +41,7 @@ pub enum ZoneKind {
     Slot,
     SellBox,
     Armament,
+    Achievement,
 }
 
 impl ZoneKind {
@@ -56,6 +57,7 @@ impl ZoneKind {
             ZoneKind::Slot => "slot",
             ZoneKind::SellBox => "sell box",
             ZoneKind::Armament => "armament box",
+            ZoneKind::Achievement => "achievement",
         }
     }
 }
@@ -67,6 +69,17 @@ pub struct Zone {
     pub id: i32,
     pub kind: ZoneKind,
 }
+
+/// ShipAchievementInfo as the game lays it out.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct AchievementIcon {
+    achievement: usize,
+    at: Point,
+    side: i32,
+}
+
+const _: () = assert!(std::mem::size_of::<AchievementIcon>() == ACHIEVEMENT_INFO_SIZE);
 
 /// A button the game hit-tested: its box on screen and the object's address.
 #[derive(Clone, Copy, Debug)]
@@ -321,6 +334,16 @@ impl Zones {
         }
     }
 
+    /// The icons of a ship achievement list that hold an achievement, as the game hit-tests
+    /// them.
+    fn add_achievements(&mut self, list: Obj) {
+        for (i, icon) in list.vec_items::<AchievementIcon>().enumerate() {
+            if icon.achievement != 0 && icon.side > 0 {
+                self.push(open_rect(icon.at, icon.side, icon.side), i as i32, ZoneKind::Achievement);
+            }
+        }
+    }
+
     /// A choice box's choices, through the transform it last drew with.
     fn add_choices(&mut self, choice: Obj) {
         let zoom = text::box_zoom(choice.addr());
@@ -427,6 +450,10 @@ impl Layer {
         }
         if let Some(hangar) = state::hangar().filter(|_| !state::ship_list_open()) {
             zones.add_hangar_boxes(hangar);
+            zones.add_achievements(hangar.at(HANGAR_ACHIEVEMENTS));
+        }
+        if let Some(menu) = state::game_menu_alone() {
+            zones.add_achievements(menu.at(MENU_ACHIEVEMENTS));
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
@@ -816,6 +843,29 @@ mod tests {
             hangar.at(HANGAR_SHIP_LIST).set(SHIP_LIST_OPEN, 1u8);
             l.zones.buttons.clear();
             assert_eq!(built(&mut l), [], "no boxes under the ship list");
+        });
+    }
+
+    #[test]
+    fn the_hangar_and_the_game_menu_alone_list_their_ship_achievements() {
+        with_game(|g| {
+            let icon = |achievement, x| AchievementIcon { achievement, at: Point { x, y: 400 }, side: SIDE };
+            let icons = [icon(1, 20), icon(0, 80)];
+            let inside = |x| open_rect(Point { x, y: 400 }, SIDE, SIDE);
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let hangar = menu.at(MAIN_MENU_HANGAR);
+            hangar.set(HANGAR_OPEN, 1u8);
+            g.arena.vector(hangar, HANGAR_ACHIEVEMENTS, &icons);
+            let mut l = Layer::default();
+            assert_eq!(built(&mut l), [(ZoneKind::Achievement, 0, inside(20))], "an icon with an achievement");
+            menu.set(MAIN_MENU_OPEN, 0u8);
+            let game_menu = g.gui.at(GUI_MENU_BOX);
+            game_menu.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(game_menu, MENU_ACHIEVEMENTS, &icons);
+            assert_eq!(built(&mut l), [(ZoneKind::Achievement, 0, inside(20))]);
+            game_menu.at(MENU_CONFIRM).set(FOCUS_OPEN, 1u8);
+            assert_eq!(built(&mut l), [], "none under the confirmation");
         });
     }
 

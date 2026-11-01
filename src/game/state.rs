@@ -227,6 +227,17 @@ pub fn window_rect() -> Option<Rect> {
     star_map_open().then_some(STAR_MAP_RECT)
 }
 
+/// The game menu while it takes the clicks: open, with no options, confirmation or controls
+/// over it.
+pub fn game_menu_alone() -> Option<Obj> {
+    let gui = gui()?;
+    let menu = gui.at(GUI_MENU_BOX);
+    let covered = gui.at(GUI_OPTIONS_BOX).flag(FOCUS_OPEN)
+        || menu.flag(MENU_SHOW_CONTROLS)
+        || menu.at(MENU_CONFIRM).flag(FOCUS_OPEN);
+    (menu.flag(FOCUS_OPEN) && !covered && !main_menu_open()).then_some(menu)
+}
+
 /// The game menu or the options screen, when one is open.
 pub fn modal_window(gui: Obj) -> Option<Obj> {
     [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
