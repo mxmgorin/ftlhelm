@@ -396,7 +396,8 @@ impl Layer {
         let Some(gui) = state::gui() else {
             return;
         };
-        let player = state::player_ship();
+        // The GUI keeps the last game's ship behind the main menu.
+        let player = state::player_ship().filter(|_| !state::main_menu_open());
         let options = state::open_options();
         let modal_open = options.is_some() || state::modal_window(gui).is_some();
         if let Some(choice) = state::open_choice().filter(|_| !modal_open) {
@@ -740,6 +741,18 @@ mod tests {
             let hud = Button { rect: rect(631, 0), object: options.addr() + layout().options_size() };
             l.zones.buttons = vec![hud, own];
             assert_eq!(built(&mut l), [(ZoneKind::Button, 1, own.rect)]);
+        });
+    }
+
+    #[test]
+    fn the_main_menu_leaves_out_the_last_games_ship() {
+        with_game(|g| {
+            two_ships(g);
+            g.app.at(CAPP_MAIN_MENU).set(MAIN_MENU_OPEN, 1u8);
+            let mut l = Layer::default();
+            let start = Button { rect: rect(1078, 364), object: g.app.addr() };
+            l.zones.buttons = vec![start];
+            assert_eq!(built(&mut l), [(ZoneKind::Button, 0, start.rect)]);
         });
     }
 
