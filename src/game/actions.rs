@@ -81,6 +81,12 @@ pub fn key_up(code: i32) {
     unsafe { (api().key_up)(state::app_ptr(), code) }
 }
 
+/// Puts the module's process-wide state back as at load, for the next test.
+#[cfg(test)]
+pub fn reset_statics() {
+    SHIFT_COUNT.store(0, Ordering::Relaxed);
+}
+
 /// Holds Shift down while any caller wants it, in the engine's key state and in the flag
 /// CApp::OnLoop samples once a frame for the hotkeys.
 /// A release with no caller holding it does nothing.
@@ -580,7 +586,7 @@ mod tests {
     use super::*;
     use crate::core::util::now_s;
     use crate::game::api::{Point, Rect};
-    use crate::game::fake::{calls, with_game, Call, Game};
+    use crate::game::fake::{calls, with_game, Call, Game, WEAPON_SIZE};
     use crate::game::zones::Zone;
     use std::mem::size_of;
 
@@ -590,7 +596,6 @@ mod tests {
     #[test]
     fn a_stray_shift_release_leaves_the_next_hold_working() {
         with_game(|_| {
-            SHIFT_COUNT.store(0, Ordering::Relaxed);
             set_shift(false);
             assert_eq!((shift_count(), calls()), (0, vec![]));
             set_shift(true);
@@ -617,7 +622,7 @@ mod tests {
             };
             let bp = g.arena.alloc(WEAPONBP_TYPE_NAME + size_of::<usize>());
             g.string(bp, WEAPONBP_TYPE_NAME, if beam { BEAM_TYPE_NAME } else { "LASER" });
-            let weapon = g.arena.alloc(WEAPON_TARGETS + 3 * size_of::<usize>());
+            let weapon = g.arena.alloc(WEAPON_SIZE);
             weapon.set(WEAPON_BLUEPRINT, bp.addr());
             weapon.set(WEAPON_POWERED, powered as u8);
             if aimed {
@@ -667,6 +672,7 @@ mod tests {
             arm_next();
             assert_eq!(keys_down(), [key(3)], "the next after the armed one");
             aim(g, control, 2);
+            aim(g, control, 3);
             arm_next();
             assert_eq!(keys_down(), [key(0)], "all hold a target");
         });

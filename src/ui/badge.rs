@@ -340,7 +340,7 @@ mod tests {
     use super::*;
     use crate::config::layout::LABEL_CHARS;
     use crate::game::actions::Volley;
-    use crate::game::fake::with_game;
+    use crate::game::fake::{with_game, WEAPON_SIZE};
 
     const BANNER: (f32, f32, f32) = (264.0, 72.0, 49.0);
     const LINE_W: f32 = 200.0;
@@ -421,7 +421,7 @@ mod tests {
             let title = "Heavy Laser Mark Two Prototype";
             let bp = g.arena.alloc(BLUEPRINT_SHORT_TITLE + TEXTSTRING_LITERAL + size_of::<u8>());
             g.literal(bp, BLUEPRINT_SHORT_TITLE, title);
-            let weapon = g.arena.alloc(WEAPON_BLUEPRINT + size_of::<usize>());
+            let weapon = g.arena.alloc(WEAPON_SIZE);
             weapon.set(WEAPON_BLUEPRINT, bp.addr());
             g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL).set(WEAPONCTRL_ARMED, weapon.addr());
             let name = title.chars().take(LABEL_CHARS).collect::<String>().to_uppercase();

@@ -627,7 +627,7 @@ mod tests {
     use super::*;
     use crate::config::layout::Input;
     use crate::game::api::Point;
-    use crate::game::fake::{calls, with_game, Call};
+    use crate::game::fake::{calls, with_game, Call, WEAPON_SIZE};
     use crate::game::offsets::{
         ARMAMENTBOX_HIT, ARMAMENTBOX_ITEM, ARMAMENT_BOXES, COMBAT_WEAPON_CONTROL, CREW_POTENTIAL, CREW_SELECTED,
         GAME_H, GAME_W, GUI_COMBAT_CONTROL, GUI_CREW_CONTROL, GUI_SYS_CONTROL, KEY_SPACE, MOUSE_VALID, PLAYER_SHIP_ID,
@@ -1029,7 +1029,7 @@ mod tests {
             let mut l = Layer::default();
             g.player_manager();
             let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
-            let item = g.arena.alloc(WEAPON_POWERED + std::mem::size_of::<u8>());
+            let item = g.arena.alloc(WEAPON_SIZE);
             item.set(WEAPON_POWERED, true);
             let armament = g.arena.alloc(ARMAMENTBOX_ITEM + std::mem::size_of::<usize>());
             armament.set(ARMAMENTBOX_HIT, Point { x: 300, y: 640 });

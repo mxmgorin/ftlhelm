@@ -58,6 +58,14 @@ pub fn set_hooked(on: bool) {
     HOOKED.store(on, Ordering::Relaxed);
 }
 
+/// Puts the module's process-wide state back as at load, for the next test.
+#[cfg(test)]
+pub fn reset_statics() {
+    ON.iter().for_each(|on| on.store(false, Ordering::Relaxed));
+    HOOKED.store(false, Ordering::Relaxed);
+    BYPASS.store(false, Ordering::Relaxed);
+}
+
 /// Runs `f` with the game's own images: no swap applies to lookups inside it.
 pub fn own_lookup<R>(f: impl FnOnce() -> R) -> R {
     BYPASS.store(true, Ordering::Relaxed);

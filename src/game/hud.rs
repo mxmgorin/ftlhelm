@@ -56,6 +56,13 @@ pub fn set_left_hooked(on: bool) {
     LEFT_HOOKED.store(on, Ordering::Relaxed);
 }
 
+/// Puts the module's process-wide state back as at load, for the next test.
+#[cfg(test)]
+pub fn reset_statics() {
+    LEFT_SHIFT.store(0, Ordering::Relaxed);
+    LEFT_HOOKED.store(false, Ordering::Relaxed);
+}
+
 /// The left shift as the panels have it.
 pub fn left_shift() -> i32 {
     LEFT_SHIFT.load(Ordering::Relaxed)

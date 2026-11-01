@@ -891,7 +891,7 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::{Input, Layout, LABEL_CHARS};
-    use crate::game::fake::{calls, with_game, Call, Game};
+    use crate::game::fake::{calls, with_game, Call, Game, WEAPON_SIZE};
     use crate::ui::draw::rects_of;
     use crate::ui::glyph::{HELP_GLYPH, TEXT_GLYPH};
     use crate::ui::plates::{EMPTY_LABEL, OFF_BADGE, ON_BADGE, SWITCH_PIPS, WEAPON_ICON_SHIFT};
@@ -913,7 +913,7 @@ mod tests {
         let bp = g.arena.alloc(WEAPONBP_ICON + size_of::<usize>());
         g.literal(bp, BLUEPRINT_SHORT_TITLE, title);
         g.string(bp, WEAPONBP_ICON, icon);
-        let item = g.arena.alloc(WEAPON_POWER + size_of::<i32>());
+        let item = g.arena.alloc(WEAPON_SIZE);
         item.set(WEAPON_BLUEPRINT, bp.addr());
         item.set(WEAPON_POWER, power);
         item.set(WEAPON_POWERED, powered as u8);

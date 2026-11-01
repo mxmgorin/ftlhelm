@@ -451,7 +451,7 @@ impl Zones {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{with_game, Game};
+    use crate::game::fake::{with_game, Game, WEAPON_SIZE};
     use std::mem::size_of;
 
     const PLAYER_AT: Point = Point { x: 100, y: 50 };
@@ -534,7 +534,7 @@ mod tests {
             two_ships(g);
             let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
             weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
-            let item = g.arena.alloc(WEAPON_POWERED + size_of::<u8>());
+            let item = g.arena.alloc(WEAPON_SIZE);
             let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
             filled.set(ARMAMENTBOX_ITEM, item.addr());
             let empty = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
@@ -559,7 +559,7 @@ mod tests {
             for (bar, slots) in [(COMBAT_WEAPON_CONTROL, WEAPON_SLOTS), (COMBAT_DRONE_CONTROL, DRONE_SLOTS)] {
                 let mut boxes = Vec::new();
                 for _ in 0..slots {
-                    let item = g.arena.alloc(WEAPON_POWERED.max(DRONE_POWERED) + size_of::<u8>());
+                    let item = g.arena.alloc(WEAPON_SIZE);
                     let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
                     filled.set(ARMAMENTBOX_ITEM, item.addr());
                     boxes.push(Some(filled));
@@ -791,7 +791,7 @@ mod tests {
             g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
             let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
             weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
-            let item = g.arena.alloc(WEAPON_POWERED + size_of::<u8>());
+            let item = g.arena.alloc(WEAPON_SIZE);
             item.set(WEAPON_POWERED, true);
             let filled = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
             filled.set(ARMAMENTBOX_HIT, Point { x: 5, y: 6 });

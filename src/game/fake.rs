@@ -26,6 +26,8 @@ use super::state;
 const STAND_IN: &Layout = &BUILDS[0].layout;
 /// A std::vector's begin and end pointers.
 const VECTOR_FIELDS: usize = VECTOR_END + size_of::<usize>();
+/// A weapon up to its targets, which the stand-in weapon selection clears.
+pub const WEAPON_SIZE: usize = WEAPON_TARGETS + VECTOR_FIELDS;
 /// Reaches the last mouse field the readers use.
 const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
 /// Reaches the last CApp field the readers use.
@@ -42,18 +44,31 @@ const CREW_SIZE: usize = CREW_BLUEPRINT + CREWBP_NAME + TEXTSTRING_LITERAL + siz
 /// The display size the stand-in engine reports.
 pub const SCREEN: (c_int, c_int) = (640, 480);
 
-/// Zeroed memory blocks that stay put until the arena drops.
+/// Words after each block, each GUARD plus its index: code writing past its object changes
+/// them, and code reading past it reads no zeroes.
+const GUARD_WORDS: usize = 8;
+const GUARD: u64 = 0xa5a5_a5a5_a5a5_a5a5;
+
+/// The guard word `i` places past a block.
+fn guard(i: usize) -> u64 {
+    GUARD.wrapping_add(i as u64)
+}
+
+/// Zeroed memory blocks that stay put until the arena drops, each with its object's length in
+/// words; the drop checks every block's guard.
 #[derive(Default)]
 pub struct Arena {
-    blocks: Vec<*mut [u64]>,
+    blocks: Vec<(*mut [u64], usize)>,
 }
 
 impl Arena {
     /// A zeroed, pointer-aligned object of `size` bytes.
     pub fn alloc(&mut self, size: usize) -> Obj {
         let words = size.div_ceil(size_of::<u64>()).max(1);
-        let block = Box::into_raw(vec![0u64; words].into_boxed_slice());
-        self.blocks.push(block);
+        let mut zeroed = vec![0u64; words];
+        zeroed.extend((0..GUARD_WORDS).map(guard));
+        let block = Box::into_raw(zeroed.into_boxed_slice());
+        self.blocks.push((block, words));
         // SAFETY: a live block the arena owns, zeroed as the readers expect of a new object.
         unsafe { Obj::from_ptr(block as *const c_void) }.expect("an allocation is non-null")
     }
@@ -86,9 +101,16 @@ impl Arena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
-        for &block in &self.blocks {
+        let mut overrun = None;
+        for &(block, words) in &self.blocks {
             // SAFETY: each block came from Box::into_raw and is freed once.
-            drop(unsafe { Box::from_raw(block) });
+            let block = unsafe { Box::from_raw(block) };
+            if block[words..].iter().enumerate().any(|(i, &w)| w != guard(i)) {
+                overrun = Some(words * size_of::<u64>());
+            }
+        }
+        if let Some(size) = overrun.filter(|_| !std::thread::panicking()) {
+            panic!("a write past the end of a {size} byte stand-in object");
         }
     }
 }
@@ -245,6 +267,9 @@ fn select_weapon(code: c_int) {
     };
     if let Some(weapon) = state::armament_item(control, slot as usize).filter(|w| w.flag(WEAPON_POWERED)) {
         control.set(WEAPONCTRL_ARMED, weapon.addr());
+        // Selecting a weapon drops its targets.
+        let targets = weapon.at(WEAPON_TARGETS);
+        targets.set(VECTOR_END, targets.get::<usize>(VECTOR_BEGIN));
     }
 }
 
@@ -565,6 +590,9 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
     LIVE_STRINGS.store(0, Ordering::Relaxed);
     SHIP_GRAPH.store(0, Ordering::Relaxed);
     systems().clear();
+    super::actions::reset_statics();
+    super::hud::reset_statics();
+    super::ipad_art::reset_statics();
     let _reset = AppReset;
     let mut arena = Arena::default();
     let app = arena.alloc(APP_SIZE);
