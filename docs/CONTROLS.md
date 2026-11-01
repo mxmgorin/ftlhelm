@@ -28,7 +28,8 @@ lands on shows corner brackets in place of the pointer arrow until the cursor mo
 | hangar | buttons, the weapon, drone, augment and crew boxes holding an item |
 | menus | their items |
 
-With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item.
+With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item, and a
+focus whose zone goes away moves to the nearest zone (not while aiming or in doors mode).
 
 Y selects the next crew member; A on a room orders the selected crew there; B clears the
 selection. With `room_crew_pick` and no crew selected in another room, A on a room with crew

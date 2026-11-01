@@ -14,6 +14,9 @@ use crate::ui::zoom::Span;
 /// Frames a newly opened screen gets to show its items before the focus gives up; a
 /// dialog's choices wait for the jump animation.
 const FIRST_FOCUS_FRAMES: i32 = 300;
+/// Frames a newly opened screen's buttons get to settle: its first hit-tests may hold the
+/// screen before, or miss buttons it turns on in its first loop.
+const FIRST_FOCUS_SETTLE: i32 = 2;
 
 #[derive(Default)]
 pub struct Cursor {
@@ -54,6 +57,7 @@ pub struct FirstFocus {
     prev_text: usize,
     prev_open_time: f32,
     waiting: i32,
+    settling: i32,
     open_at: (f32, f32),
 }
 
@@ -303,6 +307,7 @@ impl Layer {
         f.prev = screen;
         if opened {
             f.waiting = if screen == FirstScreen::None { 0 } else { FIRST_FOCUS_FRAMES };
+            f.settling = FIRST_FOCUS_SETTLE;
             f.open_at = (self.cursor.x, self.cursor.y);
         }
         if f.waiting == 0 || (self.cursor.x, self.cursor.y) != f.open_at {
@@ -310,6 +315,12 @@ impl Layer {
             return;
         }
         f.waiting -= 1;
+        if f.settling > 0 {
+            f.settling -= 1;
+            self.zones.buttons.clear();
+            self.retest();
+            return;
+        }
         let Some(first) = self.first_item(screen) else {
             return;
         };
@@ -318,6 +329,51 @@ impl Layer {
         self.mark_focus();
         self.focus.waiting = 0;
     }
+
+    /// Keeps a focus on screen: when the zone a focus move left the cursor on goes away while
+    /// the cursor stays, the focus moves to the nearest zone. Not while aiming or in doors mode.
+    pub fn keep_focus(&mut self) {
+        let busy = self.focus.waiting > 0 || self.wheel.open.is_some() || self.bind.precision || state::aiming();
+        if !self.focus_held() || busy || self.zone_under_cursor().is_some() {
+            return;
+        }
+        let here = (self.cursor.last_x as f32, self.cursor.last_y as f32);
+        let Some(i) = nearest_zone(&self.zones.list, here) else {
+            return;
+        };
+        (self.cursor.x, self.cursor.y) = self.zones.list[i].rect.center();
+        self.send_cursor();
+        self.mark_focus();
+    }
+
+    /// Whether the cursor stays where a focus move left it.
+    pub fn focus_held(&self) -> bool {
+        self.cursor.focus.is_some_and(|(at, _)| at == (self.cursor.last_x, self.cursor.last_y))
+    }
+
+    /// Whether the first item of a screen that opened is still awaited.
+    pub fn first_focus_pending(&self) -> bool {
+        self.focus.waiting > 0
+    }
+
+    /// Has the game hit-test the screen under the cursor again.
+    fn retest(&mut self) {
+        let c = &mut self.cursor;
+        if c.synced {
+            mouse_move(c.last_wx, c.last_wy, 0, 0, c.l_held, c.r_held);
+            c.last_set = state::mouse_point();
+        }
+    }
+}
+
+/// The zone nearest to `at`, measured to its nearest point; None with no zones.
+fn nearest_zone(zones: &[Zone], (x, y): (f32, f32)) -> Option<usize> {
+    let distance = |r: Rect| {
+        let dx = clampf(x, r.x as f32, (r.x + r.w) as f32) - x;
+        let dy = clampf(y, r.y as f32, (r.y + r.h) as f32) - y;
+        dx.hypot(dy)
+    };
+    zones.iter().enumerate().min_by(|(_, a), (_, b)| distance(a.rect).total_cmp(&distance(b.rect))).map(|(i, _)| i)
 }
 
 /// How a focus move weighs the zones it may land on.
@@ -393,6 +449,7 @@ fn index(i: Option<usize>) -> i64 {
 mod tests {
     use super::*;
     use crate::game::fake::with_game;
+    use crate::game::zones::Button;
 
     const AIM: Aim = Aim { cones: [30.0, 60.0], side_weight: 2.0 };
 
@@ -470,15 +527,62 @@ mod tests {
             options.set(FOCUS_OPEN, 1u8);
             g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200), rect(300, 240)]);
             let mut l = Layer::default();
-            l.build_zones();
-            l.focus_first_on_open();
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
             assert_eq!((l.cursor.x, l.cursor.y), rect(300, 200).center());
             let notice = options.at(layout().options_restart_dialog);
             notice.set(FOCUS_OPEN, 1u8);
             g.arena.vector(notice, CHOICE_RECTS, &[rect(600, 400)]);
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            assert_eq!((l.cursor.x, l.cursor.y), rect(600, 400).center());
+        });
+    }
+
+    /// Runs the zone build and the first focus as `n` frames do.
+    fn frames(l: &mut Layer, n: i32) {
+        for _ in 0..n {
             l.build_zones();
             l.focus_first_on_open();
-            assert_eq!((l.cursor.x, l.cursor.y), rect(600, 400).center());
+        }
+    }
+
+    #[test]
+    fn a_menu_opens_on_its_own_first_button_not_one_hit_tested_before() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let button = |r: Rect| Button { rect: r, object: g.gui.addr() };
+            l.zones.buttons = vec![button(rect(700, 100))];
+            g.gui.at(GUI_MENU_BOX).set(FOCUS_OPEN, 1u8);
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            assert_eq!((l.cursor.x, l.cursor.y), (0.0, 0.0), "the old screen's button left alone");
+            l.zones.buttons = vec![button(rect(431, 231))];
+            frames(&mut l, 1);
+            assert_eq!((l.cursor.x, l.cursor.y), rect(431, 231).center());
+        });
+    }
+
+    #[test]
+    fn a_focus_whose_zone_goes_away_moves_to_the_nearest_zone_unless_aiming() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let zone = |x, y| Zone { rect: rect(x, y), id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![zone(100, 100)];
+            (l.cursor.x, l.cursor.y) = l.zones.list[0].rect.center();
+            l.send_cursor();
+            l.mark_focus();
+            l.zones.list = vec![zone(400, 100), zone(150, 120)];
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            l.keep_focus();
+            assert_eq!(l.zone_under_cursor(), None, "aiming keeps the cursor");
+            g.mouse.set(MOUSE_AIMING, 0i32);
+            l.keep_focus();
+            assert_eq!(l.zone_under_cursor(), Some(1));
+            assert!(l.focused_zone(now_s()).is_some(), "framed again");
+            (l.cursor.x, l.cursor.y) = (600.0, 600.0);
+            l.send_cursor();
+            l.zones.list.clear();
+            l.zones.list.push(zone(100, 100));
+            l.keep_focus();
+            assert_eq!((l.cursor.last_x, l.cursor.last_y), (600, 600), "a cursor moved off the focus stays");
         });
     }
 

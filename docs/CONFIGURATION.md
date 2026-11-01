@@ -40,7 +40,7 @@ controls table first closes, `help_at_start = 0`.
 | `focus_cone_narrow` | 30 | 5 to 89 | half-angle in degrees of the cone searched first for the next zone |
 | `focus_cone_wide` | 60 | 5 to 89 | half-angle in degrees of the cone searched next |
 | `focus_side_weight` | 2 | 0 to 10 | how many times sideways distance counts over forward |
-| `focus_first` | 1 | switch | the cursor on the first item when a menu, a dialog or the map opens |
+| `focus_first` | 1 | switch | the cursor on the first item when a menu, a dialog or the map opens; a focus whose zone goes away moves to the nearest zone |
 | `crew_follow` | 0 | switch | the cursor to the room of a newly selected crew member |
 | `room_crew_pick` | 1 | switch | `context_click` on a room with crew selects its members one at a time, then all of them, unless crew is selected in another room; 0: it clicks |
 

@@ -144,6 +144,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.build_zones();
         if l.cfg.focus_first {
             l.focus_first_on_open();
+            l.keep_focus();
         }
         l.poll_commands();
         l.apply_touch(t);

@@ -132,7 +132,8 @@ pub struct Settings {
     pub focus_cone_narrow: f32,
     pub focus_cone_wide: f32,
     pub focus_side_weight: f32,
-    /// Menus, dialogs and the map open with the cursor on their first item.
+    /// Menus, dialogs and the map open with the cursor on their first item, and a focus whose
+    /// zone goes away moves to the nearest one.
     pub focus_first: bool,
     /// The cursor moves to the room of a newly selected crew member.
     pub crew_follow: bool,

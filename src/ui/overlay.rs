@@ -224,13 +224,18 @@ impl Layer {
     /// The zone focus brackets frame while the overlay shows them, and the seconds since its
     /// focus move.
     fn shown_focus(&self, now: f64) -> Option<(usize, f64)> {
-        let shown = self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help_shown;
-        shown.then(|| self.focused_zone(now)).flatten()
+        self.brackets_shown().then(|| self.focused_zone(now)).flatten()
     }
 
-    /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point.
+    fn brackets_shown(&self) -> bool {
+        self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help_shown
+    }
+
+    /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,
+    /// or a held focus waits for the first item of a screen that opened.
     pub fn pointer_hidden(&self) -> bool {
-        self.touch_in_use() || self.shown_focus(now_s()).is_some()
+        let awaiting = self.brackets_shown() && self.focus_held() && self.first_focus_pending();
+        self.touch_in_use() || self.shown_focus(now_s()).is_some() || awaiting
     }
 
     /// Frames the zone a focus move left the cursor on with corner brackets.
@@ -481,6 +486,24 @@ mod tests {
             l.cfg.focus_brackets = true;
             (l.cursor.x, l.cursor.y) = (300.0, 300.0);
             l.send_cursor();
+            assert!(!l.pointer_hidden(), "the cursor moved on");
+        });
+    }
+
+    #[test]
+    fn a_held_focus_keeps_the_pointer_hidden_while_an_opening_screen_has_no_items() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+            l.send_cursor();
+            l.mark_focus();
+            assert!(!l.pointer_hidden(), "nothing under the focus");
+            g.gui.at(GUI_MENU_BOX).set(FOCUS_OPEN, 1u8);
+            l.focus_first_on_open();
+            assert!(l.pointer_hidden(), "the menu's items awaited");
+            (l.cursor.x, l.cursor.y) = (300.0, 300.0);
+            l.send_cursor();
+            l.focus_first_on_open();
             assert!(!l.pointer_hidden(), "the cursor moved on");
         });
     }
