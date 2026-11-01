@@ -47,6 +47,8 @@ pub struct Volley {
     rest: Vec<usize>,
     /// Where the first weapon aimed by a point took its target, in frame pixels.
     at: Option<(f32, f32)>,
+    /// Where the left button last went down while the armed weapon waited for its target.
+    pressed: Option<(f32, f32)>,
     /// Every slot of the volley in arming order, and whether it took all powered weapons.
     pub slots: Vec<usize>,
     pub all: bool,
@@ -158,6 +160,9 @@ pub fn mouse_button(button: MouseButton, down: bool, wx: i32, wy: i32) {
 impl Layer {
     /// Presses or releases a mouse button at the cursor.
     pub fn click(&mut self, button: MouseButton, down: bool) {
+        if let Some(v) = self.actions.volley.as_mut().filter(|v| !v.took && button == MouseButton::Left && down) {
+            v.pressed = Some((self.cursor.x, self.cursor.y));
+        }
         let (wx, wy) = self.to_window(self.cursor.x, self.cursor.y);
         mouse_button(button, down, wx, wy);
         match button {
@@ -387,7 +392,14 @@ impl Layer {
                 return;
             }
             let point = weapon.is_some_and(|w| !state::weapon_is_beam(w));
-            let at = v.at.or_else(|| point.then(state::mouse_point).map(|p| (p.x as f32, p.y as f32)));
+            // The press's point: the cursor may have moved on in the same frame.
+            let pointer = || {
+                v.pressed.unwrap_or_else(|| {
+                    let p = state::mouse_point();
+                    (p.x as f32, p.y as f32)
+                })
+            };
+            let at = v.at.or_else(|| point.then(pointer));
             if let Some(v) = self.actions.volley.as_mut() {
                 (v.took, v.at) = (true, at);
             }
@@ -710,6 +722,23 @@ mod tests {
             aim(g, control, 0);
             l.run_volley();
             assert_eq!(l.actions.volley, None);
+        });
+    }
+
+    #[test]
+    fn a_volley_aims_where_the_button_went_down_though_the_cursor_moved_on() {
+        with_game(|g| {
+            let laser = Some((true, false, false));
+            let control = weapons(g, &[laser, laser]);
+            let mut l = Layer::default();
+            l.arm_all();
+            (l.cursor.x, l.cursor.y) = (300.0, 200.0);
+            l.click_tap(MouseButton::Left);
+            (l.cursor.x, l.cursor.y) = (300.0, 320.0);
+            g.mouse.set(0, Point { x: 300, y: 320 });
+            aim(g, control, 0);
+            l.run_volley();
+            assert_eq!(l.actions.queued, [(300.0, 200.0)]);
         });
     }
 
