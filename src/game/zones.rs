@@ -307,6 +307,20 @@ impl Zones {
         true
     }
 
+    /// The hangar's equipment boxes that hold an item, each cut above the buttons that start
+    /// inside it.
+    fn add_hangar_boxes(&mut self, hangar: Obj) {
+        for (i, b) in hangar.at(HANGAR_EQUIP_BOXES).vec_objs() {
+            let held = b.get::<[usize; EQUIPBOX_ITEM_PTRS]>(EQUIPBOX_ITEM).iter().any(|&p| p != 0);
+            let mut r = b.rect(EQUIPBOX_HITBOX);
+            let inside = |s: Rect| s.x < r.x + r.w && r.x < s.x + s.w && s.y > r.y && s.y < r.y + r.h;
+            r.h = self.buttons.iter().filter(|b| inside(b.rect)).map(|b| b.rect.y - r.y).fold(r.h, i32::min);
+            if held && r.w > 0 && r.h > 0 {
+                self.push(r, i as i32, ZoneKind::Slot);
+            }
+        }
+    }
+
     /// A choice box's choices, through the transform it last drew with.
     fn add_choices(&mut self, choice: Obj) {
         let zoom = text::box_zoom(choice.addr());
@@ -410,6 +424,9 @@ impl Layer {
             if choices != options {
                 return;
             }
+        }
+        if let Some(hangar) = state::hangar().filter(|_| !state::ship_list_open()) {
+            zones.add_hangar_boxes(hangar);
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
@@ -765,6 +782,40 @@ mod tests {
             options.set(FOCUS_OPEN, 1u8);
             g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200)]);
             assert_eq!(built(&mut Layer::default()), [(ZoneKind::Choice, 0, rect(300, 200))]);
+        });
+    }
+
+    #[test]
+    fn the_hangar_lists_its_filled_equipment_boxes_above_their_buttons_unless_the_ship_list_covers_them() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let hangar = menu.at(MAIN_MENU_HANGAR);
+            hangar.set(HANGAR_OPEN, 1u8);
+            let mut equipment_box = |r: Rect, item: [usize; EQUIPBOX_ITEM_PTRS]| {
+                let b = g.arena.alloc(EQUIPBOX_ITEM + EQUIPBOX_ITEM_PTRS * size_of::<usize>());
+                b.set(EQUIPBOX_HITBOX, r);
+                b.set(EQUIPBOX_ITEM, item);
+                b
+            };
+            let empty = equipment_box(rect(445, 525), [0; EQUIPBOX_ITEM_PTRS]);
+            let weapon = equipment_box(rect(563, 525), [1, 0, 0, 0]);
+            let crew = equipment_box(rect(70, 519), [0, 0, 1, 0]);
+            g.arena.ptr_vector(hangar, HANGAR_EQUIP_BOXES, &[Some(empty), Some(weapon), Some(crew)]);
+            let mut l = Layer::default();
+            let customize = Button { rect: rect(70, 519 + SIDE / 2), object: g.app.addr() };
+            l.zones.buttons = vec![customize];
+            assert_eq!(
+                built(&mut l),
+                [
+                    (ZoneKind::Slot, 1, rect(563, 525)),
+                    (ZoneKind::Slot, 2, Rect { h: SIDE / 2, ..rect(70, 519) }),
+                    (ZoneKind::Button, 0, customize.rect),
+                ]
+            );
+            hangar.at(HANGAR_SHIP_LIST).set(SHIP_LIST_OPEN, 1u8);
+            l.zones.buttons.clear();
+            assert_eq!(built(&mut l), [], "no boxes under the ship list");
         });
     }
 

@@ -232,6 +232,16 @@ pub fn modal_window(gui: Obj) -> Option<Obj> {
     [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
 }
 
+/// The hangar, while the main menu shows it.
+pub fn hangar() -> Option<Obj> {
+    let hangar = main_menu().filter(|m| m.flag(MAIN_MENU_OPEN))?.at(MAIN_MENU_HANGAR);
+    hangar.flag(HANGAR_OPEN).then_some(hangar)
+}
+
+pub fn ship_list_open() -> bool {
+    hangar().is_some_and(|h| h.at(HANGAR_SHIP_LIST).flag(SHIP_LIST_OPEN))
+}
+
 /// The open options screen: the main menu's while the menu is up, else the game's.
 pub fn open_options() -> Option<Obj> {
     let options = if main_menu_open() { main_menu()?.at(MAIN_MENU_OPTIONS) } else { gui()?.at(GUI_OPTIONS_BOX) };

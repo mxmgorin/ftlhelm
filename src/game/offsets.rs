@@ -174,6 +174,12 @@ pub const STORE_SELL_RECT: Rect =
 pub const MAIN_MENU_OPEN: usize = 0;
 /// MainMenu::optionScreen, the main menu's own options screen.
 pub const MAIN_MENU_OPTIONS: usize = 8864;
+/// MainMenu::shipBuilder, the hangar, with its open flag, equipment boxes and ship list.
+pub const MAIN_MENU_HANGAR: usize = 1096;
+pub const HANGAR_OPEN: usize = 4280;
+pub const HANGAR_EQUIP_BOXES: usize = 4360;
+pub const HANGAR_SHIP_LIST: usize = 5120;
+pub const SHIP_LIST_OPEN: usize = 88;
 
 pub const STARMAP_SIZE: usize = 3280;
 pub const STARMAP_LOCATIONS: usize = 40;
@@ -357,6 +363,9 @@ pub const DROPBOX_INSERT_HEIGHT: usize = 124;
 pub const DROPBOX_TITLE_INSERT: usize = 128;
 pub const CREWSCREEN_BOXES: usize = 184;
 pub const EQUIPBOX_HITBOX: usize = 96;
+/// EquipmentBox::item: its weapon, drone, crew and augment pointers, null where empty.
+pub const EQUIPBOX_ITEM: usize = 112;
+pub const EQUIPBOX_ITEM_PTRS: usize = 4;
 pub const TABBED_BUTTONS: usize = 32;
 pub const TABBED_WINDOWS: usize = 56;
 pub const TABBED_CURRENT: usize = 104;
