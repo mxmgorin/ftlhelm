@@ -22,6 +22,11 @@ pub struct Layout {
     pub gui_crew_screen: usize,
     pub gui_equip_screen: usize,
     pub main_menu_choice_box: usize,
+    /// OptionsScreen's windows over its list: the language picker, the profile wipe
+    /// confirmation and the restart notice.
+    pub options_language: usize,
+    pub options_wipe_dialog: usize,
+    pub options_restart_dialog: usize,
 }
 
 /// A supported FTL.amd64: its GNU build ID and the layout of its objects.
@@ -52,6 +57,9 @@ pub const BUILDS: [Build; 2] = [
             gui_crew_screen: 14552,
             gui_equip_screen: 15624,
             main_menu_choice_box: 13864,
+            options_language: 3104,
+            options_wipe_dialog: 3176,
+            options_restart_dialog: 3816,
         },
     },
     Build {
@@ -74,9 +82,19 @@ pub const BUILDS: [Build; 2] = [
             gui_crew_screen: 14288,
             gui_equip_screen: 15360,
             main_menu_choice_box: 13600,
+            options_language: 2840,
+            options_wipe_dialog: 2912,
+            options_restart_dialog: 3552,
         },
     },
 ];
+
+impl Layout {
+    /// OptionsScreen's size: its restart notice is its last field.
+    pub fn options_size(&self) -> usize {
+        self.options_restart_dialog + CHOICE_BOX_SIZE
+    }
+}
 
 static LAYOUT: OnceLock<&'static Layout> = OnceLock::new();
 
@@ -154,6 +172,8 @@ pub const STORE_SELL_RECT: Rect =
     Rect { x: SELL_BOX_X, w: SHIP_SCREENS_RECT.x + SHIP_SCREENS_RECT.w - SELL_BOX_X, ..SHIP_SCREENS_RECT };
 
 pub const MAIN_MENU_OPEN: usize = 0;
+/// MainMenu::optionScreen, the main menu's own options screen.
+pub const MAIN_MENU_OPTIONS: usize = 8864;
 
 pub const STARMAP_SIZE: usize = 3280;
 pub const STARMAP_LOCATIONS: usize = 40;
@@ -176,6 +196,7 @@ pub const CHOICE_FRAME: usize = 40;
 pub const CHOICE_TEXT: usize = 48;
 pub const CHOICE_RECTS: usize = 88;
 pub const CHOICE_OPEN_TIME: usize = 132;
+pub const CHOICE_BOX_SIZE: usize = 536;
 
 /// WindowFrame::rect, relative to the point the frame draws at.
 pub const FRAME_RECT: usize = 0;

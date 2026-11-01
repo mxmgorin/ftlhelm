@@ -307,29 +307,24 @@ impl Zones {
         true
     }
 
-    /// The open dialog's choices; false when none is open.
-    fn add_choice_zones(&mut self) -> bool {
-        let Some(choice) = state::open_choice() else {
-            return false;
-        };
+    /// A choice box's choices, through the transform it last drew with.
+    fn add_choices(&mut self, choice: Obj) {
         let zoom = text::box_zoom(choice.addr());
         for (i, r) in choice.at(CHOICE_RECTS).vec_items::<Rect>().enumerate() {
             self.push(zoom.map_or(r, |z| z.to_screen(r)), i as i32, ZoneKind::Choice);
         }
-        true
     }
 
-    /// The hit-tested buttons: with the map open only its own, with another screen or the
-    /// menu open none from the HUD's top and bottom rows.
+    /// The hit-tested buttons: only those of `holder` (its object and size) when given, else
+    /// with another screen or the menu open none from the HUD's top and bottom rows.
     /// None from the store page not shown.
-    fn add_button_zones(&mut self, screen_open: bool, map: Option<Obj>) {
+    fn add_button_zones(&mut self, screen_open: bool, holder: Option<(Obj, usize)>) {
         let hidden = state::hidden_store_buttons();
         for i in 0..self.buttons.len() {
             let b = self.buttons[i];
-            if map.is_some_and(|m| !m.contains(STARMAP_SIZE, b.object)) || hidden.contains(&b.object) {
-                continue;
-            }
-            if screen_open && (b.rect.y < HUD_TOP_HEIGHT || b.rect.y >= HUD_BOTTOM_TOP) {
+            let held = holder.map(|(h, size)| h.contains(size, b.object));
+            let in_hud_rows = b.rect.y < HUD_TOP_HEIGHT || b.rect.y >= HUD_BOTTOM_TOP;
+            if held == Some(false) || (held.is_none() && screen_open && in_hud_rows) || hidden.contains(&b.object) {
                 continue;
             }
             self.push(b.rect, i as i32, ZoneKind::Button);
@@ -402,9 +397,18 @@ impl Layer {
             return;
         };
         let player = state::player_ship();
-        let modal_open = state::modal_window(gui).is_some();
-        if !modal_open && zones.add_choice_zones() {
+        let options = state::open_options();
+        let modal_open = options.is_some() || state::modal_window(gui).is_some();
+        if let Some(choice) = state::open_choice().filter(|_| !modal_open) {
+            zones.add_choices(choice);
             return;
+        }
+        if let Some((options, choices)) = options.and_then(|o| Some((o, state::options_choices(o)?))) {
+            zones.add_choices(choices);
+            // The restart notice takes every click.
+            if choices != options {
+                return;
+            }
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
@@ -425,7 +429,9 @@ impl Layer {
             zones.add_slot_zones(gui);
         }
         if !precision || state::aiming() || state::any_crew_selected() {
-            zones.add_button_zones(screen_open, map);
+            // The hotkey screen covers the HUD, its own buttons standing in the HUD's rows.
+            let hotkeys = options.filter(|o| o.flag(OPTIONS_CUSTOMIZE_CONTROLS)).map(|o| (o, layout().options_size()));
+            zones.add_button_zones(screen_open, hotkeys.or(map.map(|m| (m, STARMAP_SIZE))));
         }
     }
 
@@ -699,6 +705,53 @@ mod tests {
             choice.set(FOCUS_OPEN, 1u8);
             g.arena.vector(choice, CHOICE_RECTS, &[rect(500, 300)]);
             assert_eq!(built(&mut Layer::default()), [(ZoneKind::Choice, 0, rect(500, 300))]);
+        });
+    }
+
+    #[test]
+    fn the_options_list_their_choices_then_buttons_unless_a_window_covers_them() {
+        with_game(|g| {
+            two_ships(g);
+            let options = g.gui.at(GUI_OPTIONS_BOX);
+            options.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200), rect(300, 240)]);
+            let mut l = Layer::default();
+            l.zones.buttons = vec![Button { rect: rect(700, 500), object: g.gui.addr() }];
+            let kinds = |l: &mut Layer| built(l).into_iter().map(|(k, id, _)| (k, id)).collect::<Vec<_>>();
+            assert_eq!(kinds(&mut l), [(ZoneKind::Choice, 0), (ZoneKind::Choice, 1), (ZoneKind::Button, 0)]);
+            let notice = options.at(layout().options_restart_dialog);
+            notice.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(notice, CHOICE_RECTS, &[rect(600, 400)]);
+            assert_eq!(built(&mut l), [(ZoneKind::Choice, 0, rect(600, 400))], "the restart notice alone");
+            options.at(layout().options_language).set(FOCUS_OPEN, 1u8);
+            assert_eq!(kinds(&mut l), [(ZoneKind::Button, 0)], "the language picker's buttons");
+        });
+    }
+
+    #[test]
+    fn the_hotkey_screen_lists_the_options_buttons_alone_hud_rows_included() {
+        with_game(|g| {
+            let options = g.gui.at(GUI_OPTIONS_BOX);
+            options.set(FOCUS_OPEN, 1u8);
+            options.set(OPTIONS_CUSTOMIZE_CONTROLS, 1u8);
+            g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200)]);
+            let mut l = Layer::default();
+            let own = Button { rect: rect(1087, HUD_BOTTOM_TOP), object: options.addr() + layout().options_size() - 1 };
+            let hud = Button { rect: rect(631, 0), object: options.addr() + layout().options_size() };
+            l.zones.buttons = vec![hud, own];
+            assert_eq!(built(&mut l), [(ZoneKind::Button, 1, own.rect)]);
+        });
+    }
+
+    #[test]
+    fn the_main_menu_options_list_their_choices() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let options = menu.at(MAIN_MENU_OPTIONS);
+            options.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200)]);
+            assert_eq!(built(&mut Layer::default()), [(ZoneKind::Choice, 0, rect(300, 200))]);
         });
     }
 

@@ -43,6 +43,8 @@ enum FirstScreen {
     GameMenu,
     Choice,
     Map,
+    Options,
+    OptionsNotice,
 }
 
 /// Tracks screens opening, to put the cursor on their first item.
@@ -57,6 +59,10 @@ pub struct FirstFocus {
 
 /// The menu or dialog on screen, if it is one that opens on its first item.
 fn first_screen() -> FirstScreen {
+    if let Some(options) = state::open_options() {
+        let notice = state::options_choices(options).is_some_and(|c| c != options);
+        return if notice { FirstScreen::OptionsNotice } else { FirstScreen::Options };
+    }
     if state::gui_window_open(GUI_MENU_BOX) {
         FirstScreen::GameMenu
     } else if state::choice_open() {
@@ -250,10 +256,19 @@ impl Layer {
         Some((self.zone_under_cursor()?, now - since))
     }
 
-    /// The first item of a screen among the zones: a dialog's first choice, the map's beacon
-    /// under the ship, else the topmost button, leftmost on a tie.
+    /// The first item of a screen among the zones: a dialog's first choice, the options' when
+    /// listed, the map's beacon under the ship, else the topmost button, leftmost on a tie.
     fn first_item(&self, screen: FirstScreen) -> Option<usize> {
         let zones = &self.zones.list;
+        let first_choice = || zones.iter().position(|t| t.kind == ZoneKind::Choice && t.id == 0);
+        let top_button = || {
+            zones
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.kind == ZoneKind::Button)
+                .min_by_key(|(_, t)| (t.rect.y, t.rect.x))
+                .map(|(i, _)| i)
+        };
         match screen {
             FirstScreen::Map => {
                 let map = state::star_map()?;
@@ -263,13 +278,9 @@ impl Layer {
                     .iter()
                     .position(|t| t.kind == ZoneKind::Beacon && locations.vec_obj(t.id as usize) == Some(current))
             }
-            FirstScreen::Choice => zones.iter().position(|t| t.kind == ZoneKind::Choice && t.id == 0),
-            _ => zones
-                .iter()
-                .enumerate()
-                .filter(|(_, t)| t.kind == ZoneKind::Button)
-                .min_by_key(|(_, t)| (t.rect.y, t.rect.x))
-                .map(|(i, _)| i),
+            FirstScreen::Choice | FirstScreen::OptionsNotice => first_choice(),
+            FirstScreen::Options => first_choice().or_else(top_button),
+            _ => top_button(),
         }
     }
 
@@ -362,14 +373,15 @@ pub fn pick_toward(rects: &[Rect], from: Option<usize>, at: (f32, f32), dir: (f3
 }
 
 /// The choice after or before choice `from` in its dialog's order for a vertical move; None
-/// when `from` is no choice, the move is sideways, or the list ends that way.
+/// when `from` is no choice, the move is sideways, or the list ends or turns a column that way.
 fn choice_step(zones: &[Zone], from: Option<usize>, (dx, dy): (f32, f32)) -> Option<usize> {
     let from = &zones[from?];
     if from.kind != ZoneKind::Choice || dy.abs() <= dx.abs() {
         return None;
     }
-    let next = from.id + if dy > 0.0 { 1 } else { -1 };
-    zones.iter().position(|z| z.kind == ZoneKind::Choice && z.id == next)
+    let down = dy > 0.0;
+    let next = from.id + if down { 1 } else { -1 };
+    zones.iter().position(|z| z.kind == ZoneKind::Choice && z.id == next && (z.rect.y > from.rect.y) == down)
 }
 
 /// A zone index for the log, -1 for none.
@@ -448,6 +460,43 @@ mod tests {
             l.focus_move(0.0, -1.0);
             l.focus_move(0.0, -1.0);
             assert_eq!(l.zone_under_cursor(), Some(0), "up through the list");
+        });
+    }
+
+    #[test]
+    fn the_options_open_on_their_first_choice_and_their_restart_notice_on_its_own() {
+        with_game(|g| {
+            let options = g.gui.at(GUI_OPTIONS_BOX);
+            options.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200), rect(300, 240)]);
+            let mut l = Layer::default();
+            l.build_zones();
+            l.focus_first_on_open();
+            assert_eq!((l.cursor.x, l.cursor.y), rect(300, 200).center());
+            let notice = options.at(layout().options_restart_dialog);
+            notice.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(notice, CHOICE_RECTS, &[rect(600, 400)]);
+            l.build_zones();
+            l.focus_first_on_open();
+            assert_eq!((l.cursor.x, l.cursor.y), rect(600, 400).center());
+        });
+    }
+
+    #[test]
+    fn up_and_down_keep_to_a_column_of_choices() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let choice = |id, x, y| Zone { rect: Rect { x, y, w: 200, h: 34 }, id, kind: ZoneKind::Choice };
+            let below = Zone { rect: Rect { x: 251, y: 474, w: 131, h: 60 }, id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![choice(0, 262, 217), choice(1, 262, 251), choice(2, 662, 217), below];
+            (l.cursor.x, l.cursor.y) = l.zones.list[1].rect.center();
+            l.send_cursor();
+            l.focus_move(0.0, 1.0);
+            assert_eq!(l.zone_under_cursor(), Some(3), "down to the button, not the next column's top");
+            (l.cursor.x, l.cursor.y) = l.zones.list[2].rect.center();
+            l.send_cursor();
+            l.focus_move(0.0, -1.0);
+            assert_eq!(l.zone_under_cursor(), Some(2), "nothing above the next column's top");
         });
     }
 

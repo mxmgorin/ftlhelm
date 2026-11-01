@@ -232,6 +232,26 @@ pub fn modal_window(gui: Obj) -> Option<Obj> {
     [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
 }
 
+/// The open options screen: the main menu's while the menu is up, else the game's.
+pub fn open_options() -> Option<Obj> {
+    let options = if main_menu_open() { main_menu()?.at(MAIN_MENU_OPTIONS) } else { gui()?.at(GUI_OPTIONS_BOX) };
+    options.flag(FOCUS_OPEN).then_some(options)
+}
+
+/// The choice box an options screen hit-tests: its restart notice while that is open, else
+/// its own list; None while its language picker, wipe confirmation or hotkey screen is up.
+pub fn options_choices(options: Obj) -> Option<Obj> {
+    let l = layout();
+    if [l.options_language, l.options_wipe_dialog].into_iter().any(|off| options.at(off).flag(FOCUS_OPEN)) {
+        return None;
+    }
+    let notice = options.at(l.options_restart_dialog);
+    if notice.flag(FOCUS_OPEN) {
+        return Some(notice);
+    }
+    (!options.flag(OPTIONS_CUSTOMIZE_CONTROLS)).then_some(options)
+}
+
 /// The weapon or drone object in slot i of an armament control.
 pub fn armament_item(control: Obj, i: usize) -> Option<Obj> {
     control.at(ARMAMENT_BOXES).vec_obj(i)?.obj(ARMAMENTBOX_ITEM)

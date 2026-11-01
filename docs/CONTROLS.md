@@ -24,6 +24,7 @@ lands on shows corner brackets in place of the pointer arrow until the cursor mo
 | event | its choices |
 | star map | beacons or sectors, the map's buttons |
 | ship and store screens | slots and buttons, without the HUD |
+| options | their choices and buttons |
 | menus | their items |
 
 With `focus_first`, a menu, a dialog or the map opens with the cursor on its first item.
