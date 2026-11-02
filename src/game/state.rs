@@ -254,6 +254,13 @@ pub fn modal_window(gui: Obj) -> Option<Obj> {
     [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
 }
 
+/// The score keeper while the main menu shows its screen.
+pub fn score_screen() -> Option<Obj> {
+    main_menu().filter(|m| m.flag(MAIN_MENU_OPEN) && m.flag(MAIN_MENU_SCORE_SCREEN))?;
+    // SAFETY: the score keeper is a game global.
+    unsafe { Obj::from_addr(api().score_keeper) }
+}
+
 /// The hangar, while the main menu shows it.
 pub fn hangar() -> Option<Obj> {
     let hangar = main_menu().filter(|m| m.flag(MAIN_MENU_OPEN))?.at(MAIN_MENU_HANGAR);

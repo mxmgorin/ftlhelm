@@ -187,6 +187,17 @@ pub const STORE_SELL_RECT: Rect =
 pub const MAIN_MENU_OPEN: usize = 0;
 /// MainMenu::optionScreen, the main menu's own options screen.
 pub const MAIN_MENU_OPTIONS: usize = 8864;
+/// MainMenu::bScoreScreen: the score screen shows over the menu.
+pub const MAIN_MENU_SCORE_SCREEN: usize = 8856;
+/// ScoreKeeper's achievement icons as (achievement, corner) pairs, each list hit-tested
+/// while its tab shows: the general ones on the achievements tab, the ship's on ship best.
+pub const SCORE_ACHIEVEMENTS: usize = 528;
+pub const SCORE_SHIP_ACHIEVEMENTS: usize = 552;
+pub const SCORE_ACHIEVEMENTS_TAB: usize = 1184;
+pub const SCORE_SHIP_BEST_TAB: usize = 1185;
+pub const SCORE_SHIP_LIST: usize = 3024;
+/// A score screen achievement icon's side.
+pub const SCORE_ACHIEVEMENT_SIDE: i32 = 64;
 /// MainMenu::shipBuilder, the hangar, with its open flag, equipment boxes and ship list.
 pub const MAIN_MENU_HANGAR: usize = 1096;
 pub const HANGAR_OPEN: usize = 4280;

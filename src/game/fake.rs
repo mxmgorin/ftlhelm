@@ -3,7 +3,7 @@
 //!
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
 //! time. Every data symbol resolves into one zeroed block that starts with the mouse state,
-//! but the tutorial, whose running flag has a block of its own.
+//! but the tutorial and the score keeper, each with a block of its own.
 //! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
 //! are malloc'd copies `live_strings` counts, the joystick reports `FakePad`s, also written
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
@@ -32,6 +32,8 @@ pub const WEAPON_SIZE: usize = WEAPON_TARGETS + VECTOR_FIELDS;
 /// Reaches the last mouse field the readers use.
 const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
 const TUTORIAL_SIZE: usize = TUTORIAL_RUNNING + size_of::<u8>();
+/// Reaches the score screen's ship list flag, its field farthest in.
+const SCORE_KEEPER_SIZE: usize = SCORE_SHIP_LIST + SHIP_LIST_OPEN + size_of::<u8>();
 /// Reaches the last CApp field the readers use.
 const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
@@ -188,6 +190,7 @@ struct Statics {
     joysticks: usize,
     devices: usize,
     tutorial: usize,
+    score_keeper: usize,
 }
 
 const JOYSTICKS_SIZE: usize = SIL_TABLE_LEN * SILJOY_SIZE;
@@ -221,6 +224,13 @@ pub fn set_tutorial_running(on: bool) {
     let statics = *STATICS.get().expect("the tutorial is set inside with_game");
     // SAFETY: the leaked block of TUTORIAL_SIZE bytes.
     unsafe { (statics.tutorial as *mut u8).add(TUTORIAL_RUNNING).write(on as u8) };
+}
+
+/// ScoreKeeper::Keeper.
+pub fn score_keeper() -> Obj {
+    let statics = *STATICS.get().expect("the score keeper is read inside with_game");
+    // SAFETY: the leaked block of SCORE_KEEPER_SIZE bytes.
+    unsafe { Obj::from_addr(statics.score_keeper) }.expect("a leaked block is non-null")
 }
 
 /// Makes `graph` the ShipGraph of every ship.
@@ -511,6 +521,7 @@ fn install_api() -> Statics {
         joysticks: leak_block(JOYSTICKS_SIZE),
         devices: leak_block(DEVICES_SIZE),
         tutorial: leak_block(TUTORIAL_SIZE),
+        score_keeper: leak_block(SCORE_KEEPER_SIZE),
     };
     // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a
     // test reaches, and the rest are never called.
@@ -518,6 +529,7 @@ fn install_api() -> Statics {
     stand_in.sil_joysticks = statics.joysticks;
     stand_in.sil_event_info = statics.devices;
     stand_in.tutorial = statics.tutorial;
+    stand_in.score_keeper = statics.score_keeper;
     stand_in.key_down = key_down;
     stand_in.key_up = key_up;
     stand_in.lbutton_down = lbutton_down;
@@ -597,6 +609,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
         std::ptr::write_bytes(statics.joysticks as *mut u8, 0, JOYSTICKS_SIZE);
         std::ptr::write_bytes(statics.devices as *mut u8, 0, DEVICES_SIZE);
         std::ptr::write_bytes(statics.tutorial as *mut u8, 0, TUTORIAL_SIZE);
+        std::ptr::write_bytes(statics.score_keeper as *mut u8, 0, SCORE_KEEPER_SIZE);
     }
     calls();
     set_pads(Vec::new());

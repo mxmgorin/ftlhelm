@@ -198,6 +198,7 @@ game_api! {
     drone_check: unsafe extern "C" fn(Ptr) = "_ZN12DroneControl11CheckDronesEv",
     mouse_position: usize = "_ZN12MouseControl5MouseE",
     tutorial: usize = "_ZN15TutorialManager8TutorialE",
+    score_keeper: usize = "_ZN11ScoreKeeper6KeeperE",
     font_data: usize = "_ZN15ResourceControl11GetFontDataEib",
     choice_render: usize = "_ZN9ChoiceBox8OnRenderEv",
     render_pause: usize = "_ZN10CommandGui11RenderPauseEv",

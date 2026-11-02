@@ -81,6 +81,14 @@ struct AchievementIcon {
 
 const _: () = assert!(std::mem::size_of::<AchievementIcon>() == ACHIEVEMENT_INFO_SIZE);
 
+/// A score screen achievement as the game lays it out: the achievement and its icon's corner.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ScoreIcon {
+    achievement: usize,
+    at: Point,
+}
+
 /// A button the game hit-tested: its box on screen and the object's address.
 #[derive(Clone, Copy, Debug)]
 pub struct Button {
@@ -345,12 +353,22 @@ impl Zones {
         }
     }
 
-    /// The icons of a ship achievement list that hold an achievement, as the game hit-tests
-    /// them.
+    /// The icons of a ship achievement list that hold an achievement.
     fn add_achievements(&mut self, list: Obj) {
-        for (i, icon) in list.vec_items::<AchievementIcon>().enumerate() {
-            if icon.achievement != 0 && icon.side > 0 {
-                self.push(open_rect(icon.at, icon.side, icon.side), i as i32, ZoneKind::Achievement);
+        self.add_icons(list.vec_items::<AchievementIcon>().map(|i| (i.achievement, i.at, i.side)));
+    }
+
+    /// The icons of a score screen achievement list that hold an achievement.
+    fn add_score_achievements(&mut self, list: Obj) {
+        self.add_icons(list.vec_items::<ScoreIcon>().map(|i| (i.achievement, i.at, SCORE_ACHIEVEMENT_SIDE)));
+    }
+
+    /// Achievement icons, each its achievement, corner and side, as the game hit-tests them;
+    /// those without an achievement left out.
+    fn add_icons(&mut self, icons: impl Iterator<Item = (usize, Point, i32)>) {
+        for (i, (achievement, at, side)) in icons.enumerate() {
+            if achievement != 0 && side > 0 {
+                self.push(open_rect(at, side, side), i as i32, ZoneKind::Achievement);
             }
         }
     }
@@ -467,6 +485,15 @@ impl Layer {
         if let Some(menu) = state::game_menu_alone().filter(|_| !state::tutorial_running()) {
             zones.add_achievements(menu.at(MENU_ACHIEVEMENTS));
         }
+        if let Some(score) = state::score_screen().filter(|s| !s.at(SCORE_SHIP_LIST).flag(SHIP_LIST_OPEN)) {
+            for (tab, list) in
+                [(SCORE_ACHIEVEMENTS_TAB, SCORE_ACHIEVEMENTS), (SCORE_SHIP_BEST_TAB, SCORE_SHIP_ACHIEVEMENTS)]
+            {
+                if score.flag(tab) {
+                    zones.add_score_achievements(score.at(list));
+                }
+            }
+        }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
         let precision = self.bind.precision;
@@ -514,7 +541,7 @@ impl Zones {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{set_tutorial_running, with_game, Game, WEAPON_SIZE};
+    use crate::game::fake::{score_keeper, set_tutorial_running, with_game, Game, WEAPON_SIZE};
     use std::mem::size_of;
 
     const PLAYER_AT: Point = Point { x: 100, y: 50 };
@@ -900,6 +927,28 @@ mod tests {
             set_tutorial_running(false);
             game_menu.at(MENU_CONFIRM).set(FOCUS_OPEN, 1u8);
             assert_eq!(built(&mut l), [], "none under the confirmation");
+        });
+    }
+
+    #[test]
+    fn the_score_screen_lists_the_achievements_of_the_tab_shown() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            menu.set(MAIN_MENU_SCORE_SCREEN, 1u8);
+            let score = score_keeper();
+            let icon = |x| ScoreIcon { achievement: 1, at: Point { x, y: 150 } };
+            g.arena.vector(score, SCORE_ACHIEVEMENTS, &[icon(700)]);
+            g.arena.vector(score, SCORE_SHIP_ACHIEVEMENTS, &[icon(400)]);
+            let side = SCORE_ACHIEVEMENT_SIDE;
+            let at = |x| (ZoneKind::Achievement, 0, open_rect(Point { x, y: 150 }, side, side));
+            let mut l = Layer::default();
+            assert_eq!(built(&mut l), [], "neither tab shown");
+            score.set(SCORE_ACHIEVEMENTS_TAB, 1u8);
+            score.set(SCORE_SHIP_BEST_TAB, 1u8);
+            assert_eq!(built(&mut l), [at(700), at(400)]);
+            score.at(SCORE_SHIP_LIST).set(SHIP_LIST_OPEN, 1u8);
+            assert_eq!(built(&mut l), [], "none under the ship list");
         });
     }
 
