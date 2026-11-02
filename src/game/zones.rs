@@ -463,7 +463,8 @@ impl Layer {
             zones.add_hangar_boxes(hangar);
             zones.add_achievements(hangar.at(HANGAR_ACHIEVEMENTS));
         }
-        if let Some(menu) = state::game_menu_alone() {
+        // The game hit-tests the menu's achievements only outside the tutorial.
+        if let Some(menu) = state::game_menu_alone().filter(|_| !state::tutorial_running()) {
             zones.add_achievements(menu.at(MENU_ACHIEVEMENTS));
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
@@ -894,6 +895,9 @@ mod tests {
             game_menu.set(FOCUS_OPEN, 1u8);
             g.arena.vector(game_menu, MENU_ACHIEVEMENTS, &icons);
             assert_eq!(built(&mut l), [(ZoneKind::Achievement, 0, inside(20))]);
+            set_tutorial_running(true);
+            assert_eq!(built(&mut l), [], "none in the tutorial");
+            set_tutorial_running(false);
             game_menu.at(MENU_CONFIRM).set(FOCUS_OPEN, 1u8);
             assert_eq!(built(&mut l), [], "none under the confirmation");
         });
