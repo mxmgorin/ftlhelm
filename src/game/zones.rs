@@ -118,6 +118,8 @@ static SEEN: Mutex<Seen> = Mutex::new(Seen { buttons: Vec::new(), tested: false,
 struct Containers {
     crew: Option<(usize, usize)>,
     moved: [Option<(usize, usize, Point)>; 3],
+    /// Whether the game draws its menu moved, as while the tutorial runs.
+    menu_moved: bool,
 }
 
 impl Containers {
@@ -130,6 +132,7 @@ impl Containers {
                 moving(state::drone_control(), DRONE_CONTROL_SIZE, ARMAMENT_LOCATION),
                 moving(state::star_map(), STARMAP_SIZE, STARMAP_POSITION),
             ],
+            menu_moved: state::tutorial_running(),
         }
     }
 }
@@ -159,10 +162,18 @@ pub fn record_button(button: Obj) {
         r.x += at.x;
         r.y += at.y;
     }
+    if c.menu_moved && state::gui().is_some_and(|g| in_menu(g.at(GUI_MENU_BOX), button)) {
+        r.x += MENU_TUTORIAL_SHIFT;
+    }
     let corner = r.x < CORNER_BUTTON_MAX && r.y < CORNER_BUTTON_MAX && r.w <= CORNER_BUTTON_SIZE;
     if r.w > 0 && r.h > 0 && !corner && r.x + r.w <= GAME_W && r.y + r.h <= GAME_H {
         seen.buttons.push(Button { rect: r, object: button.addr() });
     }
+}
+
+/// Whether `button` is the game menu's own: in it, or in its button list.
+fn in_menu(menu: Obj, button: Obj) -> bool {
+    menu.contains(MENU_SIZE, button.addr()) || menu.at(MENU_BUTTONS).vec_objs().any(|(_, b)| b == button)
 }
 
 /// The pixels strictly inside the `w` by `h` span from `at`, as the game's hit tests take them.
@@ -502,7 +513,7 @@ impl Zones {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{with_game, Game, WEAPON_SIZE};
+    use crate::game::fake::{set_tutorial_running, with_game, Game, WEAPON_SIZE};
     use std::mem::size_of;
 
     const PLAYER_AT: Point = Point { x: 100, y: 50 };
@@ -656,6 +667,25 @@ mod tests {
             record_button(in_bar);
             l.build_zones();
             assert_eq!(rects(&l), [moved(rect(10, 5), bar_at(320))], "the bar read anew");
+            let menu = g.gui.at(GUI_MENU_BOX);
+            let listed = button(g.arena.alloc(BUTTON_ACTIVE + size_of::<u8>()), rect(431, 231));
+            g.arena.ptr_vector(menu, MENU_BUTTONS, &[Some(listed)]);
+            let inline = button(menu.at(BUTTON_AT), rect(500, 300));
+            let record = |l: &mut Layer| {
+                record_button(listed);
+                record_button(inline);
+                l.build_zones();
+            };
+            record(&mut l);
+            assert_eq!(rects(&l), [rect(431, 231), rect(500, 300)]);
+            set_tutorial_running(true);
+            record(&mut l);
+            let tutorial = Point { x: MENU_TUTORIAL_SHIFT, y: 0 };
+            assert_eq!(
+                rects(&l),
+                [moved(rect(431, 231), tutorial), moved(rect(500, 300), tutorial)],
+                "the menu drawn moved"
+            );
         });
     }
 

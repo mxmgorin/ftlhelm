@@ -12,8 +12,9 @@
 //! around it, inside the view's inner part, resting on an edge of the span where that does. A
 //! pan moves the goal by hand and holds it until the focus moves; a peek shows the span whole
 //! while it lasts, as does an event dialog. While zoomed on a screen that shrinks the frame,
-//! a window over the ship view is shown whole, as large as the screen allows; otherwise the
-//! span is shown whole. An open wheel holds the level down to one whose view shows it whole.
+//! a window over the ship view is shown whole, as large as the screen allows, unless the
+//! tutorial runs, whose box stands beside its windows; otherwise the span is shown whole. An
+//! open wheel holds the level down to one whose view shows it whole.
 //! A frame shown smaller than it is drawn is area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -233,11 +234,11 @@ fn auto_level(screen: (f32, f32), span: Span) -> f32 {
     with_levels(screen, span, |all| if shrunk { step(all, all[0], true) } else { all[0] })
 }
 
-/// What the view shows for a window covering `rect` on a screen of `screen` pixels: on a
-/// screen that shrinks the frame and with the ship view zoomed, the window as large as it
-/// allows; else the span whole, or the whole frame for a window reaching past the span.
-fn window_scene(screen: (f32, f32), rect: Rect, level: f32, span: Span) -> Scene {
-    if shrinks(screen, span) && resolve(level, screen, span) > ZOOM_MIN {
+/// What the view shows for a window covering `rect` on a screen of `screen` pixels: if it may
+/// `enlarge` it, on a screen that shrinks the frame with the ship view zoomed, the window as
+/// large as it allows; else the span whole, or the whole frame for a window past the span.
+fn window_scene(screen: (f32, f32), rect: Rect, level: f32, span: Span, enlarge: bool) -> Scene {
+    if enlarge && shrinks(screen, span) && resolve(level, screen, span) > ZOOM_MIN {
         Scene::Window(rect)
     } else if rect.x as f32 >= span.left && (rect.x + rect.w) as f32 <= span.right {
         Scene::Span
@@ -594,7 +595,7 @@ impl Layer {
         } else if let Some(rect) = state::window_rect() {
             // An open wheel shows whole beside the window.
             let rect = if self.wheel_at_cursor() { hull(rect, focus) } else { rect };
-            window_scene(screen, rect, self.zoom.level, self.zoom.span)
+            window_scene(screen, rect, self.zoom.level, self.zoom.span, !state::tutorial_running())
         } else if state::choice_open() {
             Scene::Span
         } else {
@@ -815,13 +816,14 @@ mod tests {
     fn a_window_is_enlarged_only_on_a_screen_that_shrinks_the_frame() {
         const DECK: (f32, f32) = (1280.0, 800.0);
         let map = Rect { x: 340, y: 83, w: 752, h: 580 };
-        assert_eq!(window_scene(SMALL, map, ZOOM_AUTO, HUD), Scene::Window(map));
-        assert_eq!(window_scene(SMALL, map, ZOOM_MIN, Span::FRAME), Scene::Span);
+        assert_eq!(window_scene(SMALL, map, ZOOM_AUTO, HUD, true), Scene::Window(map));
+        assert_eq!(window_scene(SMALL, map, ZOOM_AUTO, Span::FRAME, false), Scene::Span);
+        assert_eq!(window_scene(SMALL, map, ZOOM_MIN, Span::FRAME, true), Scene::Span);
         for level in [ZOOM_AUTO, ZOOM_MIN, 2.0] {
-            assert_eq!(window_scene(DECK, map, level, HUD), Scene::Span);
+            assert_eq!(window_scene(DECK, map, level, HUD, true), Scene::Span);
         }
         let wide = Rect { x: 0, w: GAME_W, ..map };
-        assert_eq!(window_scene(DECK, wide, ZOOM_AUTO, HUD), Scene::Whole);
+        assert_eq!(window_scene(DECK, wide, ZOOM_AUTO, HUD, true), Scene::Whole);
     }
 
     #[test]

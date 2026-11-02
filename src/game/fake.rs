@@ -2,7 +2,8 @@
 //! std::vectors over them, and a CApp with its GUI that the readers in `state` reach.
 //!
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
-//! time. Every data symbol resolves into one zeroed block that starts with the mouse state.
+//! time. Every data symbol resolves into one zeroed block that starts with the mouse state,
+//! but the tutorial, whose running flag has a block of its own.
 //! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
 //! are malloc'd copies `live_strings` counts, the joystick reports `FakePad`s, also written
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
@@ -30,6 +31,7 @@ const VECTOR_FIELDS: usize = VECTOR_END + size_of::<usize>();
 pub const WEAPON_SIZE: usize = WEAPON_TARGETS + VECTOR_FIELDS;
 /// Reaches the last mouse field the readers use.
 const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
+const TUTORIAL_SIZE: usize = TUTORIAL_RUNNING + size_of::<u8>();
 /// Reaches the last CApp field the readers use.
 const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
@@ -185,6 +187,7 @@ struct Statics {
     shared: usize,
     joysticks: usize,
     devices: usize,
+    tutorial: usize,
 }
 
 const JOYSTICKS_SIZE: usize = SIL_TABLE_LEN * SILJOY_SIZE;
@@ -212,6 +215,12 @@ fn leak_block(size: usize) -> usize {
 /// Takes the calls recorded since the last take.
 pub fn calls() -> Vec<Call> {
     std::mem::take(&mut CALLS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+pub fn set_tutorial_running(on: bool) {
+    let statics = *STATICS.get().expect("the tutorial is set inside with_game");
+    // SAFETY: the leaked block of TUTORIAL_SIZE bytes.
+    unsafe { (statics.tutorial as *mut u8).add(TUTORIAL_RUNNING).write(on as u8) };
 }
 
 /// Makes `graph` the ShipGraph of every ship.
@@ -501,12 +510,14 @@ fn install_api() -> Statics {
         shared: leak_block(STATICS_SIZE),
         joysticks: leak_block(JOYSTICKS_SIZE),
         devices: leak_block(DEVICES_SIZE),
+        tutorial: leak_block(TUTORIAL_SIZE),
     };
     // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a
     // test reaches, and the rest are never called.
     let mut stand_in = unsafe { Api::from_addresses(&vec![statics.shared; SYMBOLS.len()]) };
     stand_in.sil_joysticks = statics.joysticks;
     stand_in.sil_event_info = statics.devices;
+    stand_in.tutorial = statics.tutorial;
     stand_in.key_down = key_down;
     stand_in.key_up = key_up;
     stand_in.lbutton_down = lbutton_down;
@@ -585,6 +596,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
         std::ptr::write_bytes(statics.shared as *mut u8, 0, STATICS_SIZE);
         std::ptr::write_bytes(statics.joysticks as *mut u8, 0, JOYSTICKS_SIZE);
         std::ptr::write_bytes(statics.devices as *mut u8, 0, DEVICES_SIZE);
+        std::ptr::write_bytes(statics.tutorial as *mut u8, 0, TUTORIAL_SIZE);
     }
     calls();
     set_pads(Vec::new());

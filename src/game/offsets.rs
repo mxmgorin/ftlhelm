@@ -157,6 +157,11 @@ pub const STORE_SELL_TAB: i32 = 1;
 pub const MENU_CONFIRM: usize = 120;
 /// MenuScreen::bShowControls: the controls overview over the whole frame.
 pub const MENU_SHOW_CONTROLS: usize = 776;
+/// MenuScreen's size, and how far right it draws and hit-tests while the tutorial runs.
+pub const MENU_SIZE: usize = 1136;
+/// MenuScreen::buttons, the TextButtons of its list, kept apart from it.
+pub const MENU_BUTTONS: usize = 56;
+pub const MENU_TUTORIAL_SHIFT: i32 = 150;
 /// MenuScreen::shipAchievements, the current ship's achievement icons.
 pub const MENU_ACHIEVEMENTS: usize = 888;
 /// ShipAchievementInfo: the achievement, its icon's corner on screen and the icon's side.
@@ -217,6 +222,9 @@ pub const BUTTON_POSITION: usize = 8;
 pub const BUTTON_HITBOX: usize = 16;
 pub const BUTTON_RENDER_OFF: usize = 34;
 pub const BUTTON_ACTIVE: usize = 72;
+
+/// TutorialManager::bRunning.
+pub const TUTORIAL_RUNNING: usize = 0;
 
 pub const SYSCTRL_BOXES: usize = 16;
 /// SystemControl's position; its boxes' locations are relative to it.

@@ -120,6 +120,11 @@ pub fn menu_paused() -> bool {
     gui().is_some_and(|g| g.flag(layout().gui_menu_paused))
 }
 
+pub fn tutorial_running() -> bool {
+    // SAFETY: a resolved global of the game.
+    unsafe { Obj::from_addr(api().tutorial) }.expect("a resolved symbol is non-null").flag(TUTORIAL_RUNNING)
+}
+
 pub fn window_open(window: Option<Obj>) -> bool {
     window.is_some_and(|w| w.flag(FOCUS_OPEN))
 }
@@ -216,7 +221,8 @@ pub fn window_rect() -> Option<Rect> {
     let menu = gui.at(GUI_MENU_BOX);
     if menu.flag(FOCUS_OPEN) {
         let whole = menu.flag(MENU_SHOW_CONTROLS) || menu.at(MENU_CONFIRM).flag(FOCUS_OPEN);
-        return (!whole).then_some(MENU_RECT);
+        let shift = if tutorial_running() { MENU_TUTORIAL_SHIFT } else { 0 };
+        return (!whole).then_some(Rect { x: MENU_RECT.x + shift, ..MENU_RECT });
     }
     if choice_open() {
         return None;
@@ -470,7 +476,7 @@ pub fn fps_control() -> Obj {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{live_strings, with_game};
+    use crate::game::fake::{live_strings, set_tutorial_running, with_game};
 
     #[test]
     fn the_topmost_window_gives_the_rect() {
@@ -490,6 +496,9 @@ mod tests {
             let menu = g.gui.at(GUI_MENU_BOX);
             menu.set(FOCUS_OPEN, 1u8);
             assert_eq!(window_rect(), Some(MENU_RECT));
+            set_tutorial_running(true);
+            assert_eq!(window_rect(), Some(Rect { x: MENU_RECT.x + MENU_TUTORIAL_SHIFT, ..MENU_RECT }));
+            set_tutorial_running(false);
             menu.set(MENU_SHOW_CONTROLS, 1u8);
             assert_eq!(window_rect(), None);
             g.gui.at(GUI_OPTIONS_BOX).set(FOCUS_OPEN, 1u8);

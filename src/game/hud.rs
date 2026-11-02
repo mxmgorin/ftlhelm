@@ -12,7 +12,8 @@
 //! plus the shift; a field the game sets anew, as for a new ship, gives the new base. The crew
 //! boxes take their position when built, the status panel hit-tests fixed spots and the crew
 //! message prints at a fixed column, so three hooks add the left shift there, and the left
-//! panels stay put without them.
+//! panels stay put without them. The tutorial places its box and arrows by the HUD as the
+//! game lays it out, so the panels stay put while it runs.
 
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
@@ -268,15 +269,15 @@ impl Hud {
 
 impl Layer {
     /// Moves the HUD panels as far as the player ship leaves room while the screen is
-    /// narrower than the frame and `hud_shift` is on, else back; the ship view keeps to the
-    /// columns the HUD covers.
+    /// narrower than the frame, `hud_shift` is on and no tutorial runs, else back; the ship
+    /// view keeps to the columns the HUD covers.
     pub fn update_hud(&mut self) {
         let in_game = (!state::main_menu_open()).then(|| state::gui().zip(state::player_ship())).flatten();
         let Some((gui, ship)) = in_game else {
             self.zoom.span = Span::FRAME;
             return;
         };
-        let on = self.cfg.hud_shift && zoom::narrower_than_frame();
+        let on = self.cfg.hud_shift && zoom::narrower_than_frame() && !state::tutorial_running();
         let shifts =
             if on { self.hud.room(gui, ship).map_or_else(Shifts::default, Shifts::fitting) } else { Shifts::default() };
         self.hud.apply(gui, shifts);
@@ -409,6 +410,25 @@ mod tests {
                 (0, 747, 1015)
             );
             assert_eq!((left_shift(), l.zoom.span), (0, Span::FRAME));
+        });
+    }
+
+    #[test]
+    fn the_panels_stay_put_through_the_tutorial() {
+        with_game(|g| {
+            kestrel(g);
+            set_left_hooked(true);
+            let mut l = Layer {
+                cfg: crate::config::settings::Settings { hud_shift: true, ..Default::default() },
+                ..Default::default()
+            };
+            fake::set_tutorial_running(true);
+            l.update_hud();
+            assert_eq!(g.gui.at(GUI_COMBAT_CONTROL).i32(COMBAT_POSITION), 747);
+            assert_eq!((left_shift(), l.zoom.span), (0, Span::FRAME));
+            fake::set_tutorial_running(false);
+            l.update_hud();
+            assert_eq!(l.zoom.span, Span { left: 20.0, right: 1169.0 });
         });
     }
 }

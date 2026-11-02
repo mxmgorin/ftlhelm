@@ -197,6 +197,7 @@ game_api! {
     drone_swap: unsafe extern "C" fn(Ptr, c_uint, c_uint) = "_ZN12DroneControl13SwapArmamentsEjj",
     drone_check: unsafe extern "C" fn(Ptr) = "_ZN12DroneControl11CheckDronesEv",
     mouse_position: usize = "_ZN12MouseControl5MouseE",
+    tutorial: usize = "_ZN15TutorialManager8TutorialE",
     font_data: usize = "_ZN15ResourceControl11GetFontDataEib",
     choice_render: usize = "_ZN9ChoiceBox8OnRenderEv",
     render_pause: usize = "_ZN10CommandGui11RenderPauseEv",

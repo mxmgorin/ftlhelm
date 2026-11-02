@@ -156,8 +156,8 @@ run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
 
 Zoom magnifies the ship view; the view follows the cursor and fills the screen. While
 zoomed on a screen smaller than 1280x720, the map, the ship and store screens, the game
-menu and the options show whole, as large as the screen allows; on other screens they show
-at the lowest level. Event dialogs, the main menu and the controls overview show the whole
+menu and the options show whole, as large as the screen allows; on other screens, and
+during the tutorial, they show at the lowest level. Event dialogs, the main menu and the controls overview show the whole
 frame. Zoom levels: the whole frame, the level that fills the screen, and the levels where
 a game pixel takes a whole or half number of screen pixels, up to 3 times the whole frame.
 Auto, the default, is one level in on screens smaller than 1280x720 and the whole frame on
@@ -166,7 +166,7 @@ others.
 On a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as
 the player ship leaves room (`hud_shift`), and the ship view keeps to the columns the HUD
 covers: its lowest level shows the whole HUD in place of the whole frame, and so do event
-dialogs, which keep within those columns.
+dialogs, which keep within those columns. The panels stay in place during the tutorial.
 
 | Input, zoomed | Effect |
 | --- | --- |

@@ -78,7 +78,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
 | `ipad_beacons` | 1 | switch | the map's beacon icons in the larger art of FTL's iPad edition |
 | `ipad_station_buttons` | 1 | switch | the crew's save and return stations buttons in the larger art of FTL's iPad edition |
-| `hud_shift` | 1 | switch | on a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as the player ship leaves room, and the ship view keeps to the HUD; 0: the game's layout |
+| `hud_shift` | 1 | switch | on a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as the player ship leaves room, and the ship view keeps to the HUD; off during the tutorial; 0: the game's layout |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
 | `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
 | `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |
