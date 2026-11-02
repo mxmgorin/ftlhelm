@@ -331,9 +331,14 @@ impl Layer {
     }
 
     /// Keeps a focus on screen: when the zone a focus move left the cursor on goes away while
-    /// the cursor stays, the focus moves to the nearest zone. Not while aiming or in doors mode.
+    /// the cursor stays, the focus moves to the nearest zone. Not while aiming, in doors mode or
+    /// while the ship jumps away.
     pub fn keep_focus(&mut self) {
-        let busy = self.focus.waiting > 0 || self.wheel.open.is_some() || self.bind.precision || state::aiming();
+        let busy = self.focus.waiting > 0
+            || self.wheel.open.is_some()
+            || self.bind.precision
+            || state::aiming()
+            || state::player_jumping();
         if !self.focus_held() || busy || self.zone_under_cursor().is_some() {
             return;
         }
@@ -583,6 +588,27 @@ mod tests {
             l.zones.list.push(zone(100, 100));
             l.keep_focus();
             assert_eq!((l.cursor.last_x, l.cursor.last_y), (600, 600), "a cursor moved off the focus stays");
+        });
+    }
+
+    #[test]
+    fn a_focus_left_by_the_map_stays_put_until_the_jump_ends() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let zone = |x, y| Zone { rect: rect(x, y), id: 0, kind: ZoneKind::Button };
+            l.zones.list = vec![zone(100, 100)];
+            (l.cursor.x, l.cursor.y) = l.zones.list[0].rect.center();
+            l.send_cursor();
+            l.mark_focus();
+            l.zones.list = vec![zone(150, 120)];
+            let manager = g.player_manager();
+            manager.set(SHIPMANAGER_JUMPING, 1u8);
+            l.keep_focus();
+            assert_eq!(l.zone_under_cursor(), None, "no zone takes the focus mid-jump");
+            assert!(l.focus_held());
+            manager.set(SHIPMANAGER_JUMPING, 0u8);
+            l.keep_focus();
+            assert_eq!(l.zone_under_cursor(), Some(0));
         });
     }
 

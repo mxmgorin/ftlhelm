@@ -75,6 +75,11 @@ pub fn player_origin(gui: Obj) -> Point {
     gui.point(GUI_SHIP_POSITION)
 }
 
+/// Whether the player's ship is jumping away.
+pub fn player_jumping() -> bool {
+    player_manager().is_some_and(|m| m.flag(SHIPMANAGER_JUMPING))
+}
+
 pub fn player_manager() -> Option<Obj> {
     player_complete()?.obj(COMPLETE_SHIP_MANAGER)
 }

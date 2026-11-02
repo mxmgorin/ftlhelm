@@ -34,8 +34,9 @@ const STATICS_SIZE: usize = MOUSE_HACKING + size_of::<i32>();
 const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
 const GUI_SIZE: usize = STAND_IN.gui_equip_screen + EQUIP_OVER_AUG_CAPACITY + size_of::<u8>();
-/// Reaches the hull image's x, the Ship field farthest in.
-const MANAGER_SIZE: usize = SHIPMANAGER_SHIP + SHIP_IMAGE + IMAGE_X + size_of::<i32>();
+/// Reaches the jumping flag, past the hull image's x, the Ship field farthest in.
+const MANAGER_SIZE: usize = SHIPMANAGER_JUMPING + size_of::<u8>();
+const _: () = assert!(MANAGER_SIZE >= SHIPMANAGER_SHIP + SHIP_IMAGE + IMAGE_X + size_of::<i32>());
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
 /// Reaches the literal flag of the member's name, its field farthest in.

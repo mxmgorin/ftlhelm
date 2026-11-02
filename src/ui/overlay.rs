@@ -232,16 +232,24 @@ impl Layer {
     }
 
     /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,
-    /// or a held focus waits for the first item of a screen that opened.
+    /// or a held focus waits for the first item of a screen that opened or for the jump to end.
     pub fn pointer_hidden(&self) -> bool {
-        let awaiting = self.brackets_shown() && self.focus_held() && self.first_focus_pending();
+        let waiting = self.first_focus_pending() || state::player_jumping();
+        let awaiting = self.brackets_shown() && self.focus_held() && waiting;
         self.touch_in_use() || self.shown_focus(now_s()).is_some() || awaiting
+    }
+
+    /// The focused zone whose brackets are drawn: none on the player's ship while it jumps
+    /// away, though the pointer stays hidden.
+    fn framed_focus(&self, now: f64) -> Option<(usize, f64)> {
+        let on_ship = |i: usize| matches!(self.zones.list[i].kind, ZoneKind::Room | ZoneKind::Door);
+        self.shown_focus(now).filter(|&(i, _)| !(on_ship(i) && state::player_jumping()))
     }
 
     /// Frames the zone a focus move left the cursor on with corner brackets.
     fn draw_focus(&self) {
         let now = now_s();
-        let Some((i, age)) = self.shown_focus(now) else {
+        let Some((i, age)) = self.framed_focus(now) else {
             return;
         };
         let zone = &self.zones.list[i];
@@ -263,7 +271,7 @@ impl Layer {
         let (Some(gui), Some(selected)) = (state::gui(), state::selected_crew()) else {
             return;
         };
-        if !state::ship_view() {
+        if !state::ship_view() || state::player_jumping() {
             return;
         }
         let k = self.mark_scale().min(CREW_MARK_SCALE_MAX);
@@ -505,6 +513,29 @@ mod tests {
             l.send_cursor();
             l.focus_first_on_open();
             assert!(!l.pointer_hidden(), "the cursor moved on");
+        });
+    }
+
+    #[test]
+    fn a_jump_away_hides_the_brackets_on_the_ship_and_keeps_the_pointer_hidden() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let zone = |x, kind| Zone { rect: Rect { x, y: 100, w: 40, h: 40 }, id: 0, kind };
+            l.zones.list = vec![zone(100, ZoneKind::Room), zone(200, ZoneKind::Button)];
+            (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+            l.send_cursor();
+            l.mark_focus();
+            let manager = g.player_manager();
+            manager.set(SHIPMANAGER_JUMPING, 1u8);
+            assert!(l.framed_focus(now_s()).is_none() && l.pointer_hidden(), "a room of the jumping ship");
+            l.focus_move(1.0, 0.0);
+            assert!(l.framed_focus(now_s()).is_some(), "a button stays framed");
+            l.focus_move(-1.0, 0.0);
+            l.zones.list.clear();
+            assert!(l.pointer_hidden(), "a held focus over nothing mid-jump");
+            l.zones.list = vec![zone(100, ZoneKind::Room), zone(200, ZoneKind::Button)];
+            manager.set(SHIPMANAGER_JUMPING, 0u8);
+            assert!(l.framed_focus(now_s()).is_some(), "the room framed again after the jump");
         });
     }
 }
