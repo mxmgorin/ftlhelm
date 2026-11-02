@@ -270,11 +270,20 @@ pub fn open_options() -> Option<Obj> {
     options.flag(FOCUS_OPEN).then_some(options)
 }
 
+/// Whether the language picker of the game's first start is open.
+pub fn start_language_open() -> bool {
+    app().is_some_and(|a| a.at(layout().capp_language).flag(FOCUS_OPEN))
+}
+
+pub fn options_language_open(options: Obj) -> bool {
+    options.at(layout().options_language).flag(FOCUS_OPEN)
+}
+
 /// The choice box an options screen hit-tests: its restart notice while that is open, else
 /// its own list; None while its language picker, wipe confirmation or hotkey screen is up.
 pub fn options_choices(options: Obj) -> Option<Obj> {
     let l = layout();
-    if [l.options_language, l.options_wipe_dialog].into_iter().any(|off| options.at(off).flag(FOCUS_OPEN)) {
+    if options_language_open(options) || options.at(l.options_wipe_dialog).flag(FOCUS_OPEN) {
         return None;
     }
     let notice = options.at(l.options_restart_dialog);

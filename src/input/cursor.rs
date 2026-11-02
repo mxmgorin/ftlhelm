@@ -48,6 +48,7 @@ enum FirstScreen {
     Map,
     Options,
     OptionsNotice,
+    Language,
 }
 
 /// Tracks screens opening, to put the cursor on their first item.
@@ -63,7 +64,13 @@ pub struct FirstFocus {
 
 /// The menu or dialog on screen, if it is one that opens on its first item.
 fn first_screen() -> FirstScreen {
+    if state::start_language_open() {
+        return FirstScreen::Language;
+    }
     if let Some(options) = state::open_options() {
+        if state::options_language_open(options) {
+            return FirstScreen::Language;
+        }
         let notice = state::options_choices(options).is_some_and(|c| c != options);
         return if notice { FirstScreen::OptionsNotice } else { FirstScreen::Options };
     }
@@ -539,6 +546,36 @@ mod tests {
             g.arena.vector(notice, CHOICE_RECTS, &[rect(600, 400)]);
             frames(&mut l, FIRST_FOCUS_SETTLE + 1);
             assert_eq!((l.cursor.x, l.cursor.y), rect(600, 400).center());
+        });
+    }
+
+    #[test]
+    fn the_first_starts_language_picker_opens_on_its_top_button() {
+        with_game(|g| {
+            g.app.at(layout().capp_language).set(FOCUS_OPEN, 1u8);
+            let mut l = Layer::default();
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            let button = |y| Button { rect: Rect { x: 513, y, w: 256, h: 26 }, object: g.app.addr() };
+            l.zones.buttons = vec![button(229), button(192)];
+            frames(&mut l, 1);
+            assert_eq!((l.cursor.x, l.cursor.y), button(192).rect.center());
+        });
+    }
+
+    #[test]
+    fn the_language_picker_opens_on_its_top_button() {
+        with_game(|g| {
+            let options = g.gui.at(GUI_OPTIONS_BOX);
+            options.set(FOCUS_OPEN, 1u8);
+            g.arena.vector(options, CHOICE_RECTS, &[rect(300, 200)]);
+            let mut l = Layer::default();
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            options.at(layout().options_language).set(FOCUS_OPEN, 1u8);
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            let button = |y| Button { rect: Rect { x: 513, y, w: 256, h: 26 }, object: g.gui.addr() };
+            l.zones.buttons = vec![button(229), button(192)];
+            frames(&mut l, 1);
+            assert_eq!((l.cursor.x, l.cursor.y), button(192).rect.center());
         });
     }
 

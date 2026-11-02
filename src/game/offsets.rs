@@ -14,6 +14,8 @@ pub struct Layout {
     pub capp_mouse_modifier_y: usize,
     pub capp_x_bar: usize,
     pub capp_y_bar: usize,
+    /// CApp::langChooser, the language picker of the game's first start.
+    pub capp_language: usize,
     pub gui_paused: usize,
     /// Set while a menu or an event holds the game.
     pub gui_menu_paused: usize,
@@ -50,6 +52,7 @@ pub const BUILDS: [Build; 2] = [
             capp_mouse_modifier_y: 14672,
             capp_x_bar: 14692,
             capp_y_bar: 14696,
+            capp_language: 14576,
             gui_paused: 12944,
             gui_menu_paused: 12946,
             gui_ship_screens: 13064,
@@ -75,6 +78,7 @@ pub const BUILDS: [Build; 2] = [
             capp_mouse_modifier_y: 14408,
             capp_x_bar: 14428,
             capp_y_bar: 14432,
+            capp_language: 14312,
             gui_paused: 12680,
             gui_menu_paused: 12682,
             gui_ship_screens: 12800,
