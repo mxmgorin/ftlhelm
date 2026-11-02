@@ -180,6 +180,7 @@ impl Layer {
                 } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
                     || state::open_options().is_some()
                     || state::ship_list_open()
+                    || state::score_screen().is_some()
                 {
                     tap_key(KEY_ESCAPE, false);
                 } else if self.take_beam_start() {
@@ -482,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_closes_the_main_menu_options_and_the_hangar_ship_list() {
+    fn cancel_closes_the_main_menu_options_the_score_screen_and_the_hangar_ship_list() {
         with_game(|g| {
             let mut l = Layer::default();
             let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
@@ -492,7 +493,12 @@ mod tests {
             hangar.set(HANGAR_OPEN, 1u8);
             l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
             assert_eq!(calls(), [], "the hangar alone stays");
-            for flag in [hangar.at(HANGAR_SHIP_LIST + SHIP_LIST_OPEN), menu.at(MAIN_MENU_OPTIONS + FOCUS_OPEN)] {
+            let flags = [
+                hangar.at(HANGAR_SHIP_LIST + SHIP_LIST_OPEN),
+                menu.at(MAIN_MENU_OPTIONS + FOCUS_OPEN),
+                menu.at(MAIN_MENU_SCORE_SCREEN),
+            ];
+            for flag in flags {
                 flag.set(0, 1u8);
                 l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
                 assert_eq!(calls(), escape);
