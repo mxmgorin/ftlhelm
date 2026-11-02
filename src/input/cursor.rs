@@ -193,7 +193,7 @@ impl Layer {
     /// Moves the cursor to the zone `pick_toward` finds along a direction.
     pub fn focus_move(&mut self, dx: f32, dy: f32) {
         let len = dx.hypot(dy);
-        if self.zones.list.is_empty() || len <= 0.0 {
+        if self.zones.list.is_empty() || len <= 0.0 || self.beam_step(dx, dy) {
             return;
         }
         let from = self.zone_under_cursor();

@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod api;
+pub mod beam;
 #[cfg(test)]
 pub mod fake;
 pub mod hud;

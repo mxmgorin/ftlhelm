@@ -240,6 +240,9 @@ pub const COMBAT_DRONE_CONTROL: usize = 1056;
 pub const COMBAT_CURRENT_TARGET: usize = 1984;
 pub const COMBAT_POSITION: usize = 2000;
 pub const COMBAT_TARGET_POSITION: usize = 2016;
+/// CombatControl::aimingPoints: the points of the aim under way, in the enemy ship's
+/// coordinates; a beam's start once placed.
+pub const COMBAT_AIMING_POINTS: usize = 3784;
 /// CombatControl::boss_visual: the flagship's window, wider and placed apart.
 pub const COMBAT_BOSS: usize = 4456;
 /// The enemy window's x from COMBAT_POSITION as AddEnemyShip places an ordinary enemy's,
@@ -265,6 +268,8 @@ pub const WEAPON_POWER: usize = 244;
 pub const WEAPON_TARGETS: usize = 248;
 pub const POINTF_SIZE: usize = 2 * std::mem::size_of::<f32>();
 pub const WEAPONBP_TYPE_NAME: usize = 120;
+/// WeaponBlueprint::length: a beam's length.
+pub const WEAPONBP_LENGTH: usize = 196;
 pub const WEAPONBP_ICON: usize = 320;
 /// The blueprint type name of a beam.
 pub const BEAM_TYPE_NAME: &str = "BEAM";
@@ -388,6 +393,8 @@ pub const SHIP_ROOMS: usize = 16;
 pub const SHIP_DOORS: usize = 40;
 pub const SHIP_AIRLOCKS: usize = 88;
 pub const ROOM_RECT: usize = 28;
+/// A room tile's side.
+pub const ROOM_TILE: i32 = 35;
 pub const ROOM_ID: usize = 44;
 pub const DOOR_ROOM1: usize = 28;
 pub const DOOR_ROOM2: usize = 32;

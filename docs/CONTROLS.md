@@ -47,6 +47,12 @@ the cursor.
 An X tap arms the first powered weapon without a target; with a weapon armed, it arms the
 next powered one.
 
+A on a room places an armed beam's start at the room's centre and lays the beam on the line
+over that centre through the most rooms. The D-pad and the sticks then set the line: left
+and right turn it about the centre, up and down slide its start along it up or down the
+screen (a level beam's forward on up) as far as the beam still crosses that room, and a held
+direction repeats. A fires the beam; B takes its start back.
+
 The All weapons plate of the weapons wheel arms every powered weapon and clears their
 targets. A on a room aims them all at it; each beam then waits for its own line. B leaves
 them all without a target. Autofire is the game's button under the weapons and a plate of the

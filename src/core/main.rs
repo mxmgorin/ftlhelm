@@ -146,6 +146,7 @@ extern "C" fn onloop_hook(app: Ptr) {
             l.focus_first_on_open();
             l.keep_focus();
         }
+        l.update_beam();
         l.poll_commands();
         l.apply_touch(t);
         let pad = l.poll_pad(frame.dt);

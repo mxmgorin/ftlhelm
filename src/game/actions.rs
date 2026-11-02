@@ -5,6 +5,7 @@ use std::ffi::c_uint;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::api::api;
+use super::beam::BeamLine;
 use super::mem::Obj;
 use super::offsets::*;
 use super::state;
@@ -61,6 +62,7 @@ pub struct Actions {
     queued_phase: i32,
     queued_wait: i32,
     pub volley: Option<Volley>,
+    pub beam: Option<BeamLine>,
     /// The step cap CFPS::OnLoop reads once redirected, and the game's own value.
     pub step_cap: Option<usize>,
     pub step_cap_normal: f32,

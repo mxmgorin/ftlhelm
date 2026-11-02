@@ -30,6 +30,8 @@ const STICK_KEY_OFF: f32 = 0.3;
 const TRIGGER_ON: f32 = 0.0;
 /// Frames between synthetic mouse moves that refresh the button zones.
 const BUTTON_REFRESH_FRAMES: u64 = 6;
+/// The D-pad's directions in input order: left, up, right, down.
+const DPAD_DIRS: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
@@ -448,6 +450,7 @@ impl Layer {
             self.spend_flicks(&p, t);
         } else {
             self.move_pointers(&p, mode, t, dt);
+            self.repeat_beam(self.held_direction(&p, mode));
         }
         self.follow_game_modes();
     }
@@ -491,7 +494,6 @@ impl Layer {
     /// no state held, the D-pad steps the wheel, a held armament box or the focus instead,
     /// and its release is swallowed.
     fn apply_buttons(&mut self, p: &PadFrame, t: f64, in_wheel: bool, snapping: bool) {
-        const DIR: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
         for input in Input::ALL {
             let i = input as usize;
             if p.down[i] == self.pad.held[i] {
@@ -517,8 +519,8 @@ impl Layer {
                             1 => self.adjust_plate(1),
                             _ => self.adjust_plate(-1),
                         }
-                    } else if !self.focus_drag(DIR[d].0, DIR[d].1) {
-                        self.focus_move(DIR[d].0, DIR[d].1);
+                    } else if !self.focus_drag(DPAD_DIRS[d].0, DPAD_DIRS[d].1) {
+                        self.focus_move(DPAD_DIRS[d].0, DPAD_DIRS[d].1);
                     }
                     continue;
                 }
@@ -535,6 +537,22 @@ impl Layer {
         }
     }
 
+    /// The direction a D-pad step or a flicking stick holds this frame, the D-pad first.
+    fn held_direction(&self, p: &PadFrame, mode: [SlotMode; SLOT_COUNT]) -> Option<(f32, f32)> {
+        let dpad =
+            (0..DPAD_DIRS.len()).find(|&d| self.pad.held[Input::DpadLeft as usize + d] && self.pad.dpad_spent[d]);
+        if let Some(d) = dpad {
+            return Some(DPAD_DIRS[d]);
+        }
+        [Slot::LStick, Slot::RStick]
+            .into_iter()
+            .enumerate()
+            .filter(|&(_, slot)| mode[slot as usize] == SlotMode::Flick)
+            .map(|(k, _)| p.stick[k])
+            .find(|&[x, y]| x.hypot(y) >= self.cfg.flick_threshold)
+            .map(|[x, y]| (x, y))
+    }
+
     /// Moves the cursor or flicks between zones from the sticks and a cursor-mode D-pad.
     fn move_pointers(&mut self, p: &PadFrame, mode: [SlotMode; SLOT_COUNT], t: f64, dt: f32) {
         for (k, slot) in [Slot::LStick, Slot::RStick].into_iter().enumerate() {
@@ -543,8 +561,10 @@ impl Layer {
                 SlotMode::Mouse => self.move_cursor(x, y, dt),
                 SlotMode::Flick => {
                     let mag = x.hypot(y);
-                    let repeat =
-                        self.cfg.flick_repeat > 0.0 && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
+                    // A beam being set repeats its own steps.
+                    let repeat = self.cfg.flick_repeat > 0.0
+                        && !self.beam_active()
+                        && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
                     if mag < FLICK_OFF {
                         self.pad.flick_armed[k] = true;
                     } else if mag >= self.cfg.flick_threshold && (self.pad.flick_armed[k] || repeat) {

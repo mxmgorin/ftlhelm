@@ -182,6 +182,8 @@ impl Layer {
                     || state::ship_list_open()
                 {
                     tap_key(KEY_ESCAPE, false);
+                } else if self.take_beam_start() {
+                    // A beam being set gives back its start alone and stays armed.
                 } else if state::aiming() {
                     // The right button cancels targeting.
                     self.click_tap(MouseButton::Right);
