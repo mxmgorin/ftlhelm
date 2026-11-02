@@ -4,7 +4,25 @@ Buttons go by their labels. The default buttons are in the [README](../README.md
 the Help plate of the settings wheel shows them in the game. Settings, bindings and wheels
 are set in `ftlhelm.ini`, see [Configuration](CONFIGURATION.md).
 
-The controls table shows at the first start, once a pad is connected; any button but the D-pad closes it.
+## Help
+
+The help opens from the Help plate of the settings wheel, and once by itself: the first time
+the ship view shows with a pad connected. On the ship view the game is paused while it shows.
+
+| Input | In the help |
+| --- | --- |
+| L1, R1 or D-pad left, right | previous, next page |
+| any other button | close |
+
+| Page | Shows |
+| --- | --- |
+| Buttons | each button's tap and hold, then what the D-pad and the sticks do |
+| Wheels | the controls in a wheel |
+| Weapons | arming, aiming, beam lines, moving weapons, picking a volley |
+| Crew | selecting crew and sending them |
+| Doors | doors mode and room doors |
+
+A row names the button bound to its action, and is left out when none is.
 
 ## Pads
 
@@ -99,7 +117,8 @@ mouse is used; tooltips and the targeting pointers stay. A zoomed view without t
 shows the button in its top right corner. A touch's click leaves a small ring that fades.
 `touch_marks = 0` hides both rings.
 
-A tap closes the controls table. With a wheel open, a tap on a plate acts on it; a tap
+A tap on a tab of the help shows its page, on L1 or R1 the previous or next page; a tap
+elsewhere closes it. With a wheel open, a tap on a plate acts on it; a tap
 elsewhere closes the wheel.
 
 ## Wheels
@@ -130,7 +149,7 @@ cursor. While zoomed, an open wheel zooms out as far as it needs to show whole.
 | Zoom | next zoom level, back to auto after the last | zoom in, out; auto below the whole frame |
 | Autopause | next mode: Wheels, Aim, Both, Off | next, previous mode |
 | Fast speed | next fast forward speed, the slowest after the fastest | faster, slower |
-| Help | the controls table | |
+| Help | the help | |
 | Rumble | next rumble strength, off after the strongest; a pulse at the new strength | stronger, weaker |
 | View | the view wheel | |
 | Text | next text size, back to auto after the largest | larger, smaller text; auto below the smallest |
@@ -157,7 +176,7 @@ run; the other values are kept, see [Configuration](CONFIGURATION.md#settings).
 Zoom magnifies the ship view; the view follows the cursor and fills the screen. While
 zoomed on a screen smaller than 1280x720, the map, the ship and store screens, the game
 menu and the options show whole, as large as the screen allows; on other screens, and
-during the tutorial, they show at the lowest level. Event dialogs, the main menu and the controls overview show the whole
+during the tutorial, they show at the lowest level. Event dialogs, the main menu and the help show the whole
 frame. Zoom levels: the whole frame, the level that fills the screen, and the levels where
 a game pixel takes a whole or half number of screen pixels, up to 3 times the whole frame.
 Auto, the default, is one level in on screens smaller than 1280x720 and the whole frame on
@@ -179,8 +198,8 @@ view's edges.
 ## Text size
 
 Text sizes apply to event boxes and tooltips: 1 to 2 times the game's own, or auto. Auto
-enlarges them on screens smaller than 1280x720, less at higher zoom levels. The controls
-table and notices take the same size, as far as the frame holds them.
+enlarges them on screens smaller than 1280x720, less at higher zoom levels. The help
+and notices take the same size, as far as the frame holds them.
 
 On a screen that shows the frame smaller than 1280x720, the pointer is drawn larger, up to
 `pointer_scale_max` times its size, the crew markers up to one and a half times, and the

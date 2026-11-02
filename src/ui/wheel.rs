@@ -664,8 +664,8 @@ impl Layer {
         self.wheel.open.is_some_and(|w| self.layout.wheels.get(w).is_some_and(|w| w.kind == WheelKind::Settings))
     }
 
-    /// Closes the open wheel, unpausing what it paused unless an aim taken on it keeps the
-    /// pause as its own; a settings wheel saves its values.
+    /// Closes the open wheel, unpausing what it paused unless the help it opened or an aim
+    /// taken on it keeps the pause as its own; a settings wheel saves its values.
     pub fn close_wheel(&mut self) {
         let settings = self.settings_open();
         if self.wheel.open.take().is_none() {
@@ -673,7 +673,9 @@ impl Layer {
         }
         if self.wheel.paused && state::game_paused() {
             let aiming = state::aiming() || self.actions.volley.is_some();
-            if self.cfg.autopauses(AUTOPAUSE_AIM) && aiming {
+            if self.help.shown {
+                self.help_takes_pause();
+            } else if self.cfg.autopauses(AUTOPAUSE_AIM) && aiming {
                 self.pad.aim_paused = true;
             } else {
                 toggle_pause();

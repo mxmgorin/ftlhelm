@@ -1,33 +1,17 @@
-//! What the layer draws over the game each frame: the open wheel, the help table, a notice
-//! and the mode badge.
+//! What the layer draws over the game each frame: the open wheel, the help, a notice and the
+//! mode badge, and the window helpers the help and the notice share.
 
 use super::draw::*;
 use super::text;
-use crate::config::layout::{key_name, Action, Binding, Builtin, SIL_BUTTONS};
-use crate::config::settings::option_name;
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, now_s};
 use crate::game::offsets::*;
 use crate::game::state;
 use crate::game::zones::ZoneKind;
 
-const HELP_FONT: i32 = WHEEL_FONT;
-const HELP_LINE: f32 = 30.0;
-const HELP_W: f32 = 760.0;
-const HELP_PAD: f32 = 12.0;
-const HELP_COL_TAP: f32 = 130.0;
-const HELP_COL_HOLD: f32 = 430.0;
-const HELP_RULE_H: f32 = 1.0;
-/// A rule sits this far above the top of the row it opens.
-const HELP_RULE_GAP: f32 = 2.0;
-/// The header row's strip keeps this far in from the window's edges.
-const HELP_HEADER_INSET: f32 = 6.0;
-const HELP_VERSION: &str = concat!("ftlhelm ", env!("CARGO_PKG_VERSION"));
-const URL_SCHEME: &str = "https://";
-/// A held click drags: a selection box over the ship, an item on a screen.
-const CLICK_HOLD_TITLE: &str = "Drag select";
-/// A held pause shows a zoomed view at its lowest level.
-const PAUSE_HOLD_TITLE: &str = "Zoom out";
+pub const HELP_FONT: i32 = WHEEL_FONT;
+pub const HELP_LINE: f32 = 30.0;
+pub const HELP_PAD: f32 = 12.0;
 /// The pause button in the bottom right corner of the ship view's columns; the margin holds its
 /// glow and keeps its reach off the HUD's rightmost box, the battery's.
 const PAUSE_BUTTON_SIZE: f32 = 56.0;
@@ -40,7 +24,7 @@ const PAUSE_BAR_H: f32 = 22.0;
 /// Keeps the glyph's width even like the button's, so it centres on whole pixels.
 const PAUSE_BAR_GAP: f32 = 8.0;
 /// Text sits this far below a panel row's top edge.
-const TEXT_DY: f32 = 5.0;
+pub const TEXT_DY: f32 = 5.0;
 /// The least room a scaled panel leaves to the edges of what is shown.
 const PANEL_MARGIN: f32 = 8.0;
 
@@ -71,13 +55,11 @@ impl Notice {
 
 /// The scale of a `w` by `h` panel shown in `area`: the text size, as far as the area holds
 /// it within PANEL_MARGIN; never below the game's own.
-fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
+pub fn panel_scale(text: f32, w: f32, h: f32, (area_w, area_h): (f32, f32)) -> f32 {
     let fit = ((area_w - 2.0 * PANEL_MARGIN) / w).min((area_h - 2.0 * PANEL_MARGIN) / h);
     clampf(text, 1.0, fit.max(1.0))
 }
 
-const INPUT_TITLES: [&str; SIL_BUTTONS] =
-    ["Guide", "Start", "Select", "Y", "X", "B", "A", "L1", "R1", "L2", "R2", "L3", "R3"];
 /// A focused zone's corner brackets, in frame pixels: their arms take a share of the zone's
 /// shorter side within bounds, and they slide in from further out as the focus lands.
 const FOCUS_ARM_SHARE: f32 = 0.25;
@@ -100,37 +82,6 @@ const CREW_MARK_BOB_S: f64 = 1.0;
 /// The most times its size the crew marker is drawn.
 const CREW_MARK_SCALE_MAX: f32 = 1.5;
 
-/// What the game's own hotkeys do, as the help names them.
-#[rustfmt::skip]
-const KEY_TITLES: &[(i32, &str)] = &[
-    (KEY_ESCAPE, "Menu"), (KEY_SPACE, "Pause"), ('j' as i32, "Jump"), ('u' as i32, "Upgrades"),
-    (KEY_AUTOFIRE, "Autofire"), ('z' as i32, "Open doors"), ('x' as i32, "Close doors"), ('q' as i32, "All crew"),
-    (KEY_ENTER, "To stations"), ('/' as i32, "Save stations"), ('i' as i32, "Cargo"),
-];
-
-fn builtin_title(b: Builtin) -> &'static str {
-    match b {
-        Builtin::Cancel => "Cancel",
-        Builtin::ContextClick => "Click",
-        Builtin::ArmNext => "Next weapon",
-        Builtin::ArmAll => "All weapons",
-        Builtin::AimCrew => "Next crew",
-        Builtin::RepeatAbility => "Repeat ability",
-        Builtin::Precision => "Doors mode",
-        Builtin::CenterSwap => "Other ship",
-        Builtin::PrevTab => "Previous tab",
-        Builtin::NextTab => "Next tab",
-        Builtin::Help => "Help",
-        Builtin::RoomDoors => "Room doors",
-        Builtin::Pause => "Pause",
-        Builtin::FastForward => "Fast forward",
-        Builtin::DpadMode => "Mouse / zones",
-        Builtin::Zoom => "Zoom",
-        Builtin::TextSize => "Text size",
-        Builtin::Autopause => "Autopause",
-    }
-}
-
 /// Draws the pause button at (`x`, `y`): a game button with two bars, lit while the game is
 /// paused.
 fn draw_pause_button(x: f32, y: f32) {
@@ -144,25 +95,25 @@ fn draw_pause_button(x: f32, y: f32) {
 
 /// Draws a pale window `w` by `h` centred on (`cx`, `cy`), unscaled: its cut stays on whole
 /// pixels at any text size.
-fn draw_window(cx: f32, cy: f32, w: f32, h: f32) {
+pub fn draw_window(cx: f32, cy: f32, w: f32, h: f32) {
     draw_frame(cx - w / 2.0, cy - h / 2.0, w, h, &WINDOW_FRAME, BUTTON_PALE_COLOR);
 }
 
-/// The top of a line of text centred between `top` and `bottom`.
-fn band_text_top(top: f32, bottom: f32) -> f32 {
-    (top + bottom - WHEEL_FONT_H) / 2.0
+/// The height at which the capitals of a line of text whose top is `top` centre.
+pub fn caps_middle(top: f32) -> f32 {
+    top + WHEEL_FONT_H / 2.0 + WHEEL_FONT_CAPS_DY
 }
 
-/// Whether an action acts while held: states, doors mode, fast forward.
-fn is_hold_action(a: Action) -> bool {
-    matches!(a, Action::State(_) | Action::Builtin(Builtin::Precision | Builtin::FastForward))
+/// The top of a line of text whose capitals centre between `top` and `bottom`.
+pub fn band_text_top(top: f32, bottom: f32) -> f32 {
+    (top + bottom) / 2.0 - caps_middle(0.0)
 }
 
 impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
     /// should be drawn, as they would cover an open wheel or the help.
     pub fn draw_overlay(&mut self) -> bool {
-        if !self.wheel_at_cursor() && !self.help_shown && self.cfg.overlay {
+        if !self.wheel_at_cursor() && !self.help.shown && self.cfg.overlay {
             if self.cfg.crew_marker {
                 self.draw_crew_marks();
             }
@@ -176,10 +127,10 @@ impl Layer {
             draw_pause_button(x, y);
         }
         self.draw_badge();
-        if self.help_shown && self.cursor.synced {
+        if self.help.shown && self.cursor.synced {
             self.draw_help();
         }
-        self.wheel.open.is_none() && !self.help_shown
+        self.wheel.open.is_none() && !self.help.shown
     }
 
     /// The top right corner of what is shown.
@@ -203,7 +154,7 @@ impl Layer {
     /// nothing over it: in the frame's corner, else in the top right of the view.
     fn pause_button(&self) -> Option<(f32, f32)> {
         let shown = self.cfg.pause_button && self.touch_in_use() && state::ship_view();
-        if !shown || self.wheel.open.is_some() || self.help_shown {
+        if !shown || self.wheel.open.is_some() || self.help.shown {
             return None;
         }
         if self.corner_shown() {
@@ -228,7 +179,7 @@ impl Layer {
     }
 
     fn brackets_shown(&self) -> bool {
-        self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help_shown
+        self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help.shown
     }
 
     /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,
@@ -293,103 +244,9 @@ impl Layer {
         }
     }
 
-    fn describe(&self, a: Action) -> String {
-        match a {
-            Action::Key { code, .. } => {
-                if let Some(&(_, title)) = KEY_TITLES.iter().find(|(c, _)| *c == code) {
-                    title.to_string()
-                } else if let Some(name) = key_name(code) {
-                    name.to_string()
-                } else if (KEY_F1..KEY_F1 + KEY_F_COUNT).contains(&code) {
-                    format!("f{}", code - KEY_F1 + 1)
-                } else {
-                    u8::try_from(code).map_or_else(|_| code.to_string(), |c| (c as char).to_string())
-                }
-            }
-            Action::LClick => "click".to_string(),
-            Action::RClick => "right click".to_string(),
-            Action::State(s) => format!("{} page", self.layout.states.get(s).map_or("?", |s| &s.name)),
-            Action::Wheel(w) => {
-                let name = self.layout.wheels.get(w).map_or("?", |w| &w.name);
-                let mut chars = name.chars();
-                let first: String = chars.next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-                format!("{first}{} wheel", chars.as_str())
-            }
-            Action::Builtin(b) => builtin_title(b).to_string(),
-            Action::Set(i) => option_name(i).to_string(),
-        }
-    }
-
-    /// The tap and hold columns of a binding.
-    fn help_row(&self, b: Binding) -> (String, String) {
-        match b.tap {
-            Some(tap) => (self.describe(tap), self.describe(b.hold)),
-            None if b.hold == Action::Builtin(Builtin::ContextClick) => {
-                (self.describe(b.hold), CLICK_HOLD_TITLE.to_string())
-            }
-            None if b.hold == Action::Builtin(Builtin::Pause) => (self.describe(b.hold), PAUSE_HOLD_TITLE.to_string()),
-            None if is_hold_action(b.hold) => (String::new(), self.describe(b.hold)),
-            None => (self.describe(b.hold), String::new()),
-        }
-    }
-
-    /// Shows or hides the help; the first hide clears `help_at_start` in the layout file.
-    pub fn show_help(&mut self, shown: bool) {
-        self.help_shown = shown;
-        if !shown && self.cfg.help_at_start {
-            self.cfg.help_at_start = false;
-            self.save_tuned();
-        }
-    }
-
-    /// Draws the base state's bindings as a table: button, tap, hold; at the text size, as far
-    /// as the frame holds it.
-    fn draw_help(&self) {
-        let Some(base) = self.layout.states.first() else {
-            return;
-        };
-        let rows: Vec<(usize, Binding)> = (0..SIL_BUTTONS).filter_map(|i| base.bind[i].map(|b| (i, b))).collect();
-        // A header row, the bindings, then the footer.
-        let h = HELP_LINE * (rows.len() + 2) as f32 + 2.0 * HELP_PAD;
-        let (frame_w, frame_h) = (GAME_W as f32, GAME_H as f32);
-        let k = panel_scale(text::scale(), HELP_W, h, (frame_w, frame_h));
-        let (cx, cy) = (frame_w / 2.0, frame_h / 2.0);
-        draw_window(cx, cy, HELP_W * k, h * k);
-        let (x, y) = (-HELP_W / 2.0, -h / 2.0);
-        let header_top = y + HELP_HEADER_INSET;
-        let header_bottom = y + HELP_PAD + HELP_LINE - HELP_RULE_GAP;
-        let header_w = HELP_W - 2.0 * HELP_HEADER_INSET;
-        let (hx, hy) = (cx + (x + HELP_HEADER_INSET) * k, cy + header_top * k);
-        draw_frame(hx, hy, header_w * k, (header_bottom - header_top) * k, &HEADER_FRAME, HEADER_COLOR);
-        with_scale(cx, cy, k, || {
-            let header_y = band_text_top(header_top, header_bottom);
-            set_color(TEXT_COLOR);
-            draw_text_left(HELP_FONT, x + HELP_PAD, header_y, "BUTTON");
-            draw_text_left(HELP_FONT, x + HELP_COL_TAP, header_y, "TAP");
-            draw_text_left(HELP_FONT, x + HELP_COL_HOLD, header_y, "HOLD");
-            set_color(INK_COLOR);
-            let mut line_y = y + HELP_PAD + HELP_LINE;
-            for (i, b) in rows {
-                let (tap, hold) = self.help_row(b);
-                draw_text_left(HELP_FONT, x + HELP_PAD, line_y + TEXT_DY, INPUT_TITLES[i]);
-                draw_text_left(HELP_FONT, x + HELP_COL_TAP, line_y + TEXT_DY, &tap);
-                draw_text_left(HELP_FONT, x + HELP_COL_HOLD, line_y + TEXT_DY, &hold);
-                line_y += HELP_LINE;
-            }
-            let rule_y = line_y - HELP_RULE_GAP;
-            draw_rect(x + HELP_PAD, rule_y, HELP_W - 2.0 * HELP_PAD, HELP_RULE_H, INK_COLOR);
-            let footer_y = band_text_top(rule_y + HELP_RULE_H, y + h);
-            let url = env!("CARGO_PKG_REPOSITORY").trim_start_matches(URL_SCHEME);
-            set_color(TEXT_DISABLED_COLOR);
-            draw_text_left(HELP_FONT, x + HELP_PAD, footer_y, HELP_VERSION);
-            draw_text_left(HELP_FONT, x + HELP_W - HELP_PAD - text_width(HELP_FONT, url), footer_y, url);
-            set_color(TEXT_COLOR);
-        });
-    }
-
     /// Whether the notice is on screen: the help covers it.
     pub fn notice_shown(&self) -> bool {
-        self.cursor.synced && !self.help_shown
+        self.cursor.synced && !self.help.shown
     }
 
     /// Counts the notice's time down while it is on screen; drops it on a press or when its
@@ -444,9 +301,10 @@ mod tests {
     fn a_panel_grows_with_the_text_as_far_as_it_fits() {
         let frame = (GAME_W as f32, GAME_H as f32);
         let h = 400.0;
-        let fit = ((frame.0 - 2.0 * PANEL_MARGIN) / HELP_W).min((frame.1 - 2.0 * PANEL_MARGIN) / h);
-        assert_eq!(panel_scale(1.0, HELP_W, h, frame), 1.0);
-        assert_eq!(panel_scale(TEXT_SCALE_MAX, HELP_W, h, frame), fit);
+        let w = 760.0;
+        let fit = ((frame.0 - 2.0 * PANEL_MARGIN) / w).min((frame.1 - 2.0 * PANEL_MARGIN) / h);
+        assert_eq!(panel_scale(1.0, w, h, frame), 1.0);
+        assert_eq!(panel_scale(TEXT_SCALE_MAX, w, h, frame), fit);
         assert_eq!(panel_scale(TEXT_SCALE_MAX, 2.0 * frame.0, h, frame), 1.0);
     }
 
@@ -464,15 +322,6 @@ mod tests {
         l.notice = Some(Notice::for_seconds(PAD_LOST_NOTICE, 1.0));
         l.age_notice(0.1, true);
         assert!(l.notice.is_none());
-    }
-
-    #[test]
-    fn closing_the_help_ends_its_showing_at_start() {
-        let mut l = Layer::default();
-        l.show_help(true);
-        assert!(l.cfg.help_at_start);
-        l.show_help(false);
-        assert!(!l.help_shown && !l.cfg.help_at_start);
     }
 
     #[test]

@@ -185,7 +185,7 @@ fn identity(dev: i32) -> (String, u16, u16) {
 /// A pointer source's mode under the mode toggle: with `free_cursor` the D-pad and every
 /// pointer stick move the cursor, else the sticks flick and the D-pad keeps the layout's
 /// mode. A stick the layout binds as keys stays keys.
-fn toggled_mode(slot: Slot, layout_mode: SlotMode, free_cursor: bool) -> SlotMode {
+pub fn toggled_mode(slot: Slot, layout_mode: SlotMode, free_cursor: bool) -> SlotMode {
     match (slot, layout_mode, free_cursor) {
         (Slot::Dpad, _, true) => SlotMode::Mouse,
         (Slot::Dpad, m, false) => m,
@@ -320,16 +320,16 @@ impl PadState {
 
 impl Layer {
     /// Reads the active pad, its SDL mapping resolved on first sight; an idle frame while none
-    /// is connected. The first pad brings the help at start; losing the active pad pauses the
-    /// ship view; `dt` ages the notices.
+    /// is connected. The help at start waits for a pad and the ship view; losing the active
+    /// pad pauses the ship view; `dt` ages the notices.
     pub fn poll_pad(&mut self, dt: f32) -> PadFrame {
         // The active pad first: whether it holds a press decides a handover.
         let was = self.pad.index.filter(|&dev| pad_connected(dev));
         let first = was.map(|dev| self.read_active(dev));
         let change = self.pad.follow_pads(first.as_ref().map(holds_press));
         self.age_notice(dt, change.pressed);
-        if change.gained && self.cfg.help_at_start {
-            self.help_shown = true;
+        if self.cfg.help_at_start && !self.help.shown && self.pad.index.is_some() && state::ship_view() {
+            self.show_help(true);
         }
         if change.lost {
             if state::ship_view() && !state::game_paused() {
@@ -446,7 +446,7 @@ impl Layer {
         }
         self.settle_pending(t);
         self.apply_buttons(&p, t, in_wheel, snapping);
-        if in_wheel {
+        if in_wheel || self.help.shown {
             self.spend_flicks(&p, t);
         } else {
             self.move_pointers(&p, mode, t, dt);
@@ -503,9 +503,9 @@ impl Layer {
             if p.down[i] {
                 self.settle_pages();
             }
-            // Any button closes the help; that press does nothing else.
-            if self.help_shown && p.down[i] && i < SIL_BUTTONS {
-                self.show_help(false);
+            // The help takes every press; that press does nothing else.
+            if self.help.shown && p.down[i] {
+                self.help_press(input);
                 continue;
             }
             if (Input::DpadLeft as usize..=Input::DpadDown as usize).contains(&i) {
@@ -725,20 +725,26 @@ mod tests {
     }
 
     #[test]
-    fn the_first_pad_brings_the_help_at_start_until_it_is_closed_once() {
-        with_game(|_| {
+    fn the_help_at_start_waits_for_a_pad_on_the_ship_view_until_it_is_closed_once() {
+        with_game(|g| {
             let mut l = Layer::default();
-            l.poll_pad(0.0);
-            assert!(!l.help_shown, "no pad: no help");
             set_pads(vec![pad(0, false)]);
             l.poll_pad(0.0);
-            assert!(l.help_shown);
+            assert!(!l.help.shown, "no ship view: no help");
+            set_pads(vec![]);
+            l.poll_pad(0.0);
+            g.player_manager();
+            l.poll_pad(0.0);
+            assert!(!l.help.shown, "no pad: no help");
+            set_pads(vec![pad(0, false)]);
+            l.poll_pad(0.0);
+            assert!(l.help.shown);
             l.show_help(false);
             set_pads(vec![]);
             l.poll_pad(0.0);
             set_pads(vec![pad(0, false)]);
             l.poll_pad(0.0);
-            assert!(!l.help_shown, "closed once: not again");
+            assert!(!l.help.shown, "closed once: not again");
         });
     }
 
@@ -793,6 +799,7 @@ mod tests {
         with_game(|g| {
             g.player_manager();
             let mut l = Layer::default();
+            l.cfg.help_at_start = false;
             set_pads(vec![pad(0, false), pad(1, false)]);
             l.poll_pad(0.0);
             set_pads(vec![pad(1, false)]);

@@ -20,7 +20,7 @@ pressed or the screen is touched.
 One `key = value` per line. Switches take `0` (off) or `1` (on). A missing key takes its
 default; a value outside its range is clamped. When the settings wheel closes, it writes
 the settings changed in it here; a `set` button writes its setting at once; when the
-controls table first closes, `help_at_start = 0`.
+help first closes, `help_at_start = 0`.
 
 ### Cursor
 
@@ -80,7 +80,7 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | `ipad_station_buttons` | 1 | switch | the crew's save and return stations buttons in the larger art of FTL's iPad edition |
 | `hud_shift` | 1 | switch | on a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as the player ship leaves room, and the ship view keeps to the HUD; off during the tutorial; 0: the game's layout |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
-| `help_at_start` | 1 | switch | the controls table at start, once a pad is connected |
+| `help_at_start` | 1 | switch | the help the first time the ship view shows with a pad connected |
 | `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |
 | `sharpen` | 0.5 | 0 to 1 | sharpening of that averaged frame; 0: none |
 
@@ -148,7 +148,7 @@ state.
 | `pause` | pause; held, the whole frame of a zoomed view until release |
 | `fast_forward` | run fast while held |
 | `dpad_mode` | switch between zones and mouse mode |
-| `help` | show the controls table; any button but the D-pad closes it |
+| `help` | show the help; L1 and R1 or D-pad left and right turn its pages, any other button closes it |
 | `zoom` | the next zoom level, back to auto after the last |
 | `text_size` | the next text size, back to auto after the largest |
 | `autopause` | the next `autopause` value, 0 after 3 |

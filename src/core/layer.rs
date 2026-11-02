@@ -16,6 +16,7 @@ use crate::input::pad::PadState;
 use crate::input::touch::Touch;
 use crate::ui::badge::{BadgeLine, BannerArt};
 use crate::ui::draw::{Images, WHEEL_FONT};
+use crate::ui::help::Help;
 use crate::ui::overlay::Notice;
 use crate::ui::wheel::WheelUi;
 use crate::ui::zoom::Zoom;
@@ -43,7 +44,7 @@ pub struct Layer {
     pub badge: BadgeLine,
     /// The font of the wheel's text.
     pub plate_font: i32,
-    pub help_shown: bool,
+    pub help: Help,
     pub notice: Option<Notice>,
     pub cmd: Commands,
 }
@@ -71,7 +72,7 @@ impl Default for Layer {
             banner_art: BannerArt::default(),
             badge: BadgeLine::default(),
             plate_font: WHEEL_FONT,
-            help_shown: false,
+            help: Help::default(),
             notice: None,
             cmd: Commands::default(),
         }

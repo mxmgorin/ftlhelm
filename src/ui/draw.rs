@@ -33,6 +33,8 @@ pub const OVERLAY_LINE: f32 = 1.0;
 pub const WHEEL_FONT: i32 = 62;
 /// The height of a WHEEL_FONT line.
 pub const WHEEL_FONT_H: f32 = 18.0;
+/// How far the outlined capitals of a WHEEL_FONT line centre below the line's middle.
+pub const WHEEL_FONT_CAPS_DY: f32 = 1.0;
 
 /// The dark edge of marks over the game.
 const PLATE_BEVEL_COLOR: GlColor = GlColor::new(0.0, 0.05, 0.05, 0.9);

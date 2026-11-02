@@ -541,8 +541,8 @@ impl Layer {
     /// frame point `at`: the help or the notice closes, a wheel acts on the plate there, the
     /// button pauses or resumes. Returns whether one took it.
     fn overlay_takes_touch(&mut self, (x, y): (f32, f32)) -> bool {
-        if self.help_shown {
-            self.show_help(false);
+        if self.help.shown {
+            self.touch_help((x, y));
         } else if self.notice.is_some() && self.notice_shown() {
             self.notice = None;
         } else if self.wheel.open.is_some() {
@@ -1050,9 +1050,9 @@ mod tests {
     fn a_touch_closes_the_help_and_clicks_nothing() {
         with_game(|_| {
             let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
-            l.help_shown = true;
+            l.show_help(true);
             assert!(tap(&mut l, 120, 110).is_empty());
-            assert!(!l.help_shown);
+            assert!(!l.help.shown);
         });
     }
 

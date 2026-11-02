@@ -586,7 +586,7 @@ impl Layer {
         };
         let peeking = self.zoom.peek_from.is_some_and(|t| now_s() - t >= self.cfg.tap_hold as f64);
         let focus = self.zoom_focus();
-        let scene = if self.help_shown {
+        let scene = if self.help.shown {
             Scene::Whole
         } else if peeking {
             Scene::Span

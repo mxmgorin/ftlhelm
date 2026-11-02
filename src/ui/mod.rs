@@ -1,6 +1,7 @@
 pub mod badge;
 pub mod draw;
 mod glyph;
+pub mod help;
 pub mod overlay;
 mod plates;
 pub mod shrink;

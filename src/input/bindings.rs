@@ -212,7 +212,7 @@ impl Layer {
             Builtin::CenterSwap if down => self.center_swap(),
             Builtin::PrevTab if down => actions::tab_step(-1),
             Builtin::NextTab if down => actions::tab_step(1),
-            Builtin::Help if down => self.show_help(!self.help_shown),
+            Builtin::Help if down => self.show_help(!self.help.shown),
             Builtin::RoomDoors if down => self.room_doors(),
             Builtin::Pause => {
                 if down {
