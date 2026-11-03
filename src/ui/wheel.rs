@@ -6,6 +6,7 @@ use std::f32::consts::{PI, SQRT_2};
 
 use super::draw::*;
 use super::glyph::{draw_glyph, Glyph};
+use super::overlay::band_text_top;
 use super::plates::{
     armament_of, crew_plates, is_knob, layout_plates, show_tuning, system_plates, times, weapon_slot, Armament,
     AUTOPAUSE_BADGES, AUTO_BADGE, ZOOM_OFF_BADGE,
@@ -423,9 +424,10 @@ impl Layer {
         let card_w = text_w + 2.0 * (WHEEL_TEXT_PAD + CARD_PAD);
         let (x, y) = ((ox - card_w / 2.0).round(), (oy - card_h / 2.0).round());
         draw_frame(x, y, card_w, card_h, &BOX_FRAME, BUTTON_PALE_COLOR);
-        draw_frame(x + CARD_PAD, y + CARD_PAD, card_w - 2.0 * CARD_PAD, header_h, &HEADER_FRAME, HEADER_COLOR);
+        let header_top = y + CARD_PAD;
+        draw_frame(x + CARD_PAD, header_top, card_w - 2.0 * CARD_PAD, header_h, &HEADER_FRAME, HEADER_COLOR);
         set_color(TEXT_COLOR);
-        draw_text_center(font, ox, y + CARD_PAD + HEADER_PAD, &self.wheel.title);
+        draw_text_center(font, ox, band_text_top(header_top, header_top + header_h), &self.wheel.title);
         if let Some(p) = sel {
             let top = y + CARD_PAD + header_h + CARD_GAP;
             set_color(INK_COLOR);
