@@ -17,6 +17,7 @@
 //!
 //! Arcs (discs, round frames, ring timers) are cached too, each pie built around the origin.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::SQRT_2;
 use std::sync::Mutex;
@@ -205,8 +206,10 @@ struct Shapes {
 }
 
 static SHAPES: Mutex<Shapes> = Mutex::new(Shapes { cached: BTreeMap::new(), uses: 0 });
-/// The batch being collected; None while none is.
-static BATCH: Mutex<Option<Batch>> = Mutex::new(None);
+thread_local! {
+    /// The batch being collected; None while none is. Per thread: the game draws on one, tests on many.
+    static BATCH: RefCell<Option<Batch>> = const { RefCell::new(None) };
+}
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
@@ -286,8 +289,9 @@ pub fn set_color(color: GlColor) {
 
 /// Fills `x, y, w, h` with `color`, or adds it to the batch being collected.
 pub fn draw_rect(x: f32, y: f32, w: f32, h: f32, color: GlColor) {
-    if let Some(batch) = BATCH.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-        batch.extend(pixel_rect(x, y, w, h).map(|r| (r, color)));
+    let batched =
+        BATCH.with_borrow_mut(|batch| batch.as_mut().map(|b| b.extend(pixel_rect(x, y, w, h).map(|r| (r, color)))));
+    if batched.is_some() {
         return;
     }
     // SAFETY: the renderer's rectangle fill.
@@ -308,25 +312,21 @@ fn pixel_rect(x: f32, y: f32, w: f32, h: f32) -> Option<PixelRect> {
 /// The rects `draw` fills and their colours, in drawing order, drawn nowhere.
 #[cfg(test)]
 pub fn rects_of(draw: impl FnOnce()) -> Vec<([i32; 4], GlColor)> {
-    *BATCH.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
+    BATCH.set(Some(Vec::new()));
     draw();
-    BATCH.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default()
+    BATCH.take().unwrap_or_default()
 }
 
 /// Runs `draw` collecting the rects it fills, then draws each run of one colour as one cached
 /// primitive; the rects land over anything else `draw` draws. Inside a batch, adds to it.
 pub fn draw_batched(draw: impl FnOnce()) {
-    {
-        let mut batch = BATCH.lock().unwrap_or_else(|e| e.into_inner());
-        if batch.is_some() {
-            drop(batch);
-            draw();
-            return;
-        }
-        *batch = Some(Vec::new());
+    if BATCH.with_borrow(Option::is_some) {
+        draw();
+        return;
     }
+    BATCH.set(Some(Vec::new()));
     draw();
-    let rects = BATCH.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+    let rects = BATCH.take().unwrap_or_default();
     for run in rects.chunk_by(|a, b| a.1 == b.1) {
         let (x, y) = run.iter().fold((i32::MAX, i32::MAX), |(x, y), (r, _)| (x.min(r[0]), y.min(r[1])));
         let local = run.iter().map(|&([rx, ry, w, h], _)| [rx - x, ry - y, w, h]).collect();
