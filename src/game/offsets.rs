@@ -176,6 +176,18 @@ pub const MENU_ACHIEVEMENTS: usize = 888;
 pub const ACHIEVEMENT_INFO_SIZE: usize = 24;
 /// OptionsScreen::bCustomizeControls: the hotkey screen over the whole frame.
 pub const OPTIONS_CUSTOMIZE_CONTROLS: usize = 672;
+/// OptionsScreen::controls, the hotkey screen.
+pub const OPTIONS_CONTROLS: usize = 680;
+/// ControlsScreen: a std::vector of ControlButtons per page, the index of the button waiting
+/// for a key on the current page (-1 for none), and that page.
+pub const CONTROLS_PAGES: usize = 4;
+pub const CONTROLS_SELECTED: usize = 96;
+pub const CONTROLS_PAGE: usize = 1576;
+pub const CONTROL_BUTTON_SIZE: usize = 56;
+pub const CONTROL_BUTTON_STATE: usize = 48;
+/// ControlButton::state: idle, and waiting for a key.
+pub const CONTROL_IDLE: i32 = 0;
+pub const CONTROL_WAITING: i32 = 2;
 
 /// Windows' extents in the frame, tabs and buttons included, as the game places them.
 pub const SHIP_SCREENS_RECT: Rect = Rect { x: 342, y: 85, w: 587, h: 511 };
@@ -449,6 +461,8 @@ pub const FPS_STEP: usize = 0x18;
 
 pub const VECTOR_BEGIN: usize = 0;
 pub const VECTOR_END: usize = 8;
+/// A std::vector: begin, end and capacity pointers.
+pub const VECTOR_SIZE: usize = 3 * std::mem::size_of::<usize>();
 
 /// Game system types.
 pub const SYS_SHIELDS: i32 = 0;

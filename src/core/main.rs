@@ -33,7 +33,7 @@ use crate::game::mem::Obj;
 use crate::game::offsets::{build_by_id, install_layout, MOUSE_INVALID_POINTER, MOUSE_VALID_POINTER};
 use crate::game::string::GameString;
 use crate::game::zones::record_button;
-use crate::game::{hud, ipad_art, sound, state};
+use crate::game::{hotkey_screen, hud, ipad_art, sound, state};
 use crate::input::touch::{self, TouchPhase};
 use crate::ui::{badge, shrink, text, zoom};
 
@@ -135,6 +135,9 @@ extern "C" fn onloop_hook(app: Ptr) {
         l.update_hud();
         l.update_ipad_art();
         l.update_banner_art();
+        if let Some(options) = state::open_options() {
+            hotkey_screen::release_stray_waits(options);
+        }
         text::keep_boxes_to(l.zoom.span);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
         shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);

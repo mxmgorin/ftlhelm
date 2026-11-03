@@ -3,6 +3,7 @@ pub mod api;
 pub mod beam;
 #[cfg(test)]
 pub mod fake;
+pub mod hotkey_screen;
 pub mod hud;
 pub mod ipad_art;
 pub mod mem;
