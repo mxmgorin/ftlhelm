@@ -154,6 +154,7 @@ impl Layer {
                     if self.wheel.grab.take() == Some(false) {
                         self.act_on_plate();
                     }
+                    self.release_beam();
                 } else if self.wheel.open.is_some() && source != Source::Plate {
                     self.bind.context_done[slot] = None;
                     if self.grabs_plate() {
@@ -161,6 +162,9 @@ impl Layer {
                     } else {
                         self.act_on_plate();
                     }
+                } else if self.press_beam() {
+                    // A beam being set fires on the release, so a held click can move its line.
+                    self.bind.context_done[slot] = None;
                 } else if !state::aiming() && self.pick_room_crew() {
                     self.bind.context_done[slot] = None;
                 } else {

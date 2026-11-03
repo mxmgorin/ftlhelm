@@ -193,6 +193,7 @@ const B: Who = Who::Bound(Builtin::Cancel);
 const PLUS: Who = Who::Fixed(Chip::Plus);
 const SIDE: Who = Who::Fixed(Chip::Dpad(ARMS_SIDE));
 const UPDOWN: Who = Who::Fixed(Chip::Dpad(ARMS_UPDOWN));
+const DPAD: Who = Who::Fixed(Chip::Dpad(ARMS_ALL));
 const UP: Who = Who::Fixed(Chip::Dpad(ARM_UP));
 const DOWN: Who = Who::Fixed(Chip::Dpad(ARM_DOWN));
 const LSTICK: Who = Who::Fixed(LEFT_STICK);
@@ -220,6 +221,7 @@ const PAGES: [Page; 4] = [
         line(&[A, PLUS, SIDE], "Move a weapon or drone"),
         line(&[SIDE], "Beam: turn the line"),
         line(&[UPDOWN], "Beam: slide its start"),
+        line(&[A, PLUS, DPAD], "Beam: move the line"),
         line(&[A], "Beam: fire"),
         line(&[B], "Beam: take the start back"),
         line(&[UP], "Wheel: pick for a volley"),
