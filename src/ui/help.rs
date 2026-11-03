@@ -728,7 +728,6 @@ impl Layer {
             ink: mixed(fill, INK_COLOR, MARK_INK),
             plates: mixed(fill, BUTTON_OFF_COLOR, MARK_PLATES),
             pick: mixed(fill, BUTTON_SELECTED_COLOR, MARK_PICK),
-            ground: fill,
         };
         draw_mark(sx, sy, reach * k, &faint);
         let frames: Vec<Frame> = ink

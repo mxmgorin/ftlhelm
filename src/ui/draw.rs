@@ -373,27 +373,6 @@ pub fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), co
     draw_shape(cx.round(), cy.round(), 1.0, Shape::Pie(pie), color);
 }
 
-/// A round-capped bar `w` wide from radius `r1` to `r2` around (`cx`, `cy`), at `deg` degrees
-/// clockwise from the right.
-pub fn draw_ray(cx: f32, cy: f32, (r1, r2): (f32, f32), deg: f32, w: f32, color: GlColor) {
-    let w = w.round();
-    let bar = Shape::Rects(vec![[0, 0, (r2 - r1).round() as i32, w as i32]]);
-    let a = api();
-    // SAFETY: the renderer's matrix stack, popped below.
-    unsafe {
-        (a.push_matrix)();
-        (a.translate)(cx, cy, 0.0);
-        (a.rotate)(deg, 0.0, 0.0, 1.0);
-    }
-    draw_shape(r1, -w / 2.0, 1.0, bar, color);
-    // SAFETY: pops the matrix pushed above.
-    unsafe { (a.pop_matrix)() };
-    let (sin, cos) = deg.to_radians().sin_cos();
-    for r in [r1, r2] {
-        draw_disc(cx + cos * r, cy + sin * r, w / 2.0, color);
-    }
-}
-
 /// Corner brackets in the game's style on the corners of box `x, y, w, h`, `k` times their
 /// size: `color` arms with cut corners over a dark edge, in a glow of their colour.
 /// Brackets `moving` go corner by corner: a box changing size builds nothing new.

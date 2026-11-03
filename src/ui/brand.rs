@@ -1,72 +1,68 @@
-//! The project's brand drawn with the game's primitives: the mark, a ship's wheel whose rim is
-//! a wheel menu with its top plate picked, and the name in the banner's pixel capitals.
+//! The project's brand drawn with the game's primitives: the mark, the project icon's ship's
+//! wheel whose rim is a wheel menu with its top plate picked, and the name in the banner's pixel
+//! capitals.
 //!
-//! The mark keeps the banner's geometry in units of the banner's canvas, scaled to the radius
-//! asked for. It is drawn in opaque colours, so parts laid over one another, spokes over the
-//! rim and the hub, keep one shade; a faint mark mixes its colours toward the ground under it.
+//! The mark is the icon's cell map drawn in whole-pixel cells, one batch per colour; the ground
+//! under it shows through its gaps.
 
 use super::draw::*;
 use crate::game::api::GlColor;
 
-/// The mark's plates, one per gap between spokes; the first points straight up.
-const PLATES: usize = 8;
-const PLATE_DEG: f32 = 360.0 / PLATES as f32;
-const UP_DEG: f32 = -90.0;
-/// Radii and widths in canvas units: the plates' band, the gaps cut between them, the rim
-/// around them, the spokes from the hub to the handles, the hub ring and the cross inside it.
-const PLATE_IN: f32 = 92.0;
-const PLATE_OUT: f32 = 170.0;
-const GAP_IN: f32 = 54.0;
-const GAP_W: f32 = 26.0;
-const RIM_R: f32 = 172.0;
-const RIM_W: f32 = 16.0;
-const SPOKE_OUT: f32 = 190.0;
-const SPOKE_W: f32 = 12.0;
-const HANDLE_OUT: f32 = 212.0;
-const HANDLE_W: f32 = 30.0;
-const HUB_R: f32 = 60.0;
-const HUB_W: f32 = 14.0;
-const CROSS_ARM: f32 = 24.0;
-const CROSS_HALF: f32 = 32.0;
-/// How far the mark reaches from its centre: the handles' far ends, caps included.
-const MARK_REACH: f32 = HANDLE_OUT + HANDLE_W / 2.0;
+/// The project icon as ICON_GRID rows of role letters: `b` band, `l` line, `g` ground, `i` ink,
+/// `s` plates, `p` the picked plate, a space clear. The mark draws the last three.
+const ICON: &str = include_str!("icon64.txt");
+const ICON_GRID: usize = 64;
 
-/// The mark's colours: its lines, its plates, the picked plate, and the ground it stands on,
-/// which shows through its gaps and hub.
+/// The mark's colours: its lines, its plates and the picked plate.
 pub struct MarkColors {
     pub ink: GlColor,
     pub plates: GlColor,
     pub pick: GlColor,
-    pub ground: GlColor,
 }
 
-/// Draws the mark centred on (`cx`, `cy`), reaching `r` pixels from its centre.
+/// Returns the colour of a role letter in the mark, None for the roles it leaves out.
+fn role_color(role: u8, c: &MarkColors) -> Option<GlColor> {
+    match role {
+        b'i' => Some(c.ink),
+        b's' => Some(c.plates),
+        b'p' => Some(c.pick),
+        _ => None,
+    }
+}
+
+/// Returns the mark's width in cells: the widest span of its roles in a row.
+fn mark_cells(c: &MarkColors) -> usize {
+    let span = |row: &[u8]| {
+        let drawn = |b: &u8| role_color(*b, c).is_some();
+        match (row.iter().position(drawn), row.iter().rposition(drawn)) {
+            (Some(first), Some(last)) => last - first + 1,
+            _ => 0,
+        }
+    };
+    ICON.lines().map(|row| span(row.as_bytes())).max().unwrap_or(0)
+}
+
+/// Draws the mark centred on (`cx`, `cy`), reaching about `r` pixels from its centre in cells of
+/// whole pixels.
 pub fn draw_mark(cx: f32, cy: f32, r: f32, c: &MarkColors) {
-    let (cx, cy) = (cx.round(), cy.round());
-    let s = r / MARK_REACH;
-    let gaps = (0..PLATES).map(|i| UP_DEG + PLATE_DEG / 2.0 + PLATE_DEG * i as f32);
-    let band = (PLATE_OUT - PLATE_IN) * s;
-    draw_arc(cx, cy, PLATE_OUT * s, band, (0.0, 360.0), c.plates);
-    // The pie runs in whole steps: the picked plate overhangs its gaps, which cover it.
-    let pick_span = (PLATE_DEG / PIE_STEP_DEG).ceil() * PIE_STEP_DEG;
-    draw_arc(cx, cy, PLATE_OUT * s, band, (UP_DEG - pick_span / 2.0, UP_DEG + pick_span / 2.0), c.pick);
-    for deg in gaps.clone() {
-        draw_ray(cx, cy, (GAP_IN * s, RIM_R * s), deg, GAP_W * s, c.ground);
-    }
-    for deg in gaps.clone() {
-        draw_ray(cx, cy, (HUB_R * s, SPOKE_OUT * s), deg, SPOKE_W * s, c.ink);
-    }
-    draw_arc(cx, cy, (RIM_R + RIM_W / 2.0) * s, RIM_W * s, (0.0, 360.0), c.ink);
-    for deg in gaps {
-        draw_ray(cx, cy, (SPOKE_OUT * s, HANDLE_OUT * s), deg, HANDLE_W * s, c.ink);
-    }
-    draw_disc(cx, cy, (HUB_R + HUB_W / 2.0) * s, c.ink);
-    draw_disc(cx, cy, (HUB_R - HUB_W / 2.0) * s, c.ground);
-    let (arm, half) = (CROSS_ARM * s, CROSS_HALF * s);
+    let cell = (2.0 * r / mark_cells(c).max(1) as f32).floor().max(1.0);
+    let half = cell * ICON_GRID as f32 / 2.0;
+    let (left, top) = ((cx - half).round(), (cy - half).round());
     draw_batched(|| {
-        draw_rect(cx - arm / 2.0, cy - half, arm, 2.0 * half, c.ink);
-        draw_rect(cx - half, cy - arm / 2.0, half - arm / 2.0, arm, c.ink);
-        draw_rect(cx + arm / 2.0, cy - arm / 2.0, half - arm / 2.0, arm, c.ink);
+        for &role in b"isp" {
+            let Some(color) = role_color(role, c) else { continue };
+            for (y, row) in ICON.lines().enumerate() {
+                let row = row.as_bytes();
+                let mut x = 0;
+                while x < row.len() {
+                    let run = row[x..].iter().take_while(|&&b| b == row[x]).count();
+                    if row[x] == role {
+                        draw_rect(left + x as f32 * cell, top + y as f32 * cell, run as f32 * cell, cell, color);
+                    }
+                    x += run;
+                }
+            }
+        }
     });
 }
 
@@ -123,6 +119,17 @@ pub fn draw_name(x: f32, y: f32, cell: f32, (first, rest): (GlColor, GlColor)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mark_is_the_icons_wheel_in_whole_cells_one_batch_per_colour_the_pick_on_top() {
+        let c = MarkColors { ink: INK_COLOR, plates: BUTTON_OFF_COLOR, pick: BUTTON_SELECTED_COLOR };
+        let rects = rects_of(|| draw_mark(100.0, 100.0, 60.0, &c));
+        let cell = rects.first().expect("the mark has cells").0[3];
+        assert!(cell > 0 && rects.iter().all(|(r, _)| r[3] == cell && r[2] % cell == 0), "whole cells");
+        let colours: Vec<GlColor> = rects.chunk_by(|a, b| a.1 == b.1).map(|run| run[0].1).collect();
+        assert_eq!(colours, [c.ink, c.plates, c.pick]);
+        assert!(rects.iter().filter(|(_, col)| *col == c.pick).all(|(r, _)| r[1] + r[3] <= 100), "pick above");
+    }
 
     #[test]
     fn the_name_spans_its_letters_a_cell_apart_in_two_colours() {
