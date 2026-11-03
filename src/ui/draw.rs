@@ -213,7 +213,7 @@ pub const RING_SEGMENTS: usize = 12;
 const TURN_DEG: f32 = 360.0;
 /// The renderer's pies put a point every PIE_STEP_DEG from the start while short of the end,
 /// none at the end itself.
-const PIE_STEP_DEG: f32 = 10.0;
+pub const PIE_STEP_DEG: f32 = 10.0;
 const RING_GAP_DEG: f32 = 10.0;
 /// The first segment starts straight up; angles run clockwise from the right.
 const RING_START_DEG: f32 = -90.0;
@@ -366,11 +366,32 @@ pub fn draw_disc(cx: f32, cy: f32, r: f32, color: GlColor) {
 
 /// An arc `width` wide inside radius `r`, from `from` to `to` degrees, centred on whole pixels.
 /// The span must be whole PIE_STEP_DEG steps: the renderer's pies draw no part of a step.
-fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color: GlColor) {
+pub fn draw_arc(cx: f32, cy: f32, r: f32, width: f32, (from, to): (f32, f32), color: GlColor) {
     // Half a step past the end, so the pie puts its last point on it.
     let end = to + PIE_STEP_DEG / 2.0;
     let pie = Pie { r: r.to_bits(), width: width.to_bits(), from: from.to_bits(), end: end.to_bits() };
     draw_shape(cx.round(), cy.round(), 1.0, Shape::Pie(pie), color);
+}
+
+/// A round-capped bar `w` wide from radius `r1` to `r2` around (`cx`, `cy`), at `deg` degrees
+/// clockwise from the right.
+pub fn draw_ray(cx: f32, cy: f32, (r1, r2): (f32, f32), deg: f32, w: f32, color: GlColor) {
+    let w = w.round();
+    let bar = Shape::Rects(vec![[0, 0, (r2 - r1).round() as i32, w as i32]]);
+    let a = api();
+    // SAFETY: the renderer's matrix stack, popped below.
+    unsafe {
+        (a.push_matrix)();
+        (a.translate)(cx, cy, 0.0);
+        (a.rotate)(deg, 0.0, 0.0, 1.0);
+    }
+    draw_shape(r1, -w / 2.0, 1.0, bar, color);
+    // SAFETY: pops the matrix pushed above.
+    unsafe { (a.pop_matrix)() };
+    let (sin, cos) = deg.to_radians().sin_cos();
+    for r in [r1, r2] {
+        draw_disc(cx + cos * r, cy + sin * r, w / 2.0, color);
+    }
 }
 
 /// Corner brackets in the game's style on the corners of box `x, y, w, h`, `k` times their
@@ -814,6 +835,12 @@ fn reset_fixed_color() {
 pub fn art_tint(fill: GlColor) -> GlColor {
     let p = BUTTON_PALE_COLOR;
     GlColor::new((fill.r / p.r).min(1.0), (fill.g / p.g).min(1.0), (fill.b / p.b).min(1.0), 1.0)
+}
+
+/// `from` moved toward `to` by the share `t`, opaque.
+pub fn mixed(from: GlColor, to: GlColor, t: f32) -> GlColor {
+    let lerp = |a: f32, b: f32| a + (b - a) * t;
+    GlColor::new(lerp(from.r, to.r), lerp(from.g, to.g), lerp(from.b, to.b), 1.0)
 }
 
 /// `color` with its alpha scaled by `opacity`.

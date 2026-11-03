@@ -12,6 +12,7 @@
 //! its centre and drawn `k` times its size: text under a scaled matrix, frames and glyphs on
 //! whole screen pixels at the same places.
 
+use super::brand::{draw_mark, draw_name, name_cols, MarkColors, NAME_ROWS};
 use super::draw::*;
 use super::overlay::{band_text_top, caps_middle, draw_window, panel_scale, HELP_FONT, HELP_LINE, HELP_PAD, TEXT_DY};
 use super::text;
@@ -56,6 +57,17 @@ const PAUSE_HOLD_TITLE: &str = "Zoom out";
 const CURSOR_ROLE: &str = "Cursor";
 const ZONE_ROLE: &str = "Next zone";
 const BACK_TITLE: &str = "Back";
+/// The name in the footer: pixels NAME_CELL across on a header-coloured plate a key cap tall,
+/// NAME_PAD cells around them, set off from the byline by NAME_GAP.
+const NAME_CELL: f32 = 2.0;
+const NAME_PAD: f32 = (KEY_H / NAME_CELL - NAME_ROWS) / 2.0;
+const NAME_GAP: f32 = 2.0 * CHIP_GAP;
+/// The mark under the table: it reaches this share of the rows' height from the middle of
+/// them, its colours mixed from the window's fill toward the brand's by these shares.
+const MARK_SHARE: f32 = 0.46;
+const MARK_INK: f32 = 0.16;
+const MARK_PLATES: f32 = 0.26;
+const MARK_PICK: f32 = 0.22;
 
 /// The D-pad's arms as bits of a glyph's mask.
 const ARM_LEFT: u8 = 1;
@@ -256,7 +268,7 @@ struct Panel {
     k: f32,
     /// The title of the button bound to cancel, if one is.
     back_key: Option<&'static str>,
-    credit: String,
+    byline: String,
 }
 
 /// One text the help prints, in panel units: its left edge or, when centred, its middle.
@@ -276,6 +288,9 @@ struct Ink<'a> {
     crosses: Vec<(f32, f32, u8)>,
     /// Each stick disc's centre.
     discs: Vec<(f32, f32)>,
+    /// The mark's centre and reach, and the name's top left corner.
+    mark: (f32, f32, f32),
+    name: (f32, f32),
     prints: Vec<Print<'a>>,
 }
 
@@ -429,7 +444,10 @@ impl Panel {
         for (title, &x) in sheet.head.iter().zip(cols) {
             ink.print(x0 + x, head_y, title, TEXT_COLOR, false);
         }
-        let mut line_y = header_top + HELP_LINE;
+        let body_top = header_top + HELP_LINE;
+        let body_bottom = self.footer_top() - HELP_RULE_GAP;
+        ink.mark = (0.0, (body_top + body_bottom) / 2.0, (body_bottom - body_top) * MARK_SHARE);
+        let mut line_y = body_top;
         for row in &sheet.rows {
             ink.chips(&row.chips, x0, line_y);
             for (cell, &x) in row.cells.iter().zip(&cols[1..]) {
@@ -440,13 +458,23 @@ impl Panel {
         let rule_y = self.footer_top() - HELP_RULE_GAP;
         ink.frames.push((x0, rule_y, self.w - 2.0 * HELP_PAD, HELP_RULE_H, &RULE_FRAME, INK_COLOR));
         let footer_y = band_text_top(rule_y + HELP_RULE_H, top + self.h);
-        ink.print(x0, footer_y, &self.credit, TEXT_DISABLED_COLOR, false);
+        let cell = self.name_cell();
+        let (plate_w, plate_h) = (name_plate_w(cell), (NAME_ROWS + 2.0 * NAME_PAD) * cell);
+        let plate_y = caps_middle(footer_y) - plate_h / 2.0;
+        ink.frames.push((x0, plate_y, plate_w, plate_h, &KEY_FRAME, HEADER_COLOR));
+        ink.name = (x0 + NAME_PAD * cell, plate_y + NAME_PAD * cell);
+        ink.print(x0 + plate_w + NAME_GAP, footer_y, &self.byline, TEXT_DISABLED_COLOR, false);
         if let Some(key) = self.back_key {
             let x = -left - HELP_PAD - back_prompt_w(key);
             ink.chips(&[Chip::Key(key)], x, footer_y - TEXT_DY);
             ink.print(x + chip_w(Chip::Key(key)) + CHIP_GAP, footer_y, BACK_TITLE, INK_COLOR, false);
         }
         ink
+    }
+
+    /// The side of the name's pixels in panel units: whole screen pixels.
+    fn name_cell(&self) -> f32 {
+        (NAME_CELL * self.k).round().max(1.0) / self.k
     }
 
     /// The top of the footer row, under the tallest page's rows.
@@ -456,10 +484,15 @@ impl Panel {
     }
 }
 
-/// The project's name and version, by the owner of its repository.
-fn credit() -> String {
+/// The width of the name's plate, its pixels `cell` across.
+fn name_plate_w(cell: f32) -> f32 {
+    (name_cols() + 2.0 * NAME_PAD) * cell
+}
+
+/// The footer's byline: the owner of the project's repository.
+fn byline() -> String {
     let owner = env!("CARGO_PKG_REPOSITORY").rsplit('/').nth(1).unwrap_or_default();
-    format!("{} v{} by {owner}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+    format!("by {owner}")
 }
 
 /// The width of the footer's prompt: the back button's key cap and its title.
@@ -667,16 +700,16 @@ impl Layer {
             Some(Chip::Key(title)) => Some(title),
             _ => None,
         };
-        let credit = credit();
+        let byline = byline();
         let prompt_w = back_key.map_or(0.0, |key| HELP_COL_GAP + back_prompt_w(key));
-        let footer_w = text_width(HELP_FONT, &credit) + prompt_w;
+        let footer_w = name_plate_w(NAME_CELL) + NAME_GAP + text_width(HELP_FONT, &byline) + prompt_w;
         let content_w = widths.into_iter().fold(tabs_w.max(footer_w), f32::max);
         let rows = sheets.iter().map(|s| s.rows.len()).max().unwrap_or(0);
         let w = content_w + 2.0 * HELP_PAD;
         let h = 2.0 * HELP_PAD + HELP_TAB_SPACE + HELP_LINE * (rows + HELP_FIXED_ROWS) as f32;
         let (frame_w, frame_h) = (GAME_W as f32, GAME_H as f32);
         let k = panel_scale(text::scale(), w, h, (frame_w, frame_h));
-        Panel { sheets, cols, w, h, cx: frame_w / 2.0, cy: frame_h / 2.0, k, back_key, credit }
+        Panel { sheets, cols, w, h, cx: frame_w / 2.0, cy: frame_h / 2.0, k, back_key, byline }
     }
 
     /// Draws the help's open page.
@@ -686,6 +719,16 @@ impl Layer {
         let (cx, cy, k) = (panel.cx, panel.cy, panel.k);
         let screen = |x: f32, y: f32| (cx + x * k, cy + y * k);
         draw_window(cx, cy, panel.w * k, panel.h * k);
+        let (mx, my, reach) = ink.mark;
+        let (sx, sy) = screen(mx, my);
+        let fill = BUTTON_PALE_COLOR;
+        let faint = MarkColors {
+            ink: mixed(fill, INK_COLOR, MARK_INK),
+            plates: mixed(fill, BUTTON_OFF_COLOR, MARK_PLATES),
+            pick: mixed(fill, BUTTON_SELECTED_COLOR, MARK_PICK),
+            ground: fill,
+        };
+        draw_mark(sx, sy, reach * k, &faint);
         let frames: Vec<Frame> = ink
             .frames
             .iter()
@@ -707,6 +750,9 @@ impl Layer {
             let (sx, sy) = screen(x, y);
             draw_disc(sx.round(), sy.round(), side / 2.0, INK_COLOR);
         }
+        let (nx, ny) = screen(ink.name.0, ink.name.1);
+        let name_colors = (BUTTON_PALE_COLOR, BUTTON_SELECTED_COLOR);
+        draw_name(nx.round(), ny.round(), panel.name_cell() * k, name_colors);
         with_scale(cx, cy, k, || {
             for p in &ink.prints {
                 set_color(p.color);
@@ -800,8 +846,8 @@ mod tests {
     }
 
     #[test]
-    fn the_credit_names_the_repository_owner() {
-        assert!(credit().ends_with(" by mxmgorin"), "{}", credit());
+    fn the_byline_names_the_repository_owner() {
+        assert_eq!(byline(), "by mxmgorin");
     }
 
     #[test]

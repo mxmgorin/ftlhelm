@@ -418,6 +418,8 @@ extern "C" fn matrix_stack() {}
 
 extern "C" fn transform(_x: f32, _y: f32, _z: f32) {}
 
+extern "C" fn rotate(_deg: f32, _x: f32, _y: f32, _z: f32) {}
+
 extern "C" fn set_fixed_color(_color: *const GlColor) {}
 
 extern "C" fn set_color(_color: GlColor) {}
@@ -558,6 +560,7 @@ fn install_api() -> Statics {
     stand_in.pop_matrix = matrix_stack;
     stand_in.translate = transform;
     stand_in.scale = transform;
+    stand_in.rotate = rotate;
     stand_in.set_fixed_color = set_fixed_color;
     stand_in.button_init = button_init;
     stand_in.set_color = set_color;

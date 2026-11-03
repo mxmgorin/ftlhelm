@@ -1,4 +1,5 @@
 pub mod badge;
+mod brand;
 pub mod draw;
 mod glyph;
 pub mod help;
