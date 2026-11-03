@@ -65,9 +65,9 @@ const NAME_GAP: f32 = 2.0 * CHIP_GAP;
 /// The mark under the table: it reaches this share of the rows' height from the middle of
 /// them, its colours mixed from the window's fill toward the brand's by these shares.
 const MARK_SHARE: f32 = 0.46;
-const MARK_INK: f32 = 0.16;
-const MARK_PLATES: f32 = 0.26;
-const MARK_PICK: f32 = 0.22;
+const MARK_INK: f32 = 0.12;
+const MARK_PLATES: f32 = 0.2;
+const MARK_PICK: f32 = 0.17;
 
 /// The D-pad's arms as bits of a glyph's mask.
 const ARM_LEFT: u8 = 1;
