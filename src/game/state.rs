@@ -261,6 +261,10 @@ pub fn score_screen() -> Option<Obj> {
     unsafe { Obj::from_addr(api().score_keeper) }
 }
 
+pub fn credits_open() -> bool {
+    main_menu().is_some_and(|m| m.flag(MAIN_MENU_OPEN) && m.flag(layout().main_menu_credits))
+}
+
 /// The hangar, while the main menu shows it.
 pub fn hangar() -> Option<Obj> {
     let hangar = main_menu().filter(|m| m.flag(MAIN_MENU_OPEN))?.at(MAIN_MENU_HANGAR);

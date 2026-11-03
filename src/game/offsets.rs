@@ -24,6 +24,8 @@ pub struct Layout {
     pub gui_crew_screen: usize,
     pub gui_equip_screen: usize,
     pub main_menu_choice_box: usize,
+    /// MainMenu::bCreditScreen: the credits show over the menu.
+    pub main_menu_credits: usize,
     /// OptionsScreen's windows over its list: the language picker, the profile wipe
     /// confirmation and the restart notice.
     pub options_language: usize,
@@ -60,6 +62,7 @@ pub const BUILDS: [Build; 2] = [
             gui_crew_screen: 14552,
             gui_equip_screen: 15624,
             main_menu_choice_box: 13864,
+            main_menu_credits: 14400,
             options_language: 3104,
             options_wipe_dialog: 3176,
             options_restart_dialog: 3816,
@@ -86,6 +89,7 @@ pub const BUILDS: [Build; 2] = [
             gui_crew_screen: 14288,
             gui_equip_screen: 15360,
             main_menu_choice_box: 13600,
+            main_menu_credits: 14136,
             options_language: 2840,
             options_wipe_dialog: 2912,
             options_restart_dialog: 3552,

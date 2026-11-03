@@ -459,6 +459,10 @@ impl Layer {
                 seen.tested = false;
             }
         }
+        // The credits hit-test no buttons: those last seen are the menu's beneath.
+        if state::credits_open() {
+            return;
+        }
         let Some(gui) = state::gui() else {
             return;
         };
@@ -855,6 +859,18 @@ mod tests {
             let start = Button { rect: rect(1078, 364), object: g.app.addr() };
             l.zones.buttons = vec![start];
             assert_eq!(built(&mut l), [(ZoneKind::Button, 0, start.rect)]);
+        });
+    }
+
+    #[test]
+    fn the_credits_list_no_zones() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            menu.set(layout().main_menu_credits, 1u8);
+            let mut l = Layer::default();
+            l.zones.buttons = vec![Button { rect: rect(1078, 364), object: g.app.addr() }];
+            assert_eq!(built(&mut l), []);
         });
     }
 

@@ -185,6 +185,7 @@ impl Layer {
                     || state::open_options().is_some()
                     || state::ship_list_open()
                     || state::score_screen().is_some()
+                    || state::credits_open()
                 {
                     tap_key(KEY_ESCAPE, false);
                 } else if self.take_beam_start() {
@@ -487,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_closes_the_main_menu_options_the_score_screen_and_the_hangar_ship_list() {
+    fn cancel_closes_the_main_menu_options_the_score_screen_the_credits_and_the_hangar_ship_list() {
         with_game(|g| {
             let mut l = Layer::default();
             let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
@@ -501,6 +502,7 @@ mod tests {
                 hangar.at(HANGAR_SHIP_LIST + SHIP_LIST_OPEN),
                 menu.at(MAIN_MENU_OPTIONS + FOCUS_OPEN),
                 menu.at(MAIN_MENU_SCORE_SCREEN),
+                menu.at(layout().main_menu_credits),
             ];
             for flag in flags {
                 flag.set(0, 1u8);
