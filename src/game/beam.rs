@@ -1,17 +1,19 @@
 //! Beam aiming from the pad. Once a pad click places a beam's start on a room, the D-pad
 //! and the sticks turn the beam about a pivot (left, right) and slide its start along its
-//! own line up or down the screen (a level beam's forward on up) in place of stepping
-//! between zones; with A held they move the pivot, and the line with it, across the screen.
-//! A fires the beam on its release unless it moved the line; B takes the start back.
+//! own line in place of stepping between zones: down towards the beam's end, where the
+//! cursor is, up away from it. With A held they move the pivot, and the line with it, across
+//! the screen. A fires the beam on its release unless it moved the line; B takes the start
+//! back.
 //!
 //! The game keeps the start in CombatControl::aimingPoints, in the enemy ship's coordinates,
-//! and draws and fires the beam from it towards the mouse at the weapon's length. It fires on
-//! the button's press, so A over a line being set holds its click until the release. A step
-//! rewrites that start and moves the cursor onto the beam's end. The pivot and the start stay
-//! inside rooms, so the line is one a mouse could aim; a slide or move that would leave them
-//! stops at the farthest point still inside, the next one crossing empty space to the next
-//! room along its way, and a turn or move pulls the start in towards the pivot. A new start
-//! becomes the pivot, the line laid over it through the most rooms.
+//! and draws and fires the beam from it towards the mouse at the weapon's length; a click
+//! places a start only on a room. It fires on the button's press, so A over a line being set
+//! holds its click until the release. A step rewrites that start and moves the cursor past the
+//! beam's end. The pivot and the start stay inside rooms, so the line is one a mouse could
+//! aim. A slide or move that would break that stops at the farthest point that keeps it, the
+//! next one crossing empty space to the next room along its way, and a turn or move pulls the
+//! start in towards the pivot; a step that cannot be taken rumbles longer. A new start becomes
+//! the pivot, the line laid over it through the most rooms.
 
 use std::f32::consts::TAU;
 
@@ -36,8 +38,8 @@ const REPEAT_DELAY_S: f64 = 0.3;
 const REPEAT_S: f64 = 0.08;
 
 /// One step of the beam, by its sign: a turn (clockwise on screen when positive), a slide
-/// (the start moving down the screen when positive) or a move of the pivot along the screen's
-/// axes (right and down when positive).
+/// (towards the beam's end when positive) or a move of the pivot along the screen's axes
+/// (right and down when positive).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Step {
     Turn(i32),
@@ -91,6 +93,10 @@ fn direction(turn: i32) -> (f32, f32) {
 fn start_of(pivot: (f32, f32), turn: i32, shift: f32) -> (f32, f32) {
     let (ux, uy) = direction(turn);
     (pivot.0 - ux * shift, pivot.1 - uy * shift)
+}
+
+fn beyond(p: (f32, f32), u: (f32, f32), by: f32) -> (f32, f32) {
+    (p.0 + u.0 * by, p.1 + u.1 * by)
 }
 
 fn inside(rooms: &[Rect], (x, y): (f32, f32)) -> bool {
@@ -165,7 +171,8 @@ struct Fit<'a> {
 
 impl Fit<'_> {
     fn fits(&self, turn: i32, shift: f32) -> bool {
-        inside(self.rooms, start_of(self.pivot, turn, shift))
+        let s = start_of(self.pivot, turn, shift);
+        inside(self.rooms, s)
     }
 
     /// The shift a slide from `shift` by `by` steps lands on: a full step where the line
@@ -271,42 +278,41 @@ impl Layer {
         self.place_beam(points);
     }
 
-    /// Writes the beam's start into the game and puts the cursor on its end, short of the
+    /// Writes the beam's start into the game and puts the cursor past its end, short of the
     /// frame's edge.
     fn place_beam(&mut self, points: Obj) {
         let (Some(b), Some(gui), Some(first)) = (self.actions.beam, state::gui(), points.obj(VECTOR_BEGIN)) else {
             return;
         };
+        let (ux, uy) = direction(b.turn);
         let s = start_of(b.pivot, b.turn, b.shift);
         first.set(0, [s.0, s.1]);
         let o = state::enemy_origin(gui);
-        let (ux, uy) = direction(b.turn);
         let at = (o.x as f32 + s.0, o.y as f32 + s.1);
         let reach = frame_reach(at, (ux, uy)).min(b.length);
-        (self.cursor.x, self.cursor.y) = (at.0 + ux * reach, at.1 + uy * reach);
+        (self.cursor.x, self.cursor.y) = beyond(at, (ux, uy), reach);
         self.send_cursor();
     }
 
     /// Takes one step of the beam, its line kept fitting: a slide or move stops short or is
-    /// not taken, and a start that no longer fits is pulled in towards the pivot.
-    fn take_step(&mut self, step: Step, points: Obj) {
+    /// not taken, and a start that no longer fits is pulled in towards the pivot. Returns
+    /// whether the step was taken.
+    fn take_step(&mut self, step: Step, points: Obj) -> bool {
         let (Some(rooms), Some(b)) = (enemy_rooms(), self.actions.beam.as_mut()) else {
-            return;
+            return false;
         };
         match step {
             Step::Turn(by) => b.turn = (b.turn + by).rem_euclid(TURN_STEPS),
             Step::Slide(by) => {
-                // A shift moves the start against the beam; a level beam's goes back on down.
-                let uy = direction(b.turn).1;
-                let back = if uy == 0.0 { by } else { -by * uy.signum() as i32 };
-                let Some(shift) = b.fit(&rooms).slid(b.turn, b.shift, back) else {
-                    return;
+                // A shift moves the start against the beam.
+                let Some(shift) = b.fit(&rooms).slid(b.turn, b.shift, -by) else {
+                    return false;
                 };
                 b.shift = shift;
             }
             Step::Move(x, y) => {
                 let Some(pivot) = moved(&rooms, b.pivot, (x, y)) else {
-                    return;
+                    return false;
                 };
                 b.pivot = pivot;
             }
@@ -314,6 +320,7 @@ impl Layer {
         b.shift = b.fit(&rooms).pulled_in(b.turn, b.shift);
         self.place_beam(points);
         self.buzz();
+        true
     }
 
     /// The aiming points and the line of the beam being set, if one is.
@@ -330,7 +337,10 @@ impl Layer {
         };
         let step = Step::of(dx, dy, b.press.is_some());
         b.press = b.press.map(|_| false);
-        self.take_step(step, points);
+        // A held direction's repeats stay quiet at a limit.
+        if !self.take_step(step, points) {
+            self.bump();
+        }
         if let Some(b) = self.actions.beam.as_mut() {
             b.repeat = Some((step, now_s() + REPEAT_DELAY_S));
         }
@@ -501,10 +511,15 @@ mod tests {
     /// An enemy with a row of rooms, an armed beam of `length` and its start on the first
     /// room's centre, the cursor focused there; returns the aiming points' vector.
     fn placed(g: &mut Game, l: &mut Layer, length: i32) -> Obj {
+        placed_in(g, l, length, &[room(0, 0), room(1, 0), room(2, 0)])
+    }
+
+    /// As `placed`, with the enemy's rooms `rooms`.
+    fn placed_in(g: &mut Game, l: &mut Layer, length: i32, rooms: &[Rect]) -> Obj {
         let combat = g.gui.at(GUI_COMBAT_CONTROL);
         combat.set(COMBAT_POSITION, Point { x: 800, y: 100 });
         let enemy = g.enemy_manager().at(SHIPMANAGER_SHIP);
-        let rooms: Vec<_> = (0..3).map(|i| Some(g.room(i, room(i, 0)))).collect();
+        let rooms: Vec<_> = rooms.iter().zip(0..).map(|(&r, id)| Some(g.room(id, r))).collect();
         g.arena.ptr_vector(enemy, SHIP_ROOMS, &rooms);
         let bp = g.arena.alloc(WEAPONBP_LENGTH + size_of::<i32>());
         g.string(bp, WEAPONBP_TYPE_NAME, BEAM_TYPE_NAME);
@@ -534,10 +549,10 @@ mod tests {
             assert!(l.beam_active());
             assert_eq!(start(points), [c.0, c.1], "the row is crossed from the centre");
             assert_eq!((l.cursor.x, l.cursor.y), (800.0 + c.0 + 80.0, 100.0 + c.1), "the cursor on the end");
-            assert!(l.beam_step(0.0, -1.0));
-            assert_eq!(start(points), [c.0 + SLIDE_STEP, c.1], "a step forward along the line");
-            assert!(l.beam_step(0.0, 1.0) && l.beam_step(0.0, 1.0));
-            assert_eq!(start(points), [c.0 - SLIDE_STEP, c.1], "and back past the centre");
+            assert!(l.beam_step(0.0, 1.0));
+            assert_eq!(start(points), [c.0 + SLIDE_STEP, c.1], "down: a step towards the end");
+            assert!(l.beam_step(0.0, -1.0) && l.beam_step(0.0, -1.0));
+            assert_eq!(start(points), [c.0 - SLIDE_STEP, c.1], "up: back past the centre");
             assert!(l.beam_step(1.0, 0.0));
             assert!(l.cursor.y > 100.0 + c.1, "turned clockwise, the end going down");
             assert!(l.take_beam_start());
@@ -549,23 +564,22 @@ mod tests {
     }
 
     #[test]
-    fn up_and_down_move_the_start_up_and_down_the_screen() {
+    fn down_slides_the_start_towards_the_end_and_up_away_whatever_the_turn() {
         with_game(|g| {
             let mut l = Layer::default();
             let points = placed(g, &mut l, 80);
             l.update_beam();
-            for _ in 0..TURN_STEPS / 4 {
+            for turn in 1..=TURN_STEPS {
                 l.beam_step(1.0, 0.0);
+                let (ux, uy) = direction(turn);
+                let along = |from: [f32; 2], to: [f32; 2]| (to[0] - from[0]) * ux + (to[1] - from[1]) * uy;
+                let at = start(points);
+                assert!(l.beam_step(0.0, 1.0));
+                assert!(along(at, start(points)) > 0.0, "down towards the end at turn {turn}");
+                let at = start(points);
+                assert!(l.beam_step(0.0, -1.0));
+                assert!(along(at, start(points)) < 0.0, "up away from it at turn {turn}");
             }
-            let y = start(points)[1];
-            assert!(l.beam_step(0.0, -1.0));
-            assert!(start(points)[1] < y, "up on a beam pointing down");
-            for _ in 0..TURN_STEPS / 2 {
-                l.beam_step(1.0, 0.0);
-            }
-            let y = start(points)[1];
-            assert!(l.beam_step(0.0, -1.0));
-            assert!(start(points)[1] < y, "up on a beam pointing up");
         });
     }
 
@@ -630,6 +644,51 @@ mod tests {
             calls();
             l.release_beam();
             assert!(calls().is_empty());
+        });
+    }
+
+    #[test]
+    fn a_slide_stops_where_the_start_reaches_the_ships_edge() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let column = [room(0, 0), room(0, 1), room(0, 2)];
+            let points = placed_in(g, &mut l, 80, &column);
+            let c = center(column[0]);
+            l.update_beam();
+            if let Some(b) = l.actions.beam.as_mut() {
+                (b.turn, b.shift) = (TURN_STEPS / 4, 0.0);
+            }
+            for _ in 0..3 {
+                assert!(l.beam_step(0.0, -1.0));
+            }
+            assert_eq!(start(points), [c.0, 0.0], "the start at the top wall, the beam still down");
+            assert_eq!((l.cursor.x, l.cursor.y), (800.0 + c.0, 100.0 + 80.0), "the cursor past the end");
+        });
+    }
+
+    #[test]
+    fn a_step_at_a_limit_rumbles_longer_and_its_repeats_do_not() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            placed(g, &mut l, 80);
+            l.update_beam();
+            l.pad.index = Some(0);
+            assert!(l.press_beam());
+            calls();
+            for _ in 0..3 {
+                l.beam_step(0.0, 1.0);
+            }
+            let rumbles = |calls: Vec<Call>| -> Vec<f32> {
+                calls.into_iter().filter_map(|c| if let Call::Rumble(s) = c { Some(s) } else { None }).collect()
+            };
+            let r = rumbles(calls());
+            assert_eq!(r.len(), 3, "two moves down the room, then its edge: {r:?}");
+            assert!(r[2] > r[0], "the edge rumbles longer: {r:?}");
+            if let Some(b) = l.actions.beam.as_mut() {
+                b.repeat = Some((Step::Move(0, 1), 0.0));
+            }
+            l.repeat_beam(Some((0.0, 1.0)));
+            assert!(rumbles(calls()).is_empty(), "a repeat at the edge stays quiet");
         });
     }
 

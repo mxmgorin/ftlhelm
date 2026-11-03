@@ -71,10 +71,11 @@ A on a room places an armed beam's start at the room's centre and lays the beam 
 over that centre through the most rooms. The D-pad and the sticks then set the line: left
 and right turn it about its pivot, at first the room's centre; up and down slide its start
 along it up or down the screen (a level beam's forward on up). With A held, they move the
-pivot up, down, left or right, the line with it. Slides and moves stop at a room's edge
-with no room beyond; the next step crosses to the next room that way, if any. A held
-direction repeats. A fires the beam on its release, unless it moved the line; B takes its
-start back.
+pivot up, down, left or right, the line with it. A slide goes on while either end of the
+beam is in a room, the beam turned round when only its far end is; a move keeps the pivot
+in a room. Both stop at an edge with no room beyond, and the next step crosses to the next
+room that way, if any. A step that cannot go on rumbles longer. A held direction repeats.
+A fires the beam on its release, unless it moved the line; B takes its start back.
 
 The All weapons plate of the weapons wheel arms every powered weapon and clears their
 targets. A on a room aims them all at it; each beam then waits for its own line. B leaves

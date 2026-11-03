@@ -148,6 +148,8 @@ pub enum Call {
     PrintLeft(i32, f32, f32),
     /// SwapArmaments on the armament control at this address, of these two slots.
     Swap(usize, u32, u32),
+    /// A pad rumble lasting this many seconds.
+    Rumble(f32),
 }
 
 /// The size of every image ResourceControl::GetImageId finds.
@@ -303,6 +305,10 @@ extern "C" fn lbutton_down(_app: Ptr, x: c_int, y: c_int) {
 
 extern "C" fn lbutton_up(_app: Ptr, x: c_int, y: c_int) {
     record(Call::Button(MouseButton::Left, false, x, y));
+}
+
+extern "C" fn joy_rumble(_dev: c_int, _low: f32, _high: f32, seconds: f32) {
+    record(Call::Rumble(seconds));
 }
 
 extern "C" fn rbutton_down(_app: Ptr, x: c_int, y: c_int) {
@@ -537,6 +543,7 @@ fn install_api() -> Statics {
     stand_in.rbutton_down = rbutton_down;
     stand_in.rbutton_up = rbutton_up;
     stand_in.mouse_move = mouse_move;
+    stand_in.joy_rumble = joy_rumble;
     stand_in.set_tab = set_tab;
     stand_in.clear_crew = clear_crew;
     stand_in.weapon_swap = swap_armaments;

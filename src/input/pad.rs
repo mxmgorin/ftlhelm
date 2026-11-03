@@ -24,6 +24,8 @@ const SDL_MAP_ENV: &str = "SDL_GAMECONTROLLERCONFIG";
 /// The engine's pulse strength at `rumble` 1; `rumble` reaches the engine's full strength.
 pub const RUMBLE_STRENGTH: f32 = 0.4;
 pub const RUMBLE_MAX: f32 = 1.0 / RUMBLE_STRENGTH;
+/// A bump rumbles this many times as long as a buzz.
+const BUMP_TIMES: f32 = 3.0;
 const STICK_KEY_ON: f32 = 0.5;
 const STICK_KEY_OFF: f32 = 0.3;
 /// SIL reports an analog trigger as a stick axis resting at -1.
@@ -409,10 +411,19 @@ impl Layer {
     }
 
     pub fn buzz(&self) {
+        self.rumble_for(self.cfg.rumble_time);
+    }
+
+    /// Rumbles longer than a buzz, for a step that hit a limit.
+    pub fn bump(&self) {
+        self.rumble_for(self.cfg.rumble_time * BUMP_TIMES);
+    }
+
+    fn rumble_for(&self, seconds: f32) {
         if let (true, Some(dev)) = (self.cfg.rumble > 0.0, self.pad.index) {
             let s = self.cfg.rumble * RUMBLE_STRENGTH;
             // SAFETY: the engine's rumble on a connected pad.
-            unsafe { (api().joy_rumble)(dev, s, s, self.cfg.rumble_time) };
+            unsafe { (api().joy_rumble)(dev, s, s, seconds) };
         }
     }
 

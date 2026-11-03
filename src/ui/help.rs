@@ -221,7 +221,7 @@ const PAGES: [Page; 4] = [
         line(&[A, PLUS, SIDE], "Move a weapon or drone"),
         line(&[SIDE], "Beam: turn the line"),
         line(&[UPDOWN], "Beam: slide its start"),
-        line(&[A, PLUS, DPAD], "Beam: move the line"),
+        line(&[A, PLUS, DPAD], "Beam: move it any way"),
         line(&[A], "Beam: fire"),
         line(&[B], "Beam: take the start back"),
         line(&[UP], "Wheel: pick for a volley"),
