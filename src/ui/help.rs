@@ -198,6 +198,8 @@ const UP: Who = Who::Fixed(Chip::Dpad(ARM_UP));
 const DOWN: Who = Who::Fixed(Chip::Dpad(ARM_DOWN));
 const LSTICK: Who = Who::Fixed(LEFT_STICK);
 const RSTICK: Who = Who::Fixed(RIGHT_STICK);
+const L2: Who = Who::Fixed(Chip::Key(INPUT_TITLES[Input::L2 as usize]));
+const R2: Who = Who::Fixed(Chip::Key(INPUT_TITLES[Input::R2 as usize]));
 
 const BUTTONS_TITLE: &str = "Buttons";
 const BUTTONS_HEAD: &[&str] = &["BUTTON", "TAP", "HOLD"];
@@ -208,7 +210,7 @@ const PAGES: [Page; 4] = [
     Page { title: "Wheels", head: &["BUTTON", "IN A WHEEL"], lines: &[
         line(&[LSTICK, RSTICK], "Point at a plate"),
         line(&[SIDE], "Previous, next plate"),
-        line(&[UPDOWN], "Add, take power, step a setting"),
+        line(&[UPDOWN, R2, L2], "Add, take power, step a setting"),
         line(&[A], "Act on the plate"),
         line(&[A, PLUS, SIDE], "Move a weapon or drone"),
         line(&[B], "Close, or back to the wheel before"),
@@ -224,15 +226,15 @@ const PAGES: [Page; 4] = [
         line(&[A, PLUS, DPAD], "Beam: move it any way"),
         line(&[A], "Beam: fire"),
         line(&[B], "Beam: take the start back"),
-        line(&[UP], "Wheel: pick for a volley"),
-        line(&[DOWN], "Wheel: drop a pick"),
+        line(&[UP, R2], "Wheel: pick for a volley"),
+        line(&[DOWN, L2], "Wheel: drop a pick"),
     ] },
     Page { title: "Crew", head: ACTION_HEAD, lines: &[
         line(&[Who::Bound(Builtin::AimCrew)], "Select the next crew member"),
         line(&[A], "On a room: send the crew there"),
         Line { who: &[A], text: "On a room with crew: select them", shown: |c| c.room_crew_pick },
         line(&[B], "Clear the selection"),
-        line(&[UPDOWN], "Wheel: add, drop a crew member"),
+        line(&[UPDOWN, R2, L2], "Wheel: add, drop a crew member"),
     ] },
     Page { title: "Doors", head: ACTION_HEAD, lines: &[
         line(&[Who::Bound(Builtin::Precision)], "Held: the doors are the zones"),

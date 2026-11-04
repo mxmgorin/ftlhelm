@@ -34,6 +34,8 @@ const TRIGGER_ON: f32 = 0.0;
 const BUTTON_REFRESH_FRAMES: u64 = 6;
 /// The D-pad's directions in input order: left, up, right, down.
 const DPAD_DIRS: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
+/// The triggers in an open wheel, with the step each takes as D-pad down and up do.
+const WHEEL_TRIGGERS: [(Input, i32); 2] = [(Input::L2, -1), (Input::R2, 1)];
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
@@ -64,6 +66,7 @@ pub struct PadState {
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
     held: [bool; INPUT_COUNT],
     dpad_spent: [bool; 4],
+    trigger_spent: [bool; WHEEL_TRIGGERS.len()],
     flick_last: [f64; 2],
     flick_armed: [bool; 2],
     prev_aiming: bool,
@@ -97,6 +100,7 @@ impl Default for PadState {
             sil_mapping: None,
             held: [false; INPUT_COUNT],
             dpad_spent: [false; 4],
+            trigger_spent: [false; WHEEL_TRIGGERS.len()],
             flick_last: [0.0; 2],
             flick_armed: [true; 2],
             prev_aiming: false,
@@ -503,7 +507,7 @@ impl Layer {
 
     /// Turns button changes into presses and releases; with a wheel open, or snapping on and
     /// no state held, the D-pad steps the wheel, a held armament box or the focus instead,
-    /// and its release is swallowed.
+    /// and its release is swallowed. A trigger pressed in a wheel steps it as D-pad down or up.
     fn apply_buttons(&mut self, p: &PadFrame, t: f64, in_wheel: bool, snapping: bool) {
         for input in Input::ALL {
             let i = input as usize;
@@ -537,6 +541,17 @@ impl Layer {
                 }
                 if !p.down[i] && self.pad.dpad_spent[d] {
                     self.pad.dpad_spent[d] = false;
+                    continue;
+                }
+            }
+            if let Some(k) = WHEEL_TRIGGERS.iter().position(|&(trigger, _)| trigger == input) {
+                if p.down[i] && in_wheel {
+                    self.pad.trigger_spent[k] = true;
+                    self.adjust_plate(WHEEL_TRIGGERS[k].1);
+                    continue;
+                }
+                if !p.down[i] && self.pad.trigger_spent[k] {
+                    self.pad.trigger_spent[k] = false;
                     continue;
                 }
             }
@@ -802,6 +817,38 @@ mod tests {
             assert_eq!(stick(&mut l, 1.0), Some(0), "held through the close");
             stick(&mut l, 0.0);
             assert_eq!(stick(&mut l, 1.0), Some(1), "a fresh flick");
+        });
+    }
+
+    #[test]
+    fn triggers_in_a_wheel_step_the_plate_and_keep_their_own_actions_out() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[controls]\nl2 = precision | room_doors\nr2 = fast_forward | j\n\
+                          [wheel:settings]\nkind = settings\nup = set overlay\n";
+            l.layout = Layout::parse(layout).0;
+            let mut p = PadFrame::default();
+            let mut set = |l: &mut Layer, input: Input, down: bool, in_wheel: bool| {
+                p.down[input as usize] = down;
+                l.apply_buttons(&p, 1.0, in_wheel, false);
+            };
+            set(&mut l, Input::L2, true, false);
+            l.settle_pending(f64::MAX);
+            assert!(l.bind.precision, "held before the wheel");
+            l.open_wheel(0, Source::Plate);
+            l.wheel.sel = Some(0);
+            set(&mut l, Input::L2, false, true);
+            assert!(!l.bind.precision, "its release still ends the hold");
+            set(&mut l, Input::L2, true, true);
+            assert!(!l.cfg.overlay, "L2 steps down");
+            set(&mut l, Input::R2, true, true);
+            assert!(l.cfg.overlay, "R2 steps up");
+            l.close_wheel();
+            calls();
+            set(&mut l, Input::L2, false, false);
+            set(&mut l, Input::R2, false, false);
+            assert!(!l.bind.precision);
+            assert_eq!(calls(), [], "no doors, no jump on the releases");
         });
     }
 

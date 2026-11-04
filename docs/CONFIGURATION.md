@@ -162,11 +162,11 @@ state.
 
 | `kind` | Plates |
 | --- | --- |
-| `action` | from the section; the wheel closes after an action; a plate on a system's power key (`y` for the artillery) shows the system's power, and D-pad up and down add and take it |
-| `power` | from the section, with power pips; D-pad up and down add and take power, and pick a powered weapon and drop it |
+| `action` | from the section; the wheel closes after an action; a plate on a system's power key (`y` for the artillery) shows the system's power, and D-pad up and down, or R2 and L2, add and take it |
+| `power` | from the section, with power pips; D-pad up and down, or R2 and L2, add and take power, and pick a powered weapon and drop it |
 | `crew` | filled from the ship's crew |
 | `systems` | filled from the ship's systems |
-| `settings` | from the section; opens on any screen; D-pad up and down step `zoom`, `text_size`, `autopause` and stepped `set` plates, and turn `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
+| `settings` | from the section; opens on any screen; D-pad up and down, or R2 and L2, step `zoom`, `text_size`, `autopause` and stepped `set` plates, and turn `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
 
 Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
 `left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
