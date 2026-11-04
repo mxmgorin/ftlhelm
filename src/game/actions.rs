@@ -178,16 +178,20 @@ impl Layer {
         self.click(button, false);
     }
 
-    /// Moves the cursor to the player's or the enemy's ship centre, whichever is farther.
+    /// Focuses the room nearest to the centre of the player's or the enemy's ship, whichever
+    /// is farther; moves the cursor to that centre when its rooms are no zones.
     pub fn center_swap(&mut self) {
         let Some(gui) = state::gui() else {
             return;
         };
-        let p = state::player_ship().and_then(|s| ship_center(s, state::player_origin(gui)));
-        let e = state::enemy_ship().and_then(|s| ship_center(s, state::enemy_origin(gui)));
+        let p =
+            state::player_ship().and_then(|s| ship_center(s, state::player_origin(gui))).map(|c| (c, ZoneKind::Room));
+        let e = state::enemy_ship()
+            .and_then(|s| ship_center(s, state::enemy_origin(gui)))
+            .map(|c| (c, ZoneKind::EnemyRoom));
         let (cx, cy) = (self.cursor.x, self.cursor.y);
-        let dist = |(x, y): (f32, f32)| (x - cx).hypot(y - cy);
-        let to = match (p, e) {
+        let dist = |((x, y), _): ((f32, f32), ZoneKind)| (x - cx).hypot(y - cy);
+        let (to, rooms) = match (p, e) {
             (Some(p), Some(e)) => {
                 if dist(p) < dist(e) {
                     e
@@ -199,9 +203,11 @@ impl Layer {
             (None, Some(e)) => e,
             (None, None) => return,
         };
-        self.cursor.x = to.0;
-        self.cursor.y = to.1;
-        self.send_cursor();
+        if !self.focus_nearest(to, |z| z.kind == rooms) {
+            (self.cursor.x, self.cursor.y) = to;
+            self.send_cursor();
+        }
+        self.buzz();
     }
 
     /// Moves the cursor to the room of the first selected crew member.

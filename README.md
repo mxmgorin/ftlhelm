@@ -62,7 +62,7 @@
 | R1 | next tab | ship orders wheel |
 | L2 | toggle the room's doors | doors become the zones |
 | R2 | beacon map | fast forward |
-| L3, R3 | mouse mode on, off | |
+| L3, R3 | the other ship | |
 | Start | pause | zoom out while zoomed |
 | Select | settings wheel | |
 

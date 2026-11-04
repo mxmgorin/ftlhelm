@@ -35,6 +35,7 @@ active one has none down. When the active pad disconnects, the ship view pauses 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick
 moves it once per push past `flick_threshold`. With `focus_brackets`, the zone the cursor
 lands on shows corner brackets in place of the pointer arrow until the cursor moves on.
+L3 or R3 moves the cursor to the other ship, on its room nearest the ship's middle.
 
 | Screen | Zones |
 | --- | --- |
@@ -91,9 +92,9 @@ then takes its power. A on a picked weapon closes the wheel.
 
 ## Mouse mode
 
-L3 or R3, or the Mouse plate of the settings wheel, switches the D-pad and both sticks
-between zones and mouse mode. In mouse mode they move the cursor freely, at `cursor_speed`,
-with `cursor_deadzone` and `cursor_curve` for the sticks.
+The Mouse plate of the settings wheel switches the D-pad and both sticks between zones and
+mouse mode. In mouse mode they move the cursor freely, at `cursor_speed`, with
+`cursor_deadzone` and `cursor_curve` for the sticks.
 
 The badge sits where the game writes PAUSED. It names the selected crew member, or counts
 several, and the active modes: Mouse, Doors, Fast (fast forward) and Target with the armed

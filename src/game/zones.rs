@@ -613,6 +613,35 @@ mod tests {
     }
 
     #[test]
+    fn the_other_ship_takes_the_focus_on_its_room_nearest_the_centre() {
+        with_game(|g| {
+            two_ships(g);
+            let mut l = Layer::default();
+            l.build_zones();
+            let enemy_room = moved(rect(0, 0), ENEMY_AT).center();
+            (l.cursor.x, l.cursor.y) = enemy_room;
+            let room_at = |l: &Layer| {
+                let at = (l.cursor.x as i32, l.cursor.y as i32);
+                l.zones
+                    .list
+                    .iter()
+                    .find(|z| z.rect.contains(at.0, at.1))
+                    .map(|z| (z.kind, z.rect.center() == (l.cursor.x, l.cursor.y)))
+            };
+            l.center_swap();
+            assert_eq!(room_at(&l), Some((ZoneKind::Room, true)), "a player room, at its centre");
+            assert!(l.cursor.focus.is_some());
+            l.center_swap();
+            assert_eq!((l.cursor.x, l.cursor.y), enemy_room, "back on the enemy's room");
+            let mut bare = Layer::default();
+            (bare.cursor.x, bare.cursor.y) = enemy_room;
+            bare.center_swap();
+            let centre = (PLAYER_AT.x as f32 + SIDE as f32, PLAYER_AT.y as f32 + SIDE as f32 / 2.0);
+            assert_eq!((bare.cursor.x, bare.cursor.y), centre, "the ship's centre without room zones");
+        });
+    }
+
+    #[test]
     fn aiming_lists_enemy_rooms_first() {
         with_game(|g| {
             two_ships(g);

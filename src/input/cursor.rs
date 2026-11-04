@@ -350,12 +350,19 @@ impl Layer {
             return;
         }
         let here = (self.cursor.last_x as f32, self.cursor.last_y as f32);
-        let Some(i) = nearest_zone(&self.zones.list, here) else {
-            return;
+        self.focus_nearest(here, |_| true);
+    }
+
+    /// Focuses the zone nearest to `at` among those `keep` accepts; returns false when it
+    /// accepts none.
+    pub fn focus_nearest(&mut self, at: (f32, f32), keep: impl Fn(&Zone) -> bool) -> bool {
+        let Some(i) = nearest_zone(&self.zones.list, at, keep) else {
+            return false;
         };
         (self.cursor.x, self.cursor.y) = self.zones.list[i].rect.center();
         self.send_cursor();
         self.mark_focus();
+        true
     }
 
     /// Whether the cursor stays where a focus move left it.
@@ -378,14 +385,20 @@ impl Layer {
     }
 }
 
-/// The zone nearest to `at`, measured to its nearest point; None with no zones.
-fn nearest_zone(zones: &[Zone], (x, y): (f32, f32)) -> Option<usize> {
+/// The zone nearest to `at` among those `keep` accepts, measured to its nearest point; None
+/// when it accepts none.
+fn nearest_zone(zones: &[Zone], (x, y): (f32, f32), keep: impl Fn(&Zone) -> bool) -> Option<usize> {
     let distance = |r: Rect| {
         let dx = clampf(x, r.x as f32, (r.x + r.w) as f32) - x;
         let dy = clampf(y, r.y as f32, (r.y + r.h) as f32) - y;
         dx.hypot(dy)
     };
-    zones.iter().enumerate().min_by(|(_, a), (_, b)| distance(a.rect).total_cmp(&distance(b.rect))).map(|(i, _)| i)
+    zones
+        .iter()
+        .enumerate()
+        .filter(|(_, z)| keep(z))
+        .min_by(|(_, a), (_, b)| distance(a.rect).total_cmp(&distance(b.rect)))
+        .map(|(i, _)| i)
 }
 
 /// How a focus move weighs the zones it may land on.
