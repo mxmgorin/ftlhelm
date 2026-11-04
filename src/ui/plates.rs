@@ -2,12 +2,13 @@
 //! the systems and crew wheels, and layout plates with their built-in art and setting values.
 
 use super::draw::*;
-use super::glyph::{Glyph, HELP_GLYPH, TEXT_GLYPH};
+use super::glyph::{Glyph, HELP_GLYPH, LETTER_A, LETTER_B, LETTER_X, LETTER_Y, TEXT_GLYPH};
 use super::wheel::Plate;
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    is_switch, option_name, Tuning, AUTOPAUSE_ALL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY, FRAME_FILTER_KEY,
-    HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
+    is_switch, option_name, Tuning, AUTOPAUSE_ALL, CREW_MARKER_KEY, FLICK_THRESHOLD_KEY, FOCUS_BRACKETS_KEY,
+    FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY, ROOM_CREW_PICK_KEY, RUMBLE_KEY,
+    SHARPEN_KEY, SPEED_LEVEL_KEY, SWAP_AB_KEY, SWAP_XY_KEY, TAP_HOLD_KEY, TOUCH_KEY,
 };
 use crate::game::actions::{move_drone, move_weapon};
 use crate::game::mem::Obj;
@@ -16,8 +17,8 @@ use crate::game::state;
 
 /// Weapon art sits right of its texture's centre by this many texture pixels.
 pub(super) const WEAPON_ICON_SHIFT: f32 = 3.0;
-/// A plate that opens this wheel shows the display glyph.
-const VIEW_WHEEL: &str = "view";
+/// Plates that open these wheels show their glyphs.
+const WHEEL_GLYPHS: [(&str, Glyph); 2] = [("view", Glyph::Display), ("controls", Glyph::Pad)];
 /// The label of a slot with nothing in it.
 pub(super) const EMPTY_LABEL: &str = "Empty";
 pub(super) const ZOOM_OFF_BADGE: &str = "Whole frame";
@@ -141,9 +142,18 @@ pub(super) fn show_tuning(pl: &mut Plate, tuning: Tuning) {
             (pl.pips, pl.pips_on) = (SWITCH_PIPS, on as i32);
             pl.badge = if on { ON_BADGE } else { OFF_BADGE }.to_string();
         }
-        Tuning::Steps { value, step, max } => {
+        Tuning::Steps { value, step, lo, hi, falling } => {
+            // A pip per step from 0, or from a step past the end a step up leaves.
+            let base = if falling {
+                hi + step
+            } else if lo > 0.0 {
+                lo - step
+            } else {
+                0.0
+            };
+            let pips = |v: f32| ((v - base).abs() / step).round() as i32;
             pl.powered = value > 0.0;
-            (pl.pips, pl.pips_on) = ((max / step).round() as i32, (value / step).round() as i32);
+            (pl.pips, pl.pips_on) = (pips(if falling { lo } else { hi }), pips(value));
             pl.badge = if pl.powered { badge_number(value) } else { OFF_BADGE.to_string() };
         }
     }
@@ -161,6 +171,13 @@ fn setting_glyph(key: &str) -> Option<Glyph> {
         HUD_SHIFT_KEY => Some(Glyph::HudShift),
         FRAME_FILTER_KEY => Some(Glyph::FrameFilter),
         IPAD_BEACONS_KEY => Some(Glyph::Beacon),
+        FOCUS_REPEAT_KEY => Some(Glyph::Repeat),
+        TOUCH_KEY => Some(Glyph::Touch),
+        ROOM_CREW_PICK_KEY => Some(Glyph::RoomCrew),
+        TAP_HOLD_KEY => Some(Glyph::HoldTime),
+        FLICK_THRESHOLD_KEY => Some(Glyph::Stick),
+        SWAP_AB_KEY => Some(Glyph::Buttons(LETTER_A, LETTER_B)),
+        SWAP_XY_KEY => Some(Glyph::Buttons(LETTER_X, LETTER_Y)),
         _ => None,
     }
 }
@@ -283,7 +300,8 @@ pub(super) fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Im
         } else if let Action::Set(i) = pdef.action {
             pl.glyph = setting_glyph(option_name(i));
         } else if let Action::Wheel(w) = pdef.action {
-            pl.glyph = wheels.get(w).filter(|w| w.name == VIEW_WHEEL).map(|_| Glyph::Display);
+            let name = wheels.get(w).map(|w| w.name.as_str());
+            pl.glyph = WHEEL_GLYPHS.iter().find(|&&(wheel, _)| Some(wheel) == name).map(|&(_, glyph)| glyph);
         } else if let Action::Key { code: KEY_AUTOFIRE, .. } = pdef.action {
             pl.glyph = Some(Glyph::Autofire);
         }

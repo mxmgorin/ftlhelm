@@ -506,7 +506,10 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::{HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY};
+    use crate::config::settings::{
+        FLICK_THRESHOLD_KEY, FOCUS_REPEAT_KEY, HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
+        SWAP_AB_KEY, TAP_HOLD_KEY, TOUCH_KEY,
+    };
 
     #[test]
     fn variant_lists_follow_declaration_order() {
@@ -592,18 +595,19 @@ mod tests {
         for b in [Builtin::DpadMode, Builtin::Zoom, Builtin::TextSize, Builtin::Help, Builtin::Autopause] {
             assert!(actions.contains(&Action::Builtin(b)));
         }
-        for key in [RUMBLE_KEY, SPEED_LEVEL_KEY] {
-            assert!(actions.contains(&Action::Set(tunable(key).expect("a tunable key"))), "{key}");
-        }
-        let Some(view) = actions.iter().find_map(|a| if let Action::Wheel(w) = a { Some(&l.wheels[*w]) } else { None })
-        else {
-            panic!("a settings plate opens a wheel");
+        assert!(actions.contains(&Action::Set(tunable(SPEED_LEVEL_KEY).expect("a tunable key"))));
+        let subs: Vec<&WheelDef> =
+            actions.iter().filter_map(|a| if let Action::Wheel(w) = a { Some(&l.wheels[*w]) } else { None }).collect();
+        let sets = |name: &str, keys: &[&str]| {
+            let wheel = subs.iter().find(|w| w.name == name).expect("a settings plate opens it");
+            assert_eq!((wheel.kind, wheel.plates.iter().flatten().count()), (WheelKind::Settings, WHEEL_SLOTS));
+            for key in keys {
+                let set = Action::Set(tunable(key).expect("a tunable key"));
+                assert!(wheel.plates.iter().flatten().any(|p| p.action == set), "{name}: {key}");
+            }
         };
-        assert_eq!((view.kind, view.plates.iter().flatten().count()), (WheelKind::Settings, WHEEL_SLOTS));
-        let actions: Vec<Action> = view.plates.iter().flatten().map(|p| p.action).collect();
-        for key in [OVERLAY_KEY, HUD_SHIFT_KEY] {
-            assert!(actions.contains(&Action::Set(tunable(key).expect("a tunable key"))), "{key}");
-        }
+        sets("view", &[OVERLAY_KEY, HUD_SHIFT_KEY]);
+        sets("controls", &[RUMBLE_KEY, FOCUS_REPEAT_KEY, FLICK_THRESHOLD_KEY, TAP_HOLD_KEY, SWAP_AB_KEY, TOUCH_KEY]);
     }
 
     #[test]

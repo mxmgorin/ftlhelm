@@ -31,6 +31,12 @@ pub const HUD_SHIFT_KEY: &str = "hud_shift";
 pub const FRAME_FILTER_KEY: &str = "frame_filter";
 pub const IPAD_BEACONS_KEY: &str = "ipad_beacons";
 pub const AUTOPAUSE_KEY: &str = "autopause";
+pub const SWAP_AB_KEY: &str = "swap_ab";
+pub const SWAP_XY_KEY: &str = "swap_xy";
+pub const FLICK_THRESHOLD_KEY: &str = "flick_threshold";
+pub const TAP_HOLD_KEY: &str = "tap_hold";
+pub const ROOM_CREW_PICK_KEY: &str = "room_crew_pick";
+pub const TOUCH_KEY: &str = "touch";
 /// Autopause flags: the game pauses while a wheel is open, and when a weapon or ability
 /// starts waiting for a target.
 pub const AUTOPAUSE_WHEEL: i32 = 1;
@@ -40,7 +46,7 @@ const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
 const LAYOUT_VERSION_KEY: &str = "layout_version";
-const LAYOUT_VERSION: i32 = 4;
+const LAYOUT_VERSION: i32 = 5;
 const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -89,14 +95,34 @@ const TOUCH_PX_MAX: f32 = 100.0;
 /// The most times its size the game's pointer is drawn by default, and the highest setting.
 const POINTER_SCALE_MAX: f32 = 2.0;
 const POINTER_SCALE_LIMIT: f32 = 4.0;
-/// The numbers `set` moves, by key, and their steps.
-const STEPS: &[(&str, f32)] = &[
-    (RUMBLE_KEY, RUMBLE_STEP),
-    (SHARPEN_KEY, SHARPEN_STEP),
-    (SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
-    (AUTOPAUSE_KEY, AUTOPAUSE_STEP),
-    (FOCUS_REPEAT_KEY, FOCUS_REPEAT_STEP),
+/// How `set` moves a number: in `step`s within `range`, else within the setting's own range;
+/// a step up lowers a `falling` number.
+struct Stepping {
+    key: &'static str,
+    step: f32,
+    range: Option<(f32, f32)>,
+    falling: bool,
+}
+
+const fn stepping(key: &'static str, step: f32) -> Stepping {
+    Stepping { key, step, range: None, falling: false }
+}
+
+/// The numbers `set` moves.
+const STEPS: &[Stepping] = &[
+    stepping(RUMBLE_KEY, RUMBLE_STEP),
+    stepping(SHARPEN_KEY, SHARPEN_STEP),
+    stepping(SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
+    stepping(AUTOPAUSE_KEY, AUTOPAUSE_STEP),
+    stepping(FOCUS_REPEAT_KEY, FOCUS_REPEAT_STEP),
+    Stepping { range: Some((TAP_HOLD_STEP, TAP_HOLD_STEP_MAX)), ..stepping(TAP_HOLD_KEY, TAP_HOLD_STEP) },
+    // A step up asks for less deflection: a more sensitive stick.
+    Stepping { falling: true, ..stepping(FLICK_THRESHOLD_KEY, FLICK_STEP) },
 ];
+/// Hold thresholds a plate steps through, from one step up to TAP_HOLD_STEP_MAX.
+const TAP_HOLD_STEP: f32 = 0.1;
+const TAP_HOLD_STEP_MAX: f32 = 0.5;
+const FLICK_STEP: f32 = 0.1;
 const RUMBLE_STEP: f32 = 0.5;
 const SHARPEN_STEP: f32 = 0.25;
 const SPEED_LEVEL_STEP: f32 = 1.0;
@@ -252,17 +278,17 @@ const OPTIONS: &[(&str, Field)] = &[
     (AUTOPAUSE_KEY, Field::Int(|c| &mut c.autopause, 0.0, AUTOPAUSE_ALL as f32)),
     (SPEED_LEVEL_KEY, Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
     (RUMBLE_KEY, Field::Float(|c| &mut c.rumble, 0.0, RUMBLE_MAX)),
-    ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
-    ("swap_xy", Field::Bool(|c| &mut c.swap_xy)),
-    ("flick_threshold", Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
+    (SWAP_AB_KEY, Field::Bool(|c| &mut c.swap_ab)),
+    (SWAP_XY_KEY, Field::Bool(|c| &mut c.swap_xy)),
+    (FLICK_THRESHOLD_KEY, Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
     (FOCUS_REPEAT_KEY, Field::Int(|c| &mut c.focus_repeat, 0.0, FOCUS_REPEAT_S.len() as f32)),
-    ("tap_hold", Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
+    (TAP_HOLD_KEY, Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
     ("focus_cone_narrow", Field::Float(|c| &mut c.focus_cone_narrow, CONE_DEG_MIN, CONE_DEG_MAX)),
     ("focus_cone_wide", Field::Float(|c| &mut c.focus_cone_wide, CONE_DEG_MIN, CONE_DEG_MAX)),
     ("focus_side_weight", Field::Float(|c| &mut c.focus_side_weight, 0.0, FOCUS_SIDE_WEIGHT_MAX)),
     ("focus_first", Field::Bool(|c| &mut c.focus_first)),
     ("crew_follow", Field::Bool(|c| &mut c.crew_follow)),
-    ("room_crew_pick", Field::Bool(|c| &mut c.room_crew_pick)),
+    (ROOM_CREW_PICK_KEY, Field::Bool(|c| &mut c.room_crew_pick)),
     ("wheels_ship_only", Field::Bool(|c| &mut c.wheels_ship_only)),
     ("wheel_place", Field::Place(|c| &mut c.wheel_place)),
     ("wheel_backdrop", Field::Backdrop(|c| &mut c.wheel_backdrop)),
@@ -275,7 +301,7 @@ const OPTIONS: &[(&str, Field)] = &[
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
     (FRAME_FILTER_KEY, Field::Bool(|c| &mut c.frame_filter)),
     (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
-    ("touch", Field::Bool(|c| &mut c.touch)),
+    (TOUCH_KEY, Field::Bool(|c| &mut c.touch)),
     ("touch_long_press", Field::Float(|c| &mut c.touch_long_press, HOLD_S_MIN, HOLD_S_MAX)),
     ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
     ("touch_snap", Field::Float(|c| &mut c.touch_snap, 0.0, TOUCH_PX_MAX)),
@@ -291,18 +317,20 @@ pub type Values = Vec<(&'static str, String)>;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tuning {
     Switch(bool),
-    /// A number moved in `step`s up to `max`, from 0 or a step above it.
+    /// A number moved in `step`s between `lo` and `hi`, downward on a step up when `falling`.
     Steps {
         value: f32,
         step: f32,
-        max: f32,
+        lo: f32,
+        hi: f32,
+        falling: bool,
     },
 }
 
 /// The index of setting `key` when `set` may change it: a switch or a number with a step.
 pub fn tunable(key: &str) -> Option<usize> {
     let i = OPTIONS.iter().position(|(name, _)| *name == key)?;
-    (is_switch(i) || step_of(i).is_some()).then_some(i)
+    (is_switch(i) || stepping_of(i).is_some()).then_some(i)
 }
 
 /// Whether setting `i` is a switch.
@@ -315,8 +343,8 @@ pub fn option_name(i: usize) -> &'static str {
     OPTIONS[i].0
 }
 
-fn step_of(i: usize) -> Option<f32> {
-    STEPS.iter().find(|(key, _)| *key == OPTIONS[i].0).map(|&(_, step)| step)
+fn stepping_of(i: usize) -> Option<&'static Stepping> {
+    STEPS.iter().find(|s| s.key == OPTIONS[i].0)
 }
 
 impl Settings {
@@ -405,8 +433,17 @@ impl Settings {
         if let Field::Bool(f) = *field {
             return Tuning::Switch(*f(self));
         }
-        let (value, _, max) = self.number(field).expect("tunable() admits switches and numbers only");
-        Tuning::Steps { value, step: step_of(i).expect("tunable() admits numbers with a step only"), max }
+        let (value, lo, hi, s) = self.stepped(i).expect("tunable() admits switches and numbers with a step only");
+        Tuning::Steps { value, step: s.step, lo, hi, falling: s.falling }
+    }
+
+    /// Number setting `i`'s value, the range `set` keeps it in, and how it steps; None for a
+    /// switch or a number without a step.
+    fn stepped(&mut self, i: usize) -> Option<(f32, f32, f32, &'static Stepping)> {
+        let s = stepping_of(i)?;
+        let (value, lo, hi) = self.number(&OPTIONS[i].1)?;
+        let (lo, hi) = s.range.unwrap_or((lo, hi));
+        Some((value, lo, hi, s))
     }
 
     /// Moves tunable setting `i` to the step above or below its value, within its range; a
@@ -417,12 +454,13 @@ impl Settings {
             *f(self) = up;
             return;
         }
-        let (Some((value, ..)), Some(step)) = (self.number(field), step_of(i)) else {
+        let Some((value, lo, hi, s)) = self.stepped(i) else {
             return;
         };
-        let at = value / step;
-        let next = if up { (at + STEP_SLACK).floor() + 1.0 } else { (at - STEP_SLACK).ceil() - 1.0 };
-        self.set_number(field, next * step);
+        let at = value / s.step;
+        let rise = up != s.falling;
+        let next = if rise { (at + STEP_SLACK).floor() + 1.0 } else { (at - STEP_SLACK).ceil() - 1.0 };
+        self.set_number(field, clampf(next * s.step, lo, hi));
     }
 
     /// Moves tunable setting `i` to its next value: a switch flips, a number steps up and
@@ -434,8 +472,9 @@ impl Settings {
             *f(self) = !on;
             return;
         }
-        match self.number(field) {
-            Some((value, lo, hi)) if value >= hi - STEP_SLACK => self.set_number(field, lo),
+        match self.stepped(i) {
+            Some((value, lo, hi, s)) if s.falling && value <= lo + STEP_SLACK => self.set_number(field, hi),
+            Some((value, lo, hi, s)) if !s.falling && value >= hi - STEP_SLACK => self.set_number(field, lo),
             _ => self.step(i, true),
         }
     }
@@ -847,10 +886,32 @@ mod tests {
     }
 
     #[test]
+    fn a_number_steps_within_its_plate_range_and_a_falling_one_the_other_way() {
+        let mut cfg = Settings::default();
+        let hold = tunable(TAP_HOLD_KEY).expect("tap_hold has a step");
+        cfg.tap_hold = TAP_HOLD_STEP;
+        cfg.step(hold, false);
+        assert_eq!(cfg.tap_hold, TAP_HOLD_STEP, "the plate range's bottom holds");
+        cfg.tap_hold = HOLD_S_MAX;
+        cfg.step(hold, true);
+        assert_eq!(cfg.tap_hold, TAP_HOLD_STEP_MAX, "down into the plate range");
+        cfg.cycle(hold);
+        assert_eq!(cfg.tap_hold, TAP_HOLD_STEP, "its top cycles to its bottom");
+        let flick = tunable(FLICK_THRESHOLD_KEY).expect("flick_threshold has a step");
+        let threshold = |cfg: &Settings| (cfg.flick_threshold * 10.0).round() / 10.0;
+        cfg.step(flick, true);
+        assert_eq!(threshold(&cfg), FLICK_ON - FLICK_STEP, "a step up lowers it");
+        cfg.flick_threshold = FLICK_OFF + FLICK_GAP;
+        cfg.cycle(flick);
+        assert_eq!(cfg.flick_threshold, 1.0, "past the most sensitive, the least");
+    }
+
+    #[test]
     fn tunable_numbers_step_on_their_grid_and_cycle_back() {
         let mut cfg = Settings::default();
         let rumble = tunable(RUMBLE_KEY).expect("rumble has a step");
-        assert_eq!(cfg.tuning(rumble), Tuning::Steps { value: RUMBLE, step: RUMBLE_STEP, max: RUMBLE_MAX });
+        let shown = Tuning::Steps { value: RUMBLE, step: RUMBLE_STEP, lo: 0.0, hi: RUMBLE_MAX, falling: false };
+        assert_eq!(cfg.tuning(rumble), shown);
         cfg.step(rumble, true);
         assert_eq!(cfg.rumble, RUMBLE + RUMBLE_STEP);
         cfg.rumble = 0.3;

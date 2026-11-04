@@ -85,11 +85,12 @@ const DISPLAY_SCREEN_H: f32 = 22.0;
 const DISPLAY_NECK_W: f32 = 6.0;
 const DISPLAY_BASE_W: f32 = 18.0;
 const DISPLAY_H: f32 = DISPLAY_SCREEN_H + 2.0 * GLYPH_STROKE;
+/// A six-row A in LETTER_CELL squares.
+const TALL_A: [&str; 6] = [".###.", "#...#", "#...#", "#####", "#...#", "#...#"];
+const LETTER_CELL: f32 = 2.0;
 /// The autofire glyph: a crosshair, a ring of radius AIM_R crossed by ticks from AIM_TICK_IN to
-/// AIM_TICK_OUT, and in its empty top left corner an A drawn in AUTOFIRE_CELL squares, its
-/// bottom right AIM_A_GAP up and left of the ring's centre.
-const AUTOFIRE_A: [&str; 6] = [".###.", "#...#", "#...#", "#####", "#...#", "#...#"];
-const AUTOFIRE_CELL: f32 = 2.0;
+/// AIM_TICK_OUT, and in its empty top left corner a TALL_A, its bottom right AIM_A_GAP up and
+/// left of the ring's centre.
 const AIM_R: f32 = 10.0;
 const AIM_TICK_IN: f32 = 4.0;
 const AIM_TICK_OUT: f32 = 12.0;
@@ -103,6 +104,102 @@ const REPEAT_SHAFT: f32 = 4.0;
 const REPEAT_HEAD_W: f32 = 7.0;
 const REPEAT_HEAD_H: f32 = 12.0;
 const REPEAT_GAP: f32 = 2.0;
+/// The pad glyph: a pill's outline PAD_W by PAD_H, a D-pad's cross PAD_CROSS long in its left
+/// end and two PAD_BUTTON squares in its right one, the second up and right of the first.
+const PAD_W: f32 = 32.0;
+const PAD_H: f32 = 16.0;
+const PAD_LINE: f32 = 2.0;
+const PAD_CROSS: f32 = 6.0;
+const PAD_CROSS_LINE: f32 = 2.0;
+/// The cross's and the buttons' middles off the pad's middle.
+const PAD_CROSS_AT: f32 = 8.0;
+const PAD_BUTTONS_AT: f32 = 7.0;
+const PAD_BUTTON: f32 = 2.0;
+const PAD_BUTTON_STEP: f32 = 3.0;
+/// The touch glyph: a hand pointing up with a ring round its fingertip, in TOUCH_CELL squares,
+/// raised TOUCH_RAISE above centred: the ring is lighter than the hand.
+const TOUCH_HAND: [&str; 29] = [
+    ".......#####..........",
+    ".....#########........",
+    "....###.....###.......",
+    "...###.......###......",
+    "...##.........##......",
+    "..##...........##.....",
+    "..##...........##.....",
+    "..##....###....##.....",
+    "..##...#####...##.....",
+    "..##...#####...##.....",
+    "...##..#####..##......",
+    "...###.#####.###......",
+    "....##.#####.##.......",
+    ".....#.#####.#........",
+    ".......#####..........",
+    ".......#####.##.......",
+    ".......####.###.##....",
+    "...#...####.##.####...",
+    "######.####.##.######.",
+    "###########.##.###.###",
+    "###########.##.###.###",
+    ".#############.###.###",
+    "..################.###",
+    "...###############.###",
+    "....##################",
+    ".....#################",
+    "......################",
+    ".......##############.",
+    "........###########...",
+];
+const TOUCH_CELL: f32 = 1.0;
+const TOUCH_RAISE: f32 = 2.5;
+/// The room crew glyph: a room ROOM_W by ROOM_H holding a crew member's head and shoulders, and
+/// ROOM_A_GAP right of it a TALL_A.
+const ROOM_W: f32 = 20.0;
+const ROOM_H: f32 = 24.0;
+const ROOM_LINE: f32 = 2.0;
+const ROOM_A_GAP: f32 = 3.0;
+const ROOM_HEAD_R: f32 = 3.0;
+/// The head's middle below the room's top, and the gap from the head down to the shoulders.
+const ROOM_HEAD_AT: f32 = 8.0;
+const ROOM_BODY_GAP: f32 = 2.0;
+const ROOM_BODY_W: f32 = 10.0;
+const ROOM_BODY_H: f32 = 5.0;
+/// The hold time glyph: a button's disc in a timer's ring that runs clockwise from the top to
+/// the left, and a tick over its start.
+const HOLD_RING_R: f32 = 13.0;
+const HOLD_RING_LINE: f32 = 3.0;
+const HOLD_RING_SPAN: (f32, f32) = (-90.0, 180.0);
+const HOLD_BUTTON_R: f32 = 6.0;
+const HOLD_TICK_W: f32 = 2.0;
+const HOLD_TICK_H: f32 = 4.0;
+/// The stick glyph, from the side: a base, a shaft from the base's middle to a knob tilted up
+/// and right, and an arc of its swing up and left.
+const STICK_BASE_W: f32 = 26.0;
+const STICK_BASE_H: f32 = 5.0;
+/// The base's top and the knob's middle off the glyph's middle.
+const STICK_BASE_AT: f32 = 7.0;
+const STICK_KNOB_AT: (f32, f32) = (8.0, -8.0);
+const STICK_KNOB_R: f32 = 5.0;
+const STICK_SHAFT_W: f32 = 3.0;
+const STICK_SWING_R: f32 = 14.0;
+const STICK_SWING_LINE: f32 = 2.0;
+const STICK_SWING_SPAN: (f32, f32) = (200.0, 260.0);
+/// The swap glyph: two face buttons, rings of radius BUTTON_R round letters of LETTER_CELL
+/// squares, the second BUTTON_AT up and right of the glyph's middle and the first as far down
+/// and left; quarter rings of radius SWAP_ARC_R round the other two corners carry the arrows.
+const BUTTON_R: f32 = 10.0;
+const BUTTON_LINE: f32 = 2.0;
+const BUTTON_AT: (f32, f32) = (8.0, 7.0);
+const SWAP_ARC_R: f32 = 8.0;
+const SWAP_ARC_LINE: f32 = 2.0;
+const SWAP_ARROW_W: f32 = 4.0;
+const SWAP_ARROW_H: f32 = 6.0;
+pub(super) const LETTER_A: Letter = [".###.", "#...#", "#####", "#...#", "#...#"];
+pub(super) const LETTER_B: Letter = ["####.", "#...#", "####.", "#...#", "####."];
+pub(super) const LETTER_X: Letter = ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"];
+pub(super) const LETTER_Y: Letter = ["#...#", ".#.#.", "..#..", "..#..", "..#.."];
+
+/// A face button's letter in rows of LETTER_CELL squares.
+pub(super) type Letter = [&'static str; 5];
 
 /// Text as a glyph: the text, and how far the font's ink sits off the middle of its advance
 /// and line, in font pixels, as measured.
@@ -147,6 +244,36 @@ pub(super) enum Glyph {
     Autofire,
     /// Two arrows chasing each other round a loop.
     Repeat,
+    /// A pad's outline with a D-pad and two buttons.
+    Pad,
+    /// A hand pointing up with a ring round its fingertip.
+    Touch,
+    /// A crew member in a room beside an A.
+    RoomCrew,
+    /// A button in a timer's ring.
+    HoldTime,
+    /// A stick tilted on its base.
+    Stick,
+    /// Two face buttons, the second up and right of the first, and arrows trading them.
+    Buttons(Letter, Letter),
+}
+
+/// Draws `rows` of `#` cells `cell` square from (`left`, `top`), a row's run as one rect.
+fn draw_cells(rows: &[&str], left: f32, top: f32, cell: f32) {
+    for (row, line) in rows.iter().enumerate() {
+        let mut col = 0;
+        for run in line.as_bytes().chunk_by(|a, b| a == b) {
+            if run[0] == b'#' {
+                draw_rect(left + col as f32 * cell, top + row as f32 * cell, run.len() as f32 * cell, cell, INK_COLOR);
+            }
+            col += run.len();
+        }
+    }
+}
+
+/// The width and height of `rows` in cells `cell` square.
+fn cells_size(rows: &[&str], cell: f32) -> (f32, f32) {
+    (rows[0].len() as f32 * cell, rows.len() as f32 * cell)
 }
 
 /// Draws `glyph` in slate centred at cx,cy, text fitted to `size` wide.
@@ -268,8 +395,7 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(cx - DISPLAY_BASE_W / 2.0, top + DISPLAY_SCREEN_H + t, DISPLAY_BASE_W, t, INK_COLOR);
         }
         Glyph::Autofire => {
-            let a_w = AUTOFIRE_A[0].len() as f32 * AUTOFIRE_CELL;
-            let a_h = AUTOFIRE_A.len() as f32 * AUTOFIRE_CELL;
+            let (a_w, a_h) = cells_size(&TALL_A, LETTER_CELL);
             // Centred over the A and the crosshair, on whole pixels: the ring stays symmetric.
             let ax = (cx + (a_w + AIM_A_GAP - AIM_TICK_OUT) / 2.0).round();
             let ay = (cy + (a_h + AIM_A_GAP - AIM_TICK_OUT) / 2.0).round();
@@ -279,13 +405,7 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(ax - t / 2.0, ay + AIM_TICK_IN, t, len, INK_COLOR);
             draw_rect(ax - AIM_TICK_OUT, ay - t / 2.0, len, t, INK_COLOR);
             draw_rect(ax + AIM_TICK_IN, ay - t / 2.0, len, t, INK_COLOR);
-            let (left, top) = (ax - AIM_A_GAP - a_w, ay - AIM_A_GAP - a_h);
-            for (row, line) in AUTOFIRE_A.iter().enumerate() {
-                for (col, _) in line.bytes().enumerate().filter(|&(_, b)| b == b'#') {
-                    let (x, y) = (left + col as f32 * AUTOFIRE_CELL, top + row as f32 * AUTOFIRE_CELL);
-                    draw_rect(x, y, AUTOFIRE_CELL, AUTOFIRE_CELL, INK_COLOR);
-                }
-            }
+            draw_cells(&TALL_A, ax - AIM_A_GAP - a_w, ay - AIM_A_GAP - a_h, LETTER_CELL);
         }
         Glyph::Repeat => {
             // On whole pixels: each row stays one line.
@@ -300,6 +420,70 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             let side_h = REPEAT_H - head_h / 2.0 - REPEAT_GAP + t / 2.0;
             draw_rect(left, upper - t / 2.0, t, side_h, INK_COLOR);
             draw_rect(right - t, lower + t / 2.0 - side_h, t, side_h, INK_COLOR);
+        }
+        Glyph::Pad => {
+            // On whole pixels: the pill and the cross stay symmetric.
+            let (cx, cy) = (cx.round(), cy.round());
+            let r = PAD_H / 2.0;
+            draw_pixel_stadium(cx, cy, PAD_W / 2.0 - r, r, PAD_LINE, INK_COLOR);
+            let (dx, t) = (cx - PAD_CROSS_AT, PAD_CROSS_LINE);
+            draw_rect(dx - PAD_CROSS / 2.0, cy - t / 2.0, PAD_CROSS, t, INK_COLOR);
+            draw_rect(dx - t / 2.0, cy - PAD_CROSS / 2.0, t, PAD_CROSS, INK_COLOR);
+            let (bx, step) = (cx + PAD_BUTTONS_AT, PAD_BUTTON_STEP / 2.0);
+            draw_rect(bx - step - PAD_BUTTON / 2.0, cy + step - PAD_BUTTON / 2.0, PAD_BUTTON, PAD_BUTTON, INK_COLOR);
+            draw_rect(bx + step - PAD_BUTTON / 2.0, cy - step - PAD_BUTTON / 2.0, PAD_BUTTON, PAD_BUTTON, INK_COLOR);
+        }
+        Glyph::Touch => {
+            let (w, h) = cells_size(&TOUCH_HAND, TOUCH_CELL);
+            let (left, top) = ((cx - w / 2.0).round(), (cy - h / 2.0 - TOUCH_RAISE).round());
+            draw_cells(&TOUCH_HAND, left, top, TOUCH_CELL);
+        }
+        Glyph::RoomCrew => {
+            let (a_w, a_h) = cells_size(&TALL_A, LETTER_CELL);
+            let (left, top) = ((cx - (ROOM_W + ROOM_A_GAP + a_w) / 2.0).round(), (cy - ROOM_H / 2.0).round());
+            draw_outline(left, top, ROOM_W, ROOM_H, ROOM_LINE, INK_COLOR);
+            let (mid, head) = (left + ROOM_W / 2.0, top + ROOM_HEAD_AT);
+            draw_pixel_ring(mid, head, ROOM_HEAD_R, ROOM_HEAD_R, INK_COLOR);
+            let body = head + ROOM_HEAD_R + ROOM_BODY_GAP;
+            draw_rect(mid - ROOM_BODY_W / 2.0, body, ROOM_BODY_W, ROOM_BODY_H, INK_COLOR);
+            draw_cells(&TALL_A, left + ROOM_W + ROOM_A_GAP, (cy - a_h / 2.0).round(), LETTER_CELL);
+        }
+        Glyph::HoldTime => {
+            let (cx, cy) = (cx.round(), cy.round());
+            draw_pixel_arc(cx, cy, HOLD_RING_R, HOLD_RING_LINE, HOLD_RING_SPAN, INK_COLOR);
+            draw_pixel_ring(cx, cy, HOLD_BUTTON_R, HOLD_BUTTON_R, INK_COLOR);
+            let tick_top = cy - HOLD_RING_R - OVERLAY_LINE;
+            draw_rect(cx - HOLD_TICK_W / 2.0, tick_top, HOLD_TICK_W, HOLD_TICK_H, INK_COLOR);
+        }
+        Glyph::Stick => {
+            let (cx, cy) = (cx.round(), cy.round());
+            let base = cy + STICK_BASE_AT;
+            draw_rect(cx - STICK_BASE_W / 2.0, base, STICK_BASE_W, STICK_BASE_H, INK_COLOR);
+            let (kx, ky) = (cx + STICK_KNOB_AT.0, cy + STICK_KNOB_AT.1);
+            // The shaft row by row, each row's middle on the line from the base to the knob.
+            let mut y = ky;
+            while y < base {
+                let x = cx + (kx - cx) * (base - y) / (base - ky);
+                draw_rect((x - STICK_SHAFT_W / 2.0).round(), y, STICK_SHAFT_W, OVERLAY_LINE, INK_COLOR);
+                y += OVERLAY_LINE;
+            }
+            draw_pixel_ring(kx, ky, STICK_KNOB_R, STICK_KNOB_R, INK_COLOR);
+            draw_pixel_arc(cx, cy, STICK_SWING_R, STICK_SWING_LINE, STICK_SWING_SPAN, INK_COLOR);
+        }
+        Glyph::Buttons(first, second) => {
+            let (cx, cy) = (cx.round(), cy.round());
+            let (bx, by) = BUTTON_AT;
+            let (l_w, l_h) = cells_size(&first, LETTER_CELL);
+            for (letter, x, y) in [(first, cx - bx, cy + by), (second, cx + bx, cy - by)] {
+                draw_pixel_ring(x, y, BUTTON_R, BUTTON_LINE, INK_COLOR);
+                draw_cells(&letter, x - l_w / 2.0, y - l_h / 2.0, LETTER_CELL);
+            }
+            // Over the top left corner toward the second, under the bottom right toward the first.
+            let (r, t) = (SWAP_ARC_R, SWAP_ARC_LINE);
+            draw_pixel_arc(cx - bx, cy - by, r, t, (180.0, 270.0), INK_COLOR);
+            draw_side_triangle(cx - bx, cy - by - r + t / 2.0, SWAP_ARROW_W, SWAP_ARROW_H, INK_COLOR);
+            draw_pixel_arc(cx + bx, cy + by, r, t, (0.0, 90.0), INK_COLOR);
+            draw_side_triangle(cx + bx, cy + by + r - t / 2.0, -SWAP_ARROW_W, SWAP_ARROW_H, INK_COLOR);
         }
     }
 }

@@ -1,100 +1,94 @@
 # Configuration
 
-`ftlhelm.ini` holds the settings, the button states and the wheels. `#` starts a comment
-outside quotes. The file is re-read within a second of saving it, while the game runs.
-Deleting it resets the layout and the settings: FTLHELM writes the default file in its place.
-`layout_version` in `[config]` is the file's format. A file with an older or no
-`layout_version` is replaced by the default holding its `[config]` values; the old file stays
-beside it as `ftlhelm.old.ini`, and a notice says so for 10 seconds, or until a button is
-pressed or the screen is touched.
+`ftlhelm.ini` holds the settings, the bindings and the wheels. Changes apply on save, while
+the game runs. `#` starts a comment outside quotes. Deleting the file resets it to the
+default.
+
+An outdated file is replaced by the default with its `[config]` values kept; the old one stays
+beside it as `ftlhelm.old.ini`.
 
 | Section | Contents |
 | --- | --- |
 | `[config]` | [settings](#settings) |
 | `[controls]` | the base [state](#states) |
-| `[controls:NAME]` | a state pushed while a `hold_state NAME` button is held |
+| `[controls:NAME]` | a state active while a `hold_state NAME` button is held |
 | `[wheel:NAME]` | a [wheel](#wheels) opened by `wheel NAME` |
 
 ## Settings
 
 One `key = value` per line. Switches take `0` (off) or `1` (on). A missing key takes its
-default; a value outside its range is clamped. When the settings wheel closes, it writes
-the settings changed in it here; a `set` button writes its setting at once; when the
-help first closes, `help_at_start = 0`.
+default; a value out of range is clamped. Changes made in the wheels are saved here.
 
 ### Cursor
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `cursor_speed` | 800 | 1 and up | cursor speed at full stick deflection, in the game's 1280x720 pixels per second |
-| `cursor_deadzone` | 0.25 | 0 to 0.9 | stick travel ignored around the centre |
-| `cursor_curve` | 2 | 0.5 to 4 | response curve exponent: 1 is linear, higher is finer near the centre |
+| `cursor_speed` | 800 | 1 and up | mouse mode cursor speed at full stick, in game pixels per second |
+| `cursor_deadzone` | 0.25 | 0 to 0.9 | stick dead zone |
+| `cursor_curve` | 2 | 0.5 to 4 | stick response: 1 linear, higher finer near the centre |
 
 ### Zones
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `snap_dpad` | 1 | switch | the D-pad jumps between zones unless it moves the cursor or a `hold_state` state is held |
-| `flick_threshold` | 0.8 | 0.5 to 1 | stick deflection that fires a flick; the stick re-arms below 0.4 |
-| `focus_repeat` | 2 | 0 to 3 | how fast a held D-pad direction or stick repeats its step: 0 off, 1 slow, 2 medium, 3 fast |
-| `focus_cone_narrow` | 30 | 5 to 89 | half-angle in degrees of the cone searched first for the next zone |
-| `focus_cone_wide` | 60 | 5 to 89 | half-angle in degrees of the cone searched next |
-| `focus_side_weight` | 2 | 0 to 10 | how many times sideways distance counts over forward |
-| `focus_first` | 1 | switch | the cursor on the first item when a menu, a dialog or the map opens; a focus whose zone goes away moves to the nearest zone |
-| `crew_follow` | 0 | switch | the cursor to the room of a newly selected crew member |
-| `room_crew_pick` | 1 | switch | `context_click` on a room with crew selects its members one at a time, then all of them, unless crew is selected in another room; 0: it clicks |
+| `snap_dpad` | 1 | switch | the D-pad jumps between zones |
+| `flick_threshold` | 0.8 | 0.5 to 1 | stick push that steps to the next zone |
+| `focus_repeat` | 2 | 0 to 3 | repeat speed of a held direction: 0 off, 1 slow, 2 medium, 3 fast |
+| `focus_cone_narrow` | 30 | 5 to 89 | degrees either side searched first for the next zone |
+| `focus_cone_wide` | 60 | 5 to 89 | degrees either side searched next |
+| `focus_side_weight` | 2 | 0 to 10 | weight of sideways distance against forward |
+| `focus_first` | 1 | switch | the cursor on the first item when a menu, a dialog or the map opens |
+| `crew_follow` | 0 | switch | the cursor follows a newly selected crew member |
+| `room_crew_pick` | 1 | switch | A on a room with crew selects its crew; 0: it clicks |
 
 ### Game
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `wheels_ship_only` | 1 | switch | wheels open only on the ship view; the settings wheel opens anywhere |
-| `wheel_place` | center | `center`, `cursor` | where a wheel opens: the middle of the screen, or around the cursor |
-| `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | under a wheel's plates: an octagon or a circle in the game's window frame, mocha or dark; the whole frame dimmed; a dark disc |
-| `autopause` | 1 | 0 to 3 | when the game pauses itself, flags added up: 1 while a wheel is open, 2 while a weapon or ability waits for a target; 0: never |
-| `speed_level` | 6 | 1 to 6 | game speed while fast forward is held; each game step is scaled by (16 + 7 * level) / 16 |
+| `wheel_place` | center | `center`, `cursor` | where a wheel opens |
+| `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | the backdrop under a wheel |
+| `autopause` | 1 | 0 to 3 | the game pauses: 1 while a wheel is open, 2 while aiming, 3 both; 0: never |
+| `speed_level` | 6 | 1 to 6 | fast forward speed |
 
 ### Pad
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `tap_hold` | 0.2 | 0.05 to 2 | seconds a press lasts to count as a hold on a button with a tap action |
-| `rumble` | 1 | 0 to 2.5 | strength of a pulse when the cursor jumps to a zone or the wheel selection changes, in times the default; 2.5: the pad's strongest; 0: none |
-| `rumble_time` | 0.05 | 0.01 to 0.5 | pulse length in seconds |
-| `swap_ab`, `swap_xy` | 0 | switch | swap the raw A/B, X/Y pairs to match the labels |
-
-Face buttons go by their labels. With `SDL_GAMECONTROLLERCONFIG` set, its mapping names
-them; without it, `swap_ab` and `swap_xy` apply.
+| `tap_hold` | 0.2 | 0.05 to 2 | seconds a press lasts to count as a hold |
+| `rumble` | 1 | 0 to 2.5 | rumble strength; 0: none |
+| `rumble_time` | 0.05 | 0.01 to 0.5 | rumble pulse in seconds |
+| `swap_ab`, `swap_xy` | 0 | switch | swap A/B, X/Y; ignored with `SDL_GAMECONTROLLERCONFIG` set |
 
 ### Screen
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `overlay` | 1 | switch | the badge, the focus brackets and the crew markers, each as its own key allows; 0: none of them |
-| `badge` | 1 | switch | the badge on the game's PAUSED row: the selected crew and the active modes |
-| `focus_brackets` | 1 | switch | corner brackets in place of the pointer arrow on the zone the cursor jumped to |
-| `crew_marker` | 1 | switch | a green marker over each selected crew member on the ship view |
-| `pointer_scale_max` | 2 | 1 to 4 | the most times its size the pointer is drawn on a screen that shows the frame smaller than 1280x720; 1: the game's size |
-| `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom) in times the whole frame; 0: auto |
-| `ipad_beacons` | 1 | switch | the map's beacon icons in the larger art of FTL's iPad edition |
-| `ipad_station_buttons` | 1 | switch | the crew's save and return stations buttons in the larger art of FTL's iPad edition |
-| `hud_shift` | 1 | switch | on a screen narrower than 1280x720, the HUD's edge panels move toward the middle as far as the player ship leaves room, and the ship view keeps to the HUD; off during the tutorial; 0: the game's layout |
-| `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size) in times the game's own; 0: auto |
-| `help_at_start` | 1 | switch | the help the first time the ship view shows with a pad connected |
-| `frame_filter` | 1 | switch | a frame the screen shows smaller than 1280x720 is averaged over the area each screen pixel covers; 0: the game's own filter |
-| `sharpen` | 0.5 | 0 to 1 | sharpening of that averaged frame; 0: none |
+| `overlay` | 1 | switch | the badge, the focus brackets and the crew markers; 0: none of them |
+| `badge` | 1 | switch | the badge with the selected crew and the active modes |
+| `focus_brackets` | 1 | switch | brackets on the zone under the cursor |
+| `crew_marker` | 1 | switch | markers over the selected crew |
+| `pointer_scale_max` | 2 | 1 to 4 | the largest pointer scale on small screens |
+| `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom); 0: auto |
+| `ipad_beacons` | 1 | switch | map beacons in the iPad art |
+| `ipad_station_buttons` | 1 | switch | crew station buttons in the iPad art |
+| `hud_shift` | 1 | switch | HUD panels moved toward the middle on narrow screens |
+| `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size); 0: auto |
+| `help_at_start` | 1 | switch | the help on the first run |
+| `frame_filter` | 1 | switch | smoother picture on small screens |
+| `sharpen` | 0.5 | 0 to 1 | sharpening of the filtered picture |
 
 ### Touch
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `touch` | 1 | switch | a touchscreen acts as the mouse, see [Touch](CONTROLS.md#touch); 0: touches do nothing |
-| `touch_long_press` | 0.5 | 0.05 to 2 | seconds a finger stays down for a right click on release |
-| `touch_slop` | 12 | 0 to 100 | screen pixels a finger may move and still tap; past them, it drags |
-| `touch_snap` | 32 | 0 to 100 | screen pixels a touch beside every target reaches for the nearest one; 0: none |
-| `touch_step` | 16 | 0 to 100 | screen pixels a finger moving up or down on a system icon or a weapon box travels per bar of power; 0: such a move drags |
-| `pause_button` | 1 | switch | the pause button on the ship view after a touch, see [Touch](CONTROLS.md#touch) |
-| `touch_marks` | 1 | switch | the ring around a finger held toward a right click and the fading ring where a touch clicked |
+| `touch` | 1 | switch | the touchscreen, see [Touch](CONTROLS.md#touch) |
+| `touch_long_press` | 0.5 | 0.05 to 2 | seconds held for a right click |
+| `touch_slop` | 12 | 0 to 100 | screen pixels a finger may move and still tap |
+| `touch_snap` | 32 | 0 to 100 | screen pixels a touch reaches for the nearest target; 0: none |
+| `touch_step` | 16 | 0 to 100 | screen pixels of finger travel per bar of power; 0: none |
+| `pause_button` | 1 | switch | the pause button after a touch |
+| `touch_marks` | 1 | switch | rings where a finger holds and taps |
 
 ## Bindings
 
@@ -113,12 +107,9 @@ them; without it, `swap_ab` and `swap_xy` apply.
 | D-pad | `up`, `down`, `left`, `right` |
 | stick directions | `left_analog_up`, `left_analog_down`, `left_analog_left`, `left_analog_right`, the same for `right_analog` |
 
-`left_analog` and `right_analog` take `flick` or `mouse_movement`; either way the stick
-jumps between zones, and moves the cursor in mouse mode. `dpad = mouse_movement`
-makes the D-pad move the cursor in both modes. `dpad_mode` switches the mode.
-`overlay = parent` lets a `[controls:NAME]` state fall through to the state below for
-inputs it does not bind. A press made while a `hold_state` button is down resolves in its
-state.
+`left_analog` and `right_analog` take `flick` or `mouse_movement`; `dpad = mouse_movement`
+makes the D-pad move the cursor. `overlay = parent` makes a `[controls:NAME]` state use the
+state below for inputs it does not bind.
 
 ### Actions
 
@@ -127,31 +118,31 @@ state.
 | a key name | press the key: `a`..`z`, `0`..`9`, `f1`..`f15`, `space`, `enter`, `esc`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `insert`, `home`, `end`, `pageup`, `pagedown`, `shift`, `ctrl`, `alt`, `/`, `-`, `=`, `,`, `.`, `;`, `'`, `[`, `]`, `\`, `` ` ``, `+` |
 | key name `add_shift` | the key with Shift |
 | `mouse_left`, `mouse_right` | click at the cursor |
-| `hold_state NAME` | push `[controls:NAME]` while held |
-| `wheel NAME` | open `[wheel:NAME]`; on a plate, in place of the open wheel, `cancel` back to it |
-| `set KEY` | the next value of setting `KEY`: a switch flips; `rumble`, `sharpen` and `speed_level` go a step up, from the highest to the lowest |
+| `hold_state NAME` | `[controls:NAME]` while held |
+| `wheel NAME` | open `[wheel:NAME]` |
+| `set KEY` | the next value of setting `KEY` |
 | a built-in | see below |
-| `HOLD \| TAP` | the tap action on a press shorter than `tap_hold`, the hold action past it |
+| `HOLD \| TAP` | the tap action on a short press, the hold action on a hold |
 
 | Built-in | Effect |
 | --- | --- |
-| `context_click` | click; with crew selected, a room orders them there; in a wheel, act |
-| `cancel` | close the wheel, or back to the wheel it was opened from; cancel the aim, clear the crew, close the menu or a screen |
-| `arm_next` | arm the first powered weapon without a target; with a weapon armed, the next powered one |
-| `arm_all` | arm every powered weapon, clearing their targets: the next target goes to all of them, then each beam waits for its own line |
+| `context_click` | click; with crew selected, send them to the room; in a wheel, act |
+| `cancel` | close the wheel or go back; cancel the aim, clear the crew, close a menu or a screen |
+| `arm_next` | arm the next powered weapon |
+| `arm_all` | arm every powered weapon for a volley |
 | `aim_crew` | select the next crew member |
-| `prev_tab`, `next_tab` | ship and store screen tabs; the store's buy pages count as tabs |
-| `repeat_ability` | the last ability used from a wheel; its plate names it and is grey until one is used |
+| `prev_tab`, `next_tab` | previous, next tab of the ship and store screens |
+| `repeat_ability` | the last ability used from a wheel |
 | `precision` | doors become the zones while held |
-| `room_doors` | toggle the doors of the room under the cursor |
-| `center_swap` | the cursor to the centre of the farther ship |
-| `pause` | pause; held, the whole frame of a zoomed view until release |
-| `fast_forward` | run fast while held |
+| `room_doors` | open or close the doors of the room under the cursor |
+| `center_swap` | the cursor to the other ship |
+| `pause` | pause; held while zoomed, zoom out until release |
+| `fast_forward` | fast forward while held |
 | `dpad_mode` | switch between zones and mouse mode |
-| `help` | show the help; L1 and R1 or D-pad left and right turn its pages, any other button closes it |
-| `zoom` | the next zoom level, back to auto after the last |
-| `text_size` | the next text size, back to auto after the largest |
-| `autopause` | the next `autopause` value, 0 after 3 |
+| `help` | the help |
+| `zoom` | the next zoom level |
+| `text_size` | the next text size |
+| `autopause` | the next `autopause` value |
 
 ## Wheels
 
@@ -162,40 +153,27 @@ state.
 
 | `kind` | Plates |
 | --- | --- |
-| `action` | from the section; the wheel closes after an action; a plate on a system's power key (`y` for the artillery) shows the system's power, and D-pad up and down, or R2 and L2, add and take it |
-| `power` | from the section, with power pips; D-pad up and down, or R2 and L2, add and take power, and pick a powered weapon and drop it |
-| `crew` | filled from the ship's crew |
-| `systems` | filled from the ship's systems |
-| `settings` | from the section; opens on any screen; D-pad up and down, or R2 and L2, step `zoom`, `text_size`, `autopause` and stepped `set` plates, and turn `set` switches on and off; A keeps the wheel open on the stepped plates and closes it on the others |
+| `action` | from the section; the wheel closes after an action |
+| `power` | from the section, with power pips |
+| `crew` | the ship's crew |
+| `systems` | the ship's systems |
+| `settings` | from the section; opens on any screen |
 
-Plates go by direction: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`,
-`left`, `up_left`. A plate is an action, an optional quoted label (the direction's name
-without one), and an optional icon: a game image path under `img/` in `ftl.dat`, with
-`@X,Y,W,H` for a region of it in pixels. An icon with a region is drawn on a slate square. Without an icon, a `dpad_mode` plate shows the game's pointer, an `arm_all` plate the game's target crosshair, and `zoom`, `text_size`, `help`, `center_swap`, `autopause`, `repeat_ability`, `v` (autofire), `wheel view` and the `set` plates of `overlay`, `focus_brackets`, `crew_marker`, `hud_shift`, `ipad_beacons`, `frame_filter`, `rumble`, `sharpen` and `speed_level` show their own glyphs.
-
-| `set` step | Step |
-| --- | --- |
-| `rumble` | 0.5 |
-| `sharpen` | 0.25 |
-| `speed_level` | 1 |
-
-A `set` plate shows its setting's value: one pip for a switch, a pip per step for a number.
-A `sharpen` plate is greyed out while the screen shows the frame at 1280x720 or larger, or
-`frame_filter = 0`.
+Plate directions: `up`, `up_right`, `right`, `down_right`, `down`, `down_left`, `left`,
+`up_left`. A plate is an action, an optional quoted label and an optional icon: an image path
+under `img/` in `ftl.dat`, with `@X,Y,W,H` for a region of it.
 
 ## Environment variables
 
-`ftlhelm.sh` sets `LD_PRELOAD`, `FTLHELM_LAYOUT` and `FTLHELM_LOG`, keeping the preloads already
-set, such as the Steam overlay. Another launcher sets them itself:
+`ftlhelm.sh` sets them. Another launcher sets them itself:
 
     LD_PRELOAD=/path/ftlhelm.so FTLHELM_LAYOUT=/path/ftlhelm.ini FTLHELM_LOG=/path/ftlhelm.log
 
 | Variable | Value |
 | --- | --- |
 | `LD_PRELOAD` | path to `ftlhelm.so`; under box64, `BOX64_LD_PRELOAD` |
-| `FTLHELM_LAYOUT` | path to `ftlhelm.ini`, written with the default layout when missing; without it, the default layout, and nothing is saved |
-| `FTLHELM_LOG` | path to the log file, written anew each run; the previous run's log is kept with `.old.log` in place of the extension; without it, the log goes to standard error only |
+| `FTLHELM_LAYOUT` | path to `ftlhelm.ini`, created when missing; without it, the default layout, nothing saved |
+| `FTLHELM_LOG` | path to the log file; the previous run's log is kept as `.old.log` |
 | `FTLHELM_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
-| `FTLHELM_CMD` | path to a FIFO for test commands, see [Building](BUILDING.md#test-channel) |
 | `FTLHELM_DEBUG` | set: log every press, wheel pick and D-pad step |
 | `SDL_GAMECONTROLLERCONFIG` | an SDL mapping that names the pad's buttons |

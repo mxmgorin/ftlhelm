@@ -66,7 +66,7 @@
 | Start | pause | zoom out while zoomed |
 | Select | settings wheel | |
 
-<p align="center"><img src="docs/images/wheels.png" alt="The seven wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, and view with the overlay, HUD shift, iPad art and frame filter switches" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings and view</sub></p>
+<p align="center"><img src="docs/images/wheels.png" alt="The eight wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, view with the overlay, HUD shift, iPad art and frame filter switches, and controls with focus repeat, stick sensitivity, hold time, room crew picking, button swaps, touch and rumble" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings, view and controls</sub></p>
 
 ## Install
 
@@ -108,7 +108,7 @@ If FTLHELM does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
 
-- **[Controls](docs/CONTROLS.md)**: zones, doors, mouse mode, wheels, zoom, text size, touch
+- **[Controls](docs/CONTROLS.md)**: zones, doors, weapons, wheels, touch, zoom
 - **[Configuration](docs/CONFIGURATION.md)**: settings, bindings, wheels, environment variables
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: the log and what its lines mean
 - **[Building](docs/BUILDING.md)**: build commands, CI, test channel

@@ -440,17 +440,57 @@ fn bracket_bars(x: f32, y: f32, w: f32, h: f32, arm: f32, thick: f32) -> [(f32, 
 /// A ring `thick` wide inside radius `r` around (`cx`, `cy`), out of one-line rows like a disc;
 /// a centre on whole pixels keeps it symmetric.
 pub fn draw_pixel_ring(cx: f32, cy: f32, r: f32, thick: f32, color: GlColor) {
-    let hole = r - thick;
-    let half_width = |radius: f32, dy: f32| (radius * radius - dy * dy).max(0.0).sqrt().round();
+    draw_pixel_stadium(cx, cy, 0.0, r, thick, color);
+}
+
+/// A ring `thick` wide inside radius `r` drawn apart into two halves `straight` either side of
+/// (`cx`, `cy`), joined by straight bars: a pill's outline, out of one-line rows.
+pub fn draw_pixel_stadium(cx: f32, cy: f32, straight: f32, r: f32, thick: f32, color: GlColor) {
     let mut top = -r;
     while top < r {
         let dy = top + OVERLAY_LINE / 2.0;
-        let outer = half_width(r, dy);
-        let inner = if dy.abs() < hole { half_width(hole, dy) } else { 0.0 };
+        let outer = straight + ring_half_width(r, dy);
+        let inner = if dy.abs() < r - thick { straight + ring_half_width(r - thick, dy) } else { 0.0 };
         draw_rect(cx - outer, cy + top, outer - inner, OVERLAY_LINE, color);
         draw_rect(cx + inner, cy + top, outer - inner, OVERLAY_LINE, color);
         top += OVERLAY_LINE;
     }
+}
+
+/// The part of a pixel ring from `from` to `to` degrees, clockwise from the right as the
+/// screen turns: its pixels whose centres lie in that span, a row's run as one rect.
+pub fn draw_pixel_arc(cx: f32, cy: f32, r: f32, thick: f32, (from, to): (f32, f32), color: GlColor) {
+    let in_span = |x: f32, dy: f32| {
+        // In f64: atan2f carries a glibc symbol version too new for older systems.
+        let deg = ((dy as f64).atan2(x as f64).to_degrees() as f32 - from).rem_euclid(TURN_DEG);
+        deg <= to - from
+    };
+    let mut top = -r;
+    while top < r {
+        let dy = top + OVERLAY_LINE / 2.0;
+        let outer = ring_half_width(r, dy);
+        let inner = if dy.abs() < r - thick { ring_half_width(r - thick, dy) } else { 0.0 };
+        let mut run: Option<f32> = None;
+        let mut x = -outer;
+        while x <= outer {
+            let lit = x < outer && x.abs().max((x + OVERLAY_LINE).abs()) > inner && in_span(x + OVERLAY_LINE / 2.0, dy);
+            match (lit, run) {
+                (true, None) => run = Some(x),
+                (false, Some(start)) => {
+                    draw_rect(cx + start, cy + top, x - start, OVERLAY_LINE, color);
+                    run = None;
+                }
+                _ => {}
+            }
+            x += OVERLAY_LINE;
+        }
+        top += OVERLAY_LINE;
+    }
+}
+
+/// The half width, on whole pixels, of the row `dy` off the middle of a disc of radius `r`.
+fn ring_half_width(r: f32, dy: f32) -> f32 {
+    (r * r - dy * dy).max(0.0).sqrt().round()
 }
 
 /// A triangle pointing sideways, `h` tall, its base at `x` centred on `cy` and its tip `w` to the

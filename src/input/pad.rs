@@ -40,6 +40,7 @@ const FOCUS_REPEAT_DELAY_S: f64 = 0.35;
 pub const FOCUS_REPEAT_S: [f64; 3] = [0.3, 0.2, 0.12];
 /// The triggers in an open wheel, with the step each takes as D-pad down and up do.
 const WHEEL_TRIGGERS: [(Input, i32); 2] = [(Input::L2, -1), (Input::R2, 1)];
+const FACE_BUTTONS: [Input; 4] = [Input::FaceDown, Input::FaceRight, Input::FaceLeft, Input::FaceUp];
 const LEFT_STICK: i32 = 0;
 const RIGHT_STICK: i32 = 1;
 const TRIGGER_STICK: i32 = 2;
@@ -69,6 +70,8 @@ pub struct PadState {
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
     held: [bool; INPUT_COUNT],
+    /// The A/B and X/Y swaps reads apply: the settings', taken up while no face button is down.
+    swaps: (bool, bool),
     dpad_spent: [bool; 4],
     trigger_spent: [bool; WHEEL_TRIGGERS.len()],
     /// The D-pad direction whose focus step repeats while held, and when it steps next.
@@ -106,6 +109,7 @@ impl Default for PadState {
             resolved: None,
             sil_mapping: None,
             held: [false; INPUT_COUNT],
+            swaps: (false, false),
             dpad_spent: [false; 4],
             trigger_spent: [false; WHEEL_TRIGGERS.len()],
             dpad_repeat: None,
@@ -361,11 +365,22 @@ impl Layer {
         }
     }
 
-    /// Reads pad `dev`, its mappings resolved on first sight.
+    /// Reads pad `dev`, its mappings resolved on first sight; a changed swap waits for the
+    /// face buttons to be up, so none turns into another while held.
     fn read_active(&mut self, dev: i32) -> PadFrame {
         self.pad.resolve_sdl_map(dev);
         self.pad.resolve_sil_mapping(dev);
-        self.read_pad(dev)
+        let p = self.read_pad(dev);
+        if !FACE_BUTTONS.iter().any(|&b| p.down[b as usize]) {
+            self.pad.swaps = (self.cfg.swap_ab, self.cfg.swap_xy);
+        }
+        p
+    }
+
+    /// Whether the A/B and X/Y swaps reach the active pad: not while an SDL mapping names its
+    /// buttons.
+    pub fn face_swaps_apply(&self) -> bool {
+        !self.pad.resolved.as_ref().is_some_and(|(k, _)| Some(k.0) == self.pad.index)
     }
 
     fn read_pad(&self, dev: i32) -> PadFrame {
@@ -383,10 +398,10 @@ impl Layer {
             p.down[b] = pressed(raw_button(b));
         }
         if sdl.is_none() {
-            if self.cfg.swap_ab {
+            if self.pad.swaps.0 {
                 p.down.swap(Input::FaceDown as usize, Input::FaceRight as usize);
             }
-            if self.cfg.swap_xy {
+            if self.pad.swaps.1 {
                 p.down.swap(Input::FaceLeft as usize, Input::FaceUp as usize);
             }
         }
@@ -762,8 +777,26 @@ mod tests {
             let expected = [Input::Start, Input::FaceDown, Input::L2, Input::DpadRight, Input::LsLeft, Input::RsDown];
             assert_eq!(held(&p), expected);
             assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
-            l.cfg.swap_ab = true;
+            l.pad.swaps.0 = true;
             assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
+        });
+    }
+
+    #[test]
+    fn a_changed_swap_waits_for_the_face_buttons_to_be_up() {
+        with_game(|_| {
+            let a = raw(Input::FaceDown);
+            let mapping: Vec<i32> = (0..SIL_BUTTONS as i32).map(|b| b + RAW_OFFSET).collect();
+            let pad = |held: Vec<i32>| FakePad { index: Some(0), mapping: mapping.clone(), held, ..FakePad::default() };
+            let mut l = Layer::default();
+            set_pad(pad(vec![a]));
+            l.poll_pad(0.0);
+            l.cfg.swap_ab = true;
+            assert_eq!(held(&l.poll_pad(0.0)), [Input::FaceDown], "A held through the change stays A");
+            set_pad(pad(vec![]));
+            l.poll_pad(0.0);
+            set_pad(pad(vec![a]));
+            assert_eq!(held(&l.poll_pad(0.0)), [Input::FaceRight], "the next press is swapped");
         });
     }
 

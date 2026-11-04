@@ -16,7 +16,7 @@ use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{Action, Builtin, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
     option_name, Tuning, AUTOPAUSE_AIM, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
-    FRAME_FILTER_KEY, HUD_SHIFT_KEY, SHARPEN_KEY,
+    FRAME_FILTER_KEY, HUD_SHIFT_KEY, SHARPEN_KEY, SWAP_AB_KEY, SWAP_XY_KEY, TOUCH_KEY,
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
@@ -26,6 +26,7 @@ use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
 use crate::input::bindings::Source;
+use crate::input::touch;
 
 /// CrewAnimation::RenderIcon draws the face small, centred on the origin.
 const CREW_ICON_SCALE: f32 = 2.0;
@@ -606,6 +607,8 @@ impl Layer {
         let shrunk = self.frame_per_window() > 1.0;
         let narrow = zoom::narrower_than_frame();
         let autopause = self.cfg.autopause;
+        let swaps = self.face_swaps_apply();
+        let touchscreen = touch::touchscreen_present();
         for pl in &mut self.wheel.plates {
             if let Some(Action::Set(i)) = pl.action {
                 show_tuning(pl, self.cfg.tuning(i));
@@ -614,6 +617,8 @@ impl Layer {
                     FRAME_FILTER_KEY => shrunk,
                     FOCUS_BRACKETS_KEY | CREW_MARKER_KEY => self.cfg.overlay,
                     HUD_SHIFT_KEY => narrow,
+                    SWAP_AB_KEY | SWAP_XY_KEY => swaps,
+                    TOUCH_KEY => touchscreen,
                     _ => true,
                 };
                 continue;
@@ -896,9 +901,10 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::{Input, Layout, LABEL_CHARS};
+    use crate::config::settings::FLICK_ON;
     use crate::game::fake::{calls, with_game, Call, Game, WEAPON_SIZE};
     use crate::ui::draw::rects_of;
-    use crate::ui::glyph::{HELP_GLYPH, TEXT_GLYPH};
+    use crate::ui::glyph::{HELP_GLYPH, LETTER_A, LETTER_B, TEXT_GLYPH};
     use crate::ui::plates::{EMPTY_LABEL, OFF_BADGE, ON_BADGE, SWITCH_PIPS, WEAPON_ICON_SHIFT};
     use crate::ui::zoom::View;
     use std::mem::size_of;
@@ -1316,6 +1322,29 @@ mod tests {
             let p = &l.wheel.plates;
             assert!(!p[0].available && !p[2].available, "the overlay is off");
             assert!(p[4].available, "the frame is shrunk");
+        });
+    }
+
+    #[test]
+    fn controls_plates_show_their_steps_and_touch_waits_for_a_touchscreen() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let layout = "[wheel:controls]\nkind = settings\nup = set focus_repeat\nup_right = set flick_threshold\n\
+                          down_right = set swap_ab\ndown = set touch\nup_left = set tap_hold\n";
+            let p = plates(&mut l, layout);
+            let glyphs = [0, 1, 3, 4, 7].map(|i| p[i].glyph);
+            let drawn =
+                [Glyph::Repeat, Glyph::Stick, Glyph::Buttons(LETTER_A, LETTER_B), Glyph::Touch, Glyph::HoldTime];
+            assert_eq!(glyphs, drawn.map(Some));
+            let pips = |i: usize| (p[i].pips, p[i].pips_on);
+            assert_eq!(pips(0), (3, 2), "repeat: medium of three");
+            assert_eq!(pips(1), (6, 3), "stick: lit as sensitivity, more for a lower threshold");
+            assert_eq!(pips(7), (5, 2), "hold time: a pip per step from the first");
+            assert!(p[3].available, "no SDL mapping names the buttons");
+            assert!(!p[4].available, "no touchscreen");
+            l.wheel.sel = Some(1);
+            l.adjust_plate(1);
+            assert_eq!((l.wheel.plates[1].pips_on, l.cfg.flick_threshold < FLICK_ON), (4, true), "up: more sensitive");
         });
     }
 

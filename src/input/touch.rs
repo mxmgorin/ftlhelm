@@ -386,11 +386,15 @@ pub struct Touch {
     last_event: Option<f64>,
 }
 
-/// Logs whether the engine found a touchscreen and so takes touches as touches.
-pub fn report() {
+/// Whether the engine found a touchscreen and so takes touches as touches.
+pub fn touchscreen_present() -> bool {
     // SAFETY: the engine's flag, set once the display is open.
-    let found = unsafe { (api().touchscreen_present as *const u8).read() } != 0;
-    log!("touch: {}", if found { "touchscreen found" } else { "no touchscreen found" });
+    unsafe { (api().touchscreen_present as *const u8).read() != 0 }
+}
+
+/// Logs whether the engine found a touchscreen.
+pub fn report() {
+    log!("touch: {}", if touchscreen_present() { "touchscreen found" } else { "no touchscreen found" });
 }
 
 impl Layer {
