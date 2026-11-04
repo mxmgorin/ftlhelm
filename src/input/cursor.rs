@@ -43,6 +43,8 @@ enum FirstScreen {
     #[default]
     None,
     MainMenu,
+    /// Keeps the focus it opens with; told apart so the main menu reopens on its first item.
+    Hangar,
     GameMenu,
     Choice,
     Map,
@@ -80,6 +82,8 @@ fn first_screen() -> FirstScreen {
         FirstScreen::Choice
     } else if state::star_map().is_some_and(|m| m.flag(FOCUS_OPEN) && !m.flag(STARMAP_CHOOSING_SECTOR)) {
         FirstScreen::Map
+    } else if state::hangar().is_some() {
+        FirstScreen::Hangar
     } else if state::main_menu_open() {
         FirstScreen::MainMenu
     } else {
@@ -313,7 +317,7 @@ impl Layer {
         }
         f.prev = screen;
         if opened {
-            f.waiting = if screen == FirstScreen::None { 0 } else { FIRST_FOCUS_FRAMES };
+            f.waiting = if matches!(screen, FirstScreen::None | FirstScreen::Hangar) { 0 } else { FIRST_FOCUS_FRAMES };
             f.settling = FIRST_FOCUS_SETTLE;
             f.open_at = (self.cursor.x, self.cursor.y);
         }
@@ -589,6 +593,26 @@ mod tests {
             l.zones.buttons = vec![button(229), button(192)];
             frames(&mut l, 1);
             assert_eq!((l.cursor.x, l.cursor.y), button(192).rect.center());
+        });
+    }
+
+    #[test]
+    fn the_hangar_keeps_the_cursor_and_the_main_menu_reopens_on_its_top_button() {
+        with_game(|g| {
+            let menu = g.app.at(CAPP_MAIN_MENU);
+            menu.set(MAIN_MENU_OPEN, 1u8);
+            let hangar = menu.at(MAIN_MENU_HANGAR);
+            hangar.set(HANGAR_OPEN, 1u8);
+            let mut l = Layer::default();
+            let button = |y| Button { rect: Rect { x: 956, y, w: 244, h: 58 }, object: g.app.addr() };
+            l.zones.buttons = vec![button(393), button(335)];
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            assert_eq!((l.cursor.x, l.cursor.y), (0.0, 0.0), "the hangar keeps the cursor");
+            hangar.set(HANGAR_OPEN, 0u8);
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            l.zones.buttons = vec![button(393), button(335)];
+            frames(&mut l, 1);
+            assert_eq!((l.cursor.x, l.cursor.y), button(335).rect.center());
         });
     }
 

@@ -183,7 +183,7 @@ impl Layer {
                     self.back_wheel();
                 } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
                     || state::open_options().is_some()
-                    || state::ship_list_open()
+                    || state::hangar().is_some()
                     || state::score_screen().is_some()
                     || state::credits_open()
                 {
@@ -488,18 +488,16 @@ mod tests {
     }
 
     #[test]
-    fn cancel_closes_the_main_menu_options_the_score_screen_the_credits_and_the_hangar_ship_list() {
+    fn cancel_closes_the_main_menu_options_the_score_screen_the_credits_and_the_hangar() {
         with_game(|g| {
             let mut l = Layer::default();
             let escape = [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)];
             let menu = g.app.at(CAPP_MAIN_MENU);
             menu.set(MAIN_MENU_OPEN, 1u8);
-            let hangar = menu.at(MAIN_MENU_HANGAR);
-            hangar.set(HANGAR_OPEN, 1u8);
             l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
-            assert_eq!(calls(), [], "the hangar alone stays");
+            assert_eq!(calls(), [], "the main menu alone stays");
             let flags = [
-                hangar.at(HANGAR_SHIP_LIST + SHIP_LIST_OPEN),
+                menu.at(MAIN_MENU_HANGAR + HANGAR_OPEN),
                 menu.at(MAIN_MENU_OPTIONS + FOCUS_OPEN),
                 menu.at(MAIN_MENU_SCORE_SCREEN),
                 menu.at(layout().main_menu_credits),
