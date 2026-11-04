@@ -34,6 +34,10 @@ const TRIGGER_ON: f32 = 0.0;
 const BUTTON_REFRESH_FRAMES: u64 = 6;
 /// The D-pad's directions in input order: left, up, right, down.
 const DPAD_DIRS: [(f32, f32); 4] = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
+/// A held direction steps the focus again after FOCUS_REPEAT_DELAY_S, then at the interval
+/// of the `focus_repeat` level, slowest first.
+const FOCUS_REPEAT_DELAY_S: f64 = 0.35;
+pub const FOCUS_REPEAT_S: [f64; 3] = [0.3, 0.2, 0.12];
 /// The triggers in an open wheel, with the step each takes as D-pad down and up do.
 const WHEEL_TRIGGERS: [(Input, i32); 2] = [(Input::L2, -1), (Input::R2, 1)];
 const LEFT_STICK: i32 = 0;
@@ -67,7 +71,10 @@ pub struct PadState {
     held: [bool; INPUT_COUNT],
     dpad_spent: [bool; 4],
     trigger_spent: [bool; WHEEL_TRIGGERS.len()],
-    flick_last: [f64; 2],
+    /// The D-pad direction whose focus step repeats while held, and when it steps next.
+    dpad_repeat: Option<(usize, f64)>,
+    /// When each stick held past its flick steps the focus again.
+    flick_next: [f64; 2],
     flick_armed: [bool; 2],
     prev_aiming: bool,
     /// The aim autopause paused the game for the aim under way; the aim's end resumes it.
@@ -101,7 +108,8 @@ impl Default for PadState {
             held: [false; INPUT_COUNT],
             dpad_spent: [false; 4],
             trigger_spent: [false; WHEEL_TRIGGERS.len()],
-            flick_last: [0.0; 2],
+            dpad_repeat: None,
+            flick_next: [f64::INFINITY; 2],
             flick_armed: [true; 2],
             prev_aiming: false,
             aim_paused: false,
@@ -462,9 +470,10 @@ impl Layer {
         self.settle_pending(t);
         self.apply_buttons(&p, t, in_wheel, snapping);
         if in_wheel || self.help.shown {
-            self.spend_flicks(&p, t);
+            self.spend_flicks(&p);
         } else {
             self.move_pointers(&p, mode, t, dt);
+            self.repeat_dpad(t);
             self.repeat_beam(self.held_direction(&p, mode));
         }
         self.follow_game_modes();
@@ -534,8 +543,11 @@ impl Layer {
                             1 => self.adjust_plate(1),
                             _ => self.adjust_plate(-1),
                         }
-                    } else if !self.focus_drag(DPAD_DIRS[d].0, DPAD_DIRS[d].1) {
+                    } else if self.focus_drag(DPAD_DIRS[d].0, DPAD_DIRS[d].1) {
+                        self.pad.dpad_repeat = None;
+                    } else {
                         self.focus_move(DPAD_DIRS[d].0, DPAD_DIRS[d].1);
+                        self.pad.dpad_repeat = Some((d, self.next_step_at(t, true)));
                     }
                     continue;
                 }
@@ -587,15 +599,14 @@ impl Layer {
                 SlotMode::Mouse => self.move_cursor(x, y, dt),
                 SlotMode::Flick => {
                     let mag = x.hypot(y);
+                    let first = self.pad.flick_armed[k];
                     // A beam being set repeats its own steps.
-                    let repeat = self.cfg.flick_repeat > 0.0
-                        && !self.beam_active()
-                        && t - self.pad.flick_last[k] >= self.cfg.flick_repeat as f64;
+                    let repeat = !self.beam_active() && t >= self.pad.flick_next[k];
                     if mag < FLICK_OFF {
                         self.pad.flick_armed[k] = true;
-                    } else if mag >= self.cfg.flick_threshold && (self.pad.flick_armed[k] || repeat) {
+                    } else if mag >= self.cfg.flick_threshold && (first || repeat) {
                         self.pad.flick_armed[k] = false;
-                        self.pad.flick_last[k] = t;
+                        self.pad.flick_next[k] = self.next_step_at(t, first);
                         self.focus_move(x, y);
                     }
                 }
@@ -607,14 +618,38 @@ impl Layer {
         }
     }
 
-    /// Spends the flick of every stick off centre, as a flick would: it flicks again once
-    /// re-centred, or after flick_repeat.
-    fn spend_flicks(&mut self, p: &PadFrame, t: f64) {
+    /// Spends the flick of every stick off centre: it flicks again once re-centred.
+    fn spend_flicks(&mut self, p: &PadFrame) {
         for (k, [x, y]) in p.stick.into_iter().enumerate() {
             if x.hypot(y) >= FLICK_OFF {
                 self.pad.flick_armed[k] = false;
-                self.pad.flick_last[k] = t;
+                self.pad.flick_next[k] = f64::INFINITY;
             }
+        }
+    }
+
+    /// Returns when a direction that stepped the focus at `t` steps again while held, after
+    /// its `first` step or a repeat; never with focus_repeat off.
+    fn next_step_at(&self, t: f64, first: bool) -> f64 {
+        let level = usize::try_from(self.cfg.focus_repeat - 1).ok();
+        match level.and_then(|i| FOCUS_REPEAT_S.get(i)) {
+            Some(_) if first => t + FOCUS_REPEAT_DELAY_S,
+            Some(&every) => t + every,
+            None => f64::INFINITY,
+        }
+    }
+
+    /// Steps the focus again the way the held D-pad direction stepped it, once due; not while
+    /// a beam being set repeats its own steps.
+    fn repeat_dpad(&mut self, t: f64) {
+        let Some((d, at)) = self.pad.dpad_repeat else {
+            return;
+        };
+        if !self.pad.held[Input::DpadLeft as usize + d] {
+            self.pad.dpad_repeat = None;
+        } else if t >= at && !self.beam_active() {
+            self.pad.dpad_repeat = Some((d, self.next_step_at(t, false)));
+            self.focus_move(DPAD_DIRS[d].0, DPAD_DIRS[d].1);
         }
     }
 
@@ -837,6 +872,29 @@ mod tests {
         p.stick[0] = stick;
         l.apply_pad(p, t, DT);
         l.zone_under_cursor()
+    }
+
+    #[test]
+    fn a_held_direction_repeats_its_step_after_a_delay_at_the_level_interval() {
+        with_game(|_| {
+            let right = [1.0, 0.0];
+            for (dpad, stick) in [(true, [0.0; 2]), (false, right)] {
+                let mut l = zone_row();
+                l.cfg.focus_repeat = 2;
+                let at = |l: &mut Layer, t| frame(l, dpad, stick, t);
+                assert_eq!(at(&mut l, 1.0), Some(1), "the press steps");
+                assert_eq!(at(&mut l, 1.0 + FOCUS_REPEAT_DELAY_S - 0.01), Some(1), "the delay first");
+                let first = 1.0 + FOCUS_REPEAT_DELAY_S;
+                assert_eq!(at(&mut l, first), Some(2), "then a repeat");
+                assert_eq!(at(&mut l, first + FOCUS_REPEAT_S[1] - 0.01), Some(2));
+                assert_eq!(at(&mut l, first + FOCUS_REPEAT_S[1]), Some(3), "then the level's interval");
+                assert_eq!(frame(&mut l, false, [0.0; 2], first + 1.0), Some(3), "the release stops it");
+            }
+            let mut l = zone_row();
+            l.cfg.focus_repeat = 0;
+            assert_eq!(frame(&mut l, false, right, 1.0), Some(1));
+            assert_eq!(frame(&mut l, false, right, 9.0), Some(1), "off: once per push");
+        });
     }
 
     #[test]

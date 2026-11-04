@@ -33,9 +33,10 @@ active one has none down. When the active pad disconnects, the ship view pauses 
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone in the pressed direction; a stick
-moves it once per push past `flick_threshold`. With `focus_brackets`, the zone the cursor
-lands on shows corner brackets in place of the pointer arrow until the cursor moves on.
-L3 or R3 moves the cursor to the other ship, on its room nearest the ship's middle.
+moves it once per push past `flick_threshold`. A held direction repeats the step after a
+moment, at the `focus_repeat` speed. With `focus_brackets`, the zone the cursor lands on
+shows corner brackets in place of the pointer arrow until the cursor moves on. L3 or R3
+moves the cursor to the other ship, on its room nearest the ship's middle.
 
 | Screen | Zones |
 | --- | --- |

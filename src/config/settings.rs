@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use crate::config::layout::{CONFIG_SECTION, DEFAULT_LAYOUT};
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
-use crate::input::pad::RUMBLE_MAX;
+use crate::input::pad::{FOCUS_REPEAT_S, RUMBLE_MAX};
 use crate::ui::overlay::{Notice, LAYOUT_NOTICE_S, LAYOUT_UPDATED_NOTICE};
 use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
@@ -66,8 +66,10 @@ pub const FLICK_ON: f32 = 0.8;
 pub const FLICK_OFF: f32 = 0.4;
 /// The narrowest band a flick threshold keeps above the re-arm level.
 const FLICK_GAP: f32 = 0.1;
-/// Zero: one flick until the stick re-centres.
-const FLICK_REPEAT_S: f32 = 0.0;
+/// Focus repeat levels: 0 is off, each level above picks a FOCUS_REPEAT_S interval.
+pub const FOCUS_REPEAT_KEY: &str = "focus_repeat";
+const FOCUS_REPEAT: i32 = 2;
+const FOCUS_REPEAT_STEP: f32 = 1.0;
 /// Zone search cone half-angles: the narrow one first, the wide one when it finds nothing.
 const CONE_NARROW_DEG: f32 = 30.0;
 const CONE_WIDE_DEG: f32 = 60.0;
@@ -93,6 +95,7 @@ const STEPS: &[(&str, f32)] = &[
     (SHARPEN_KEY, SHARPEN_STEP),
     (SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
     (AUTOPAUSE_KEY, AUTOPAUSE_STEP),
+    (FOCUS_REPEAT_KEY, FOCUS_REPEAT_STEP),
 ];
 const RUMBLE_STEP: f32 = 0.5;
 const SHARPEN_STEP: f32 = 0.25;
@@ -124,7 +127,8 @@ pub struct Settings {
     /// Pulse strength in times RUMBLE_STRENGTH; 0: no pulses.
     pub rumble: f32,
     pub flick_threshold: f32,
-    pub flick_repeat: f32,
+    /// How fast a held direction repeats its focus step, as a level; 0: once per press.
+    pub focus_repeat: i32,
     /// Which raw pairs to swap for the labels when no SDL mapping names the face buttons:
     /// A/B (east/south) and X/Y (north/west).
     pub swap_ab: bool,
@@ -192,7 +196,7 @@ impl Default for Settings {
             speed_level: SPEED_LEVEL_MAX as i32,
             rumble: RUMBLE,
             flick_threshold: FLICK_ON,
-            flick_repeat: FLICK_REPEAT_S,
+            focus_repeat: FOCUS_REPEAT,
             swap_ab: false,
             swap_xy: false,
             tap_hold: TAP_HOLD_S,
@@ -251,7 +255,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("swap_ab", Field::Bool(|c| &mut c.swap_ab)),
     ("swap_xy", Field::Bool(|c| &mut c.swap_xy)),
     ("flick_threshold", Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
-    ("flick_repeat", Field::Float(|c| &mut c.flick_repeat, 0.0, f32::INFINITY)),
+    (FOCUS_REPEAT_KEY, Field::Int(|c| &mut c.focus_repeat, 0.0, FOCUS_REPEAT_S.len() as f32)),
     ("tap_hold", Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
     ("focus_cone_narrow", Field::Float(|c| &mut c.focus_cone_narrow, CONE_DEG_MIN, CONE_DEG_MAX)),
     ("focus_cone_wide", Field::Float(|c| &mut c.focus_cone_wide, CONE_DEG_MIN, CONE_DEG_MAX)),

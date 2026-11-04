@@ -36,7 +36,7 @@ help first closes, `help_at_start = 0`.
 | --- | --- | --- | --- |
 | `snap_dpad` | 1 | switch | the D-pad jumps between zones unless it moves the cursor or a `hold_state` state is held |
 | `flick_threshold` | 0.8 | 0.5 to 1 | stick deflection that fires a flick; the stick re-arms below 0.4 |
-| `flick_repeat` | 0 | 0 and up | seconds between repeated flicks while the stick stays deflected; 0: one flick per deflection |
+| `focus_repeat` | 2 | 0 to 3 | how fast a held D-pad direction or stick repeats its step: 0 off, 1 slow, 2 medium, 3 fast |
 | `focus_cone_narrow` | 30 | 5 to 89 | half-angle in degrees of the cone searched first for the next zone |
 | `focus_cone_wide` | 60 | 5 to 89 | half-angle in degrees of the cone searched next |
 | `focus_side_weight` | 2 | 0 to 10 | how many times sideways distance counts over forward |
