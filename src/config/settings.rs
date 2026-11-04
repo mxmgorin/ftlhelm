@@ -62,7 +62,8 @@ const TAP_HOLD_S: f32 = 0.2;
 const HOLD_S_MIN: f32 = 0.05;
 const HOLD_S_MAX: f32 = 2.0;
 pub const FLICK_ON: f32 = 0.8;
-pub const FLICK_OFF: f32 = 0.25;
+/// The level a stick re-arms its flick below: clear of the offset some sticks rest at.
+pub const FLICK_OFF: f32 = 0.4;
 /// The narrowest band a flick threshold keeps above the re-arm level.
 const FLICK_GAP: f32 = 0.1;
 /// Zero: one flick until the stick re-centres.

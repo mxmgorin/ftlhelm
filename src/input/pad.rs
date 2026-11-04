@@ -820,6 +820,36 @@ mod tests {
         });
     }
 
+    /// A layer with a row of zones and the cursor on the first, the left stick flicking.
+    fn zone_row() -> Layer {
+        let mut l = Layer::default();
+        l.layout = Layout::parse("[controls]\nleft_analog = flick\n").0;
+        let zone = |i| Zone { rect: Rect { x: 100 * i, y: 100, w: 40, h: 40 }, id: 0, kind: ZoneKind::Button };
+        l.zones.list = (1..=6).map(zone).collect();
+        (l.cursor.x, l.cursor.y) = (120.0, 120.0);
+        l.send_cursor();
+        l
+    }
+
+    fn frame(l: &mut Layer, dpad_right: bool, stick: [f32; 2], t: f64) -> Option<usize> {
+        let mut p = PadFrame::default();
+        p.down[Input::DpadRight as usize] = dpad_right;
+        p.stick[0] = stick;
+        l.apply_pad(p, t, DT);
+        l.zone_under_cursor()
+    }
+
+    #[test]
+    fn a_stick_resting_off_centre_re_arms_its_flick() {
+        with_game(|_| {
+            let mut l = zone_row();
+            let rest = [-0.3, 0.1];
+            assert_eq!(frame(&mut l, false, [1.0, 0.0], 1.0), Some(1));
+            frame(&mut l, false, rest, 1.1);
+            assert_eq!(frame(&mut l, false, [1.0, 0.0], 1.2), Some(2));
+        });
+    }
+
     #[test]
     fn triggers_in_a_wheel_step_the_plate_and_keep_their_own_actions_out() {
         with_game(|_| {
