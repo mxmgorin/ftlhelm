@@ -2,21 +2,23 @@
 //!
 //! The engine reports touches to the CApp's OnTouch handlers, which the PC build leaves
 //! empty. Hooks on them queue each event; once a frame the layer runs the queue through
-//! `Gestures`, a state machine of one finger, and applies the acts it hands out. A tap clicks
-//! where the finger landed, a finger held past the long press right-clicks there when it
-//! lifts, and a finger moved past the slop drags with the left button from there; a finger
-//! that goes down takes over, unless it joins the first for a two-finger tap, which pauses
-//! the game as the pause button does. A finger moved up or down from a system icon or an
-//! armament box steps its power instead, a bar per step: up adds, down removes; an armament
-//! box's item only switches on or off. Events arrive
-//! in window pixels, where the slop and the step are measured; a gesture acts at the frame
+//! `Gestures`, a state machine of the finger down and a second one, and applies the acts it
+//! hands out. A tap clicks where the finger landed, a finger held past the long press
+//! right-clicks there when it lifts, and a finger moved past the slop drags with the left
+//! button from there. A finger moved up or down from a system icon or an armament box steps
+//! its power instead, a bar per step: up adds, down removes; an armament box's item only
+//! switches on or off. A finger that goes down takes over, unless it joins the first at
+//! once for a two-finger tap, which pauses the game as the pause button does. A second
+//! finger landing while the first still taps pinches with it once either moves past the
+//! slop: the view zooms with their spread and follows their midpoint. Events arrive in
+//! window pixels, where the slop and the step are measured; a gesture acts at the frame
 //! point the screen shows under the finger, through the zoomed view.
 //!
 //! The game resolves what lies under the pointer a frame after a move, so a press waits for
 //! the frame after the move before it. A finger that lands on nothing the game takes moves,
 //! once the game has flagged the point, to the nearest target within reach: a zone or a HUD
-//! box. A finger that drags or pairs before the flag stays where it landed; a finger landing
-//! while the game looks waits for the flag.
+//! box. A finger that drags, pairs or pinches before the flag stays where it landed; a
+//! finger landing while the game looks waits for the flag.
 
 use std::collections::VecDeque;
 
@@ -37,6 +39,8 @@ const SNAP_INSET: f32 = 2.0;
 const PAIR_JOIN_S: f64 = 0.2;
 /// Frames the game takes to flag what lies under a moved pointer.
 const PROBE_FRAMES: u32 = 2;
+/// The least spread between two fingers a pinch scales by, in window pixels: two fingertips.
+const PINCH_MIN_SPREAD: f32 = 48.0;
 /// Seconds after a touch event within which a mouse move is its echo: a compositor putting
 /// its own pointer back over the window, not a mouse in use.
 const TOUCH_ECHO_S: f64 = 0.25;
@@ -108,6 +112,11 @@ pub enum Act {
     Pause,
     /// A bar of power added (1) or removed (-1) where the pointer is.
     Step(i32),
+    /// Two fingers that went down around window point `from` are around `to`, `scale` times
+    /// as far apart.
+    Pinch { from: (f32, f32), to: (f32, f32), scale: f32 },
+    /// The pinch ended.
+    PinchEnd,
 }
 
 /// The settings the gestures take.
@@ -151,29 +160,58 @@ enum Stage {
     Drag,
     /// Moved up or down past the slop from a power box: the bars stepped so far, up positive.
     Swipe { stepped: i32 },
-    /// Joined by a second finger: a pause if both lift before the long press, within the slop.
+    /// Joined at once by a second finger: a pause if both lift before the long press, within
+    /// the slop.
     Pair {
-        /// The second finger and where it went down, in window pixels.
-        partner: i32,
-        start: (i32, i32),
         /// The one of the two that lifted, if one has.
         lifted: Option<i32>,
     },
+    /// Two fingers moved past the slop; a lift ends the pinch and the touch.
+    Pinch,
     /// Taken by the overlay; the rest of the touch does nothing.
     Spent,
+}
+
+/// A second finger down with the finger the gestures follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Partner {
+    id: i32,
+    /// Where it went down and where it is, in window pixels.
+    start: (i32, i32),
+    now: (i32, i32),
 }
 
 #[derive(Clone, Copy)]
 struct Finger {
     id: i32,
-    /// Where it went down, in window pixels, and when.
+    /// Where it went down and where it is, in window pixels, and when it went down.
     start: (i32, i32),
+    now: (i32, i32),
     since: f64,
     /// The frame point it acts on.
     at: (f32, f32),
     stage: Stage,
     /// The power box it landed on.
     power: Option<PowerBox>,
+    /// A second finger down with it, while the two may still pair or pinch.
+    partner: Option<Partner>,
+}
+
+impl Finger {
+    /// Whether it and a partner may still pinch.
+    fn may_pinch(&self) -> bool {
+        self.partner.is_some() && matches!(self.stage, Stage::Pending | Stage::Held | Stage::Pair { lifted: None })
+    }
+
+    /// The pinch of it and its partner as they are now.
+    fn pinch(&self) -> Option<Act> {
+        let p = self.partner?;
+        let mid = |a: (i32, i32), b: (i32, i32)| ((a.0 + b.0) as f32 / 2.0, (a.1 + b.1) as f32 / 2.0);
+        let spread =
+            |a: (i32, i32), b: (i32, i32)| ((a.0 - b.0) as f32).hypot((a.1 - b.1) as f32).max(PINCH_MIN_SPREAD);
+        let (from, to) = (mid(self.start, p.start), mid(self.now, p.now));
+        Some(Act::Pinch { from, to, scale: spread(self.now, p.now) / spread(self.start, p.start) })
+    }
 }
 
 /// One finger's gestures, and the acts waiting for their frame.
@@ -186,7 +224,7 @@ pub struct Gestures {
 impl Gestures {
     /// Whether `id` is the finger down or its partner.
     fn follows(&self, id: i32) -> bool {
-        self.finger.is_some_and(|f| f.id == id || matches!(f.stage, Stage::Pair { partner, .. } if partner == id))
+        self.finger.is_some_and(|f| f.id == id || f.partner.is_some_and(|p| p.id == id))
     }
 
     /// Forgets a power box the pointer did not reach: the steps waiting are dropped, a swipe
@@ -201,9 +239,9 @@ impl Gestures {
         }
     }
 
-    /// Whether the finger down left the point it landed on: a drag, or a pair.
+    /// Whether the finger down left the point it landed on: a drag, a pair or a pinch.
     pub fn moved_on(&self) -> bool {
-        self.finger.is_some_and(|f| matches!(f.stage, Stage::Drag | Stage::Pair { .. }))
+        self.finger.is_some_and(|f| matches!(f.stage, Stage::Drag | Stage::Pair { .. } | Stage::Pinch))
     }
 
     /// Moves the pointer to frame point `at` ahead of the acts waiting; the finger down, if
@@ -223,10 +261,13 @@ impl Gestures {
         Some((f.at, share))
     }
 
-    /// Ends the touch of the finger down, releasing the left button a drag holds.
+    /// Ends the touch of the finger down, releasing the left button a drag holds and ending a
+    /// pinch.
     pub fn lift(&mut self) {
-        if self.finger.take().is_some_and(|f| f.stage == Stage::Drag) {
-            self.due.push_back(Act::Release);
+        match self.finger.take().map(|f| f.stage) {
+            Some(Stage::Drag) => self.due.push_back(Act::Release),
+            Some(Stage::Pinch) => self.due.push_back(Act::PinchEnd),
+            _ => {}
         }
     }
 
@@ -235,9 +276,19 @@ impl Gestures {
         match ev.phase {
             TouchPhase::Down => {
                 let taken = landing == Landing::Overlay;
-                let joins = |f: &Finger| f.stage == Stage::Pending && f.id != ev.id && ev.t - f.since <= PAIR_JOIN_S;
-                if let Some(f) = self.finger.as_mut().filter(|f| !taken && joins(f)) {
-                    f.stage = Stage::Pair { partner: ev.id, start: (ev.x, ev.y), lifted: None };
+                let here = (ev.x, ev.y);
+                // A finger still tapping may pair or pinch with this one.
+                let tapping = self.finger.filter(|f| {
+                    !taken
+                        && f.id != ev.id
+                        && f.partner.is_none()
+                        && f.stage == Stage::Pending
+                        && ev.t - f.since < limits.long_press
+                });
+                if let Some(f) = self.finger.as_mut().filter(|_| tapping.is_some_and(|f| ev.t - f.since <= PAIR_JOIN_S))
+                {
+                    f.stage = Stage::Pair { lifted: None };
+                    f.partner = Some(Partner { id: ev.id, start: here, now: here });
                     return;
                 }
                 // The newest finger takes over, so a lost up leaves no finger behind.
@@ -247,8 +298,10 @@ impl Gestures {
                     Landing::Power(power) => Some(power),
                     Landing::Open | Landing::Overlay => None,
                 };
-                let (start, since) = ((ev.x, ev.y), ev.t);
-                self.finger = Some(Finger { id: ev.id, start, since, at: (x, y), stage, power });
+                let partner = tapping.map(|f| Partner { id: f.id, start: f.start, now: f.now });
+                let since = ev.t;
+                self.finger =
+                    Some(Finger { id: ev.id, start: here, now: here, since, at: (x, y), stage, power, partner });
                 if !taken {
                     self.due.push_back(Act::Move(x, y));
                 }
@@ -258,13 +311,26 @@ impl Gestures {
                 let Some(f) = self.finger.as_mut() else {
                     return;
                 };
-                let start = match f.stage {
-                    Stage::Pair { partner, start, .. } if partner == ev.id => start,
-                    _ => f.start,
+                let start = match f.partner.as_mut().filter(|p| p.id == ev.id) {
+                    Some(p) => {
+                        p.now = (ev.x, ev.y);
+                        p.start
+                    }
+                    None => {
+                        f.now = (ev.x, ev.y);
+                        f.start
+                    }
                 };
+                let own = f.id == ev.id;
                 let drift = ((ev.x - start.0) as f32).hypot((ev.y - start.1) as f32);
                 match f.stage {
+                    Stage::Pinch => self.due.extend(f.pinch()),
+                    _ if drift > limits.slop && f.may_pinch() => {
+                        f.stage = Stage::Pinch;
+                        self.due.extend(f.pinch());
+                    }
                     Stage::Pair { .. } if drift > limits.slop => f.stage = Stage::Spent,
+                    _ if !own => {}
                     Stage::Pending | Stage::Held if drift > limits.slop => {
                         let upright = (ev.y - start.1).abs() >= (ev.x - start.0).abs();
                         if f.power.is_some() && limits.step > 0.0 && upright {
@@ -291,12 +357,18 @@ impl Gestures {
                 };
                 match f.stage {
                     // A repeated up of the finger that lifted.
-                    Stage::Pair { lifted: Some(id), .. } if id == ev.id => self.finger = Some(f),
-                    Stage::Pair { partner, start, lifted: None } => {
-                        f.stage = Stage::Pair { partner, start, lifted: Some(ev.id) };
+                    Stage::Pair { lifted: Some(id) } if id == ev.id => self.finger = Some(f),
+                    Stage::Pair { lifted: None } => {
+                        f.stage = Stage::Pair { lifted: Some(ev.id) };
                         self.finger = Some(f);
                     }
                     Stage::Pair { .. } if ev.t - f.since < limits.long_press => self.due.push_back(Act::Pause),
+                    Stage::Pinch => self.due.push_back(Act::PinchEnd),
+                    // The partner lifted: the finger goes on alone.
+                    _ if f.id != ev.id => {
+                        f.partner = None;
+                        self.finger = Some(f);
+                    }
                     Stage::Pending if ev.t - f.since < limits.long_press => self.due.push_back(Act::Tap),
                     Stage::Pending | Stage::Held => self.due.push_back(Act::LongPress),
                     Stage::Drag => self.due.extend([Act::Move(x, y), Act::Release]),
@@ -591,6 +663,8 @@ impl Layer {
             Act::Release => self.click(MouseButton::Left, false),
             Act::Pause => toggle_pause(),
             Act::Step(dir) => self.step_power(dir, now),
+            Act::Pinch { from, to, scale } => self.zoom_pinch(from, to, scale),
+            Act::PinchEnd => self.zoom_pinch_end(),
         }
     }
 
@@ -640,7 +714,7 @@ mod tests {
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;
     use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
-    use crate::ui::zoom::View;
+    use crate::ui::zoom::{View, ZOOM_MIN};
 
     const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0 };
     /// A frame step at the game's frame rate.
@@ -826,21 +900,90 @@ mod tests {
     }
 
     #[test]
-    fn a_pair_that_moves_or_stays_does_nothing() {
+    fn a_pair_held_past_the_long_press_does_nothing() {
         let mut g = Gestures::default();
         feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
         g.frame(0.0, LIMITS);
         feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Up, 1, (300, 200), 0.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 1.0);
+        assert!(g.frame(1.0, LIMITS).is_empty());
+    }
+
+    /// The midpoint of the two fingers the pinch tests put down.
+    const PAIR_MID: (f32, f32) = (200.0, 200.0);
+
+    /// A pinch of the tests' two fingers, now around `to`.
+    fn pinch(to: (f32, f32), scale: f32) -> Act {
+        Act::Pinch { from: PAIR_MID, to, scale }
+    }
+
+    #[test]
+    fn two_fingers_moved_past_the_slop_pinch_about_their_midpoint() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Move, 1, (305, 200), 0.08);
+        assert!(g.frame(0.08, LIMITS).is_empty(), "within the slop");
         feed(&mut g, TouchPhase::Move, 1, (350, 200), 0.1);
-        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.15);
-        feed(&mut g, TouchPhase::Up, 1, (350, 200), 0.2);
-        assert!(g.frame(0.2, LIMITS).is_empty(), "moved");
-        feed(&mut g, TouchPhase::Down, 0, (100, 200), 1.0);
-        g.frame(1.0, LIMITS);
-        feed(&mut g, TouchPhase::Down, 1, (300, 200), 1.05);
-        feed(&mut g, TouchPhase::Up, 1, (300, 200), 1.1);
-        feed(&mut g, TouchPhase::Up, 0, (100, 200), 2.0);
-        assert!(g.frame(2.0, LIMITS).is_empty(), "held");
+        feed(&mut g, TouchPhase::Move, 0, (50, 200), 0.12);
+        assert_eq!(g.frame(0.12, LIMITS), [pinch((225.0, 200.0), 1.25), pinch((200.0, 200.0), 1.5)]);
+        assert!(g.frame(1.0, LIMITS).is_empty(), "a pinch never long-presses");
+        assert_eq!(g.hold(1.0, LIMITS), None, "a pinch shows no ring");
+        feed(&mut g, TouchPhase::Up, 0, (50, 200), 1.1);
+        feed(&mut g, TouchPhase::Move, 1, (400, 200), 1.15);
+        feed(&mut g, TouchPhase::Up, 1, (400, 200), 1.2);
+        assert_eq!(g.frame(1.2, LIMITS), [Act::PinchEnd], "the finger left does nothing");
+    }
+
+    #[test]
+    fn a_cancel_ends_a_pinch() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.05);
+        feed(&mut g, TouchPhase::Move, 1, (300, 250), 0.1);
+        g.frame(0.1, LIMITS);
+        feed(&mut g, TouchPhase::Cancel, 1, (300, 250), 0.2);
+        assert_eq!(g.frame(0.2, LIMITS), [Act::PinchEnd]);
+    }
+
+    #[test]
+    fn a_late_second_finger_pinches_with_a_first_still_tapping() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.3);
+        assert_eq!(g.frame(0.3, LIMITS), [Act::Move(300.0, 200.0)]);
+        feed(&mut g, TouchPhase::Move, 0, (60, 200), 0.35);
+        assert_eq!(g.frame(0.35, LIMITS), [pinch((180.0, 200.0), 1.2)]);
+        feed(&mut g, TouchPhase::Up, 1, (300, 200), 0.4);
+        feed(&mut g, TouchPhase::Up, 0, (60, 200), 0.45);
+        assert_eq!(g.frame(0.45, LIMITS), [Act::PinchEnd], "no tap");
+    }
+
+    #[test]
+    fn a_late_second_finger_goes_on_alone_once_the_first_lifts() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.3);
+        g.frame(0.3, LIMITS);
+        feed(&mut g, TouchPhase::Up, 0, (100, 200), 0.32);
+        feed(&mut g, TouchPhase::Move, 1, (350, 200), 0.35);
+        assert_eq!(g.frame(0.35, LIMITS), [Act::Press, Act::Move(350.0, 200.0)]);
+    }
+
+    #[test]
+    fn a_second_finger_after_the_long_press_takes_over_alone() {
+        let mut g = Gestures::default();
+        feed(&mut g, TouchPhase::Down, 0, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        assert_eq!(g.frame(0.6, LIMITS), [Act::Hold]);
+        feed(&mut g, TouchPhase::Down, 1, (300, 200), 0.7);
+        assert_eq!(g.frame(0.7, LIMITS), [Act::Move(300.0, 200.0)]);
+        feed(&mut g, TouchPhase::Move, 1, (350, 200), 0.75);
+        assert_eq!(g.frame(0.75, LIMITS), [Act::Press, Act::Move(350.0, 200.0)]);
     }
 
     #[test]
@@ -1150,6 +1293,42 @@ mod tests {
             l.zoom.view = Some(View { x: 0.0, y: 0.0, w: 640.0, h: 360.0, k: 2.0 });
             assert!(!l.pause_button_hit(corner));
             assert!(l.pause_button_hit((610.0, 25.0)));
+        });
+    }
+
+    /// Runs a pinch through the layer: two fingers down side by side, the second moved to each
+    /// window column of `moves`, then both up.
+    fn pinch_through(l: &mut Layer, moves: &[i32]) {
+        l.queue_touch(TouchPhase::Down, 0, 200, 240);
+        l.queue_touch(TouchPhase::Down, 1, 300, 240);
+        l.apply_touch(now_s());
+        for &x in moves {
+            l.queue_touch(TouchPhase::Move, 1, x, 240);
+            l.apply_touch(now_s());
+        }
+        l.queue_touch(TouchPhase::Up, 0, 200, 240);
+        l.queue_touch(TouchPhase::Up, 1, *moves.last().unwrap_or(&300), 240);
+        l.apply_touch(now_s());
+    }
+
+    #[test]
+    fn a_pinch_zooms_the_ship_view_and_settles_on_the_nearest_level() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            pinch_through(&mut l, &[400]);
+            assert_eq!(l.zoom.level, ZOOM_MIN, "off the ship view");
+            g.player_manager();
+            l.queue_touch(TouchPhase::Down, 0, 200, 240);
+            l.queue_touch(TouchPhase::Down, 1, 300, 240);
+            l.queue_touch(TouchPhase::Move, 1, 400, 240);
+            l.apply_touch(now_s());
+            assert_eq!(l.zoom.level, 2.0, "twice the spread");
+            l.queue_touch(TouchPhase::Cancel, 1, 400, 240);
+            l.apply_touch(now_s());
+            assert_eq!(l.zoom.level, 2.0, "a level the screen has");
+            pinch_through(&mut l, &[400, 330]);
+            assert!((l.zoom.level - 4.0 / 3.0).abs() < 0.01, "spread 1.3 times: the level is nearest");
+            assert!(calls().iter().all(|c| !matches!(c, Call::Button(..))), "a pinch clicks nothing");
         });
     }
 

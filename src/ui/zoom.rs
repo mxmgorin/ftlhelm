@@ -10,8 +10,10 @@
 //! the view for the blit. The ship view keeps to the frame columns the HUD covers, its span:
 //! its lowest level shows the span whole. The camera goal keeps the cursor, or a wheel open
 //! around it, inside the view's inner part, resting on an edge of the span where that does. A
-//! pan moves the goal by hand and holds it until the focus moves; a peek shows the span whole
-//! while it lasts, as does an event dialog. While zoomed on a screen that shrinks the frame,
+//! pan moves the goal by hand and holds it until the focus moves. A pinch sets the level by
+//! hand and keeps the frame point under the fingers' midpoint under it, then settles on the
+//! nearest level and holds there as a pan does. A peek shows the span whole while it lasts, as
+//! does an event dialog. While zoomed on a screen that shrinks the frame,
 //! a window over the ship view is shown whole, as large as the screen allows, unless the
 //! tutorial runs, whose box stands beside its windows; otherwise the span is shown whole. An
 //! open wheel holds the level down to one whose view shows it whole.
@@ -147,6 +149,12 @@ fn same_level(a: f32, b: f32) -> bool {
 /// whole frame's columns.
 fn span_level(screen: (f32, f32), span: Span) -> f32 {
     ((screen.0 / span.width()).min(screen.1 / GAME_H as f32) / fit_scale(screen)).max(ZOOM_MIN)
+}
+
+/// The level among `levels` nearest `level` by ratio.
+fn nearest(levels: &[f32], level: f32) -> f32 {
+    let off = |l: f32| (l / level).ln().abs();
+    levels.iter().copied().min_by(|a, b| off(*a).total_cmp(&off(*b))).unwrap_or(level)
 }
 
 /// The levels zoom steps through on a screen of `screen` pixels over `span`, rising: the one
@@ -380,6 +388,27 @@ fn blit_at(frame_w: f32, frame_h: f32, span: (f32, f32), smooth: bool, blit: imp
     }
 }
 
+/// A pinch on the ship view.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Pinch {
+    /// The frame point kept under the fingers' midpoint.
+    anchor: (f32, f32),
+    /// The fingers' midpoint, in screen pixels.
+    mid: (f32, f32),
+    /// The level shown and the `zoom` setting when the pinch began.
+    base: f32,
+    setting: f32,
+}
+
+impl Pinch {
+    /// The centre of the view at `level` on a screen of `screen` pixels that shows the anchor
+    /// under the midpoint.
+    fn center(&self, screen: (f32, f32), level: f32) -> (f32, f32) {
+        let k = fit_scale(screen) * level;
+        (self.anchor.0 + (screen.0 / 2.0 - self.mid.0) / k, self.anchor.1 + (screen.1 / 2.0 - self.mid.1) / k)
+    }
+}
+
 /// What the view shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Scene {
@@ -406,6 +435,8 @@ pub struct Zoom {
     pin: Option<[f32; 4]>,
     /// When the peek's button went down; the peek starts once it is held past tap_hold.
     pub peek_from: Option<f64>,
+    /// The pinch under way; while it lasts, the ship view's camera follows the fingers.
+    pinch: Option<Pinch>,
     /// The level and centre shown, easing toward `target` and `goal`.
     shown_level: f32,
     shown_center: (f32, f32),
@@ -425,6 +456,7 @@ impl Default for Zoom {
             goal: middle,
             pin: None,
             peek_from: None,
+            pinch: None,
             shown_level: ZOOM_MIN,
             shown_center: middle,
             view: None,
@@ -439,10 +471,14 @@ impl Zoom {
     /// (left, top, right, bottom) in view. Returns the view to show, None for the whole frame.
     fn advance(&mut self, screen: (f32, f32), scene: Scene, focus: [f32; 4], top: f32, dt: f32) -> Option<View> {
         let middle = (GAME_W as f32 / 2.0, GAME_H as f32 / 2.0);
+        let pinched = self.pinch.filter(|_| scene == Scene::Ship);
         let (toward, span) = match scene {
             Scene::Ship => {
                 self.target = resolve(self.level, screen, self.span).min(top);
-                self.follow(screen, focus);
+                match pinched {
+                    Some(p) => self.goal = p.center(screen, self.target),
+                    None => self.follow(screen, focus),
+                }
                 (self.goal, self.span)
             }
             Scene::Window(rect) => {
@@ -459,9 +495,14 @@ impl Zoom {
             }
         };
         let (tx, ty) = View::at(screen, self.target, toward, span).center();
-        self.shown_level = ease(self.shown_level, self.target, dt, SNAP_LEVEL);
-        let (cx, cy) = self.shown_center;
-        self.shown_center = (ease(cx, tx, dt, SNAP_PX), ease(cy, ty, dt, SNAP_PX));
+        if pinched.is_some() {
+            // The view stays under the fingers.
+            (self.shown_level, self.shown_center) = (self.target, (tx, ty));
+        } else {
+            self.shown_level = ease(self.shown_level, self.target, dt, SNAP_LEVEL);
+            let (cx, cy) = self.shown_center;
+            self.shown_center = (ease(cx, tx, dt, SNAP_PX), ease(cy, ty, dt, SNAP_PX));
+        }
         (self.shown_level > ZOOM_MIN).then(|| View::at(screen, self.shown_level, self.shown_center, span))
     }
 
@@ -482,6 +523,45 @@ impl Zoom {
             (follow_axis(gx, goal.w, left, right, columns), follow_axis(gy, goal.h, top, bottom, rows))
         };
         self.goal = View::at(screen, self.target, aim, self.span).center();
+    }
+
+    /// Starts a pinch whose fingers went down around screen point `mid`, over frame point
+    /// `anchor`.
+    fn begin_pinch(&mut self, anchor: (f32, f32), mid: (f32, f32)) {
+        self.pinch = Some(Pinch { anchor, mid, base: self.shown_level, setting: self.level });
+    }
+
+    /// Moves the pinch under way to midpoint `mid`, the level `scale` times where it began.
+    fn pinch_to(&mut self, mid: (f32, f32), scale: f32) {
+        if let Some(p) = self.pinch.as_mut() {
+            p.mid = mid;
+            self.level = clampf(p.base * scale, ZOOM_MIN, ZOOM_MAX);
+        }
+    }
+
+    /// Ends the pinch under way on a screen of `screen` pixels: the setting takes the level
+    /// nearest the one shown, the one it began from where that is the same level, and the goal
+    /// keeps the anchor under the midpoint. Returns whether a pinch was under way.
+    fn end_pinch(&mut self, screen: (f32, f32)) -> bool {
+        let Some(p) = self.pinch.take() else {
+            return false;
+        };
+        let span = self.span;
+        let shown = resolve(self.level, screen, span);
+        let began = resolve(p.setting, screen, span);
+        self.level = with_levels(screen, span, |all| {
+            let near = nearest(all, shown);
+            if same_level(near, began) {
+                p.setting
+            } else if same_level(near, all[0]) {
+                ZOOM_MIN
+            } else {
+                near
+            }
+        });
+        let target = resolve(self.level, screen, span);
+        self.goal = View::at(screen, target, p.center(screen, target), span).center();
+        true
     }
 
     /// Drops to the whole frame at once.
@@ -530,6 +610,33 @@ impl Layer {
         self.zoom.goal = View::at(screen, self.zoom.target, (x, y), self.zoom.span).center();
         self.zoom.pin = Some(self.zoom_focus());
         true
+    }
+
+    /// Zooms the ship view with a pinch whose fingers went down around window point `from` and
+    /// are around `to`, `scale` times as far apart; a pinch begins only on the ship view.
+    pub fn zoom_pinch(&mut self, from: (f32, f32), to: (f32, f32), scale: f32) {
+        if self.zoom.pinch.is_none() {
+            if !state::ship_view() || self.help.shown {
+                return;
+            }
+            let anchor = self.frame_at(from.0.round() as i32, from.1.round() as i32);
+            self.zoom.begin_pinch(anchor, from);
+        }
+        self.zoom.pinch_to(to, scale);
+    }
+
+    /// Ends a pinch on the nearest level, the view held where it left it until the focus moves,
+    /// and saves the level.
+    pub fn zoom_pinch_end(&mut self) {
+        let Some(screen) = screen_size() else {
+            self.zoom.pinch = None;
+            return;
+        };
+        if self.zoom.end_pinch(screen) {
+            self.zoom.pin = Some(self.zoom_focus());
+            log!("zoom {:.2}", self.zoom.level);
+            self.save_tuned();
+        }
     }
 
     /// The frame point the screen shows at window pixel (`wx`, `wy`): through the zoomed
@@ -773,6 +880,52 @@ mod tests {
         }
         assert_eq!((view, z.target), (None, ZOOM_MIN));
         assert_eq!(z.goal, v.center());
+    }
+
+    /// Whether `blit` shows frame point `at` at screen point `screen`, to a pixel.
+    fn shows(blit: Blit, at: (f32, f32), screen: (f32, f32)) -> bool {
+        let (x, y) = blit.to_frame(screen.0, screen.1);
+        (x - at.0).abs() < 1.0 && (y - at.1).abs() < 1.0
+    }
+
+    #[test]
+    fn a_pinch_keeps_the_frame_point_under_the_fingers_and_settles_on_the_nearest_level() {
+        let mut z = Zoom { level: 2.0, ..Zoom::default() };
+        let cursor = [640.0, 360.0, 640.0, 360.0];
+        for _ in 0..120 {
+            z.view = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
+        }
+        let v = z.view.expect("zoomed on the ship view");
+        let anchor = Blit::new(v, SMALL).to_frame(200.0, 300.0);
+        z.begin_pinch(anchor, (200.0, 300.0));
+        z.pinch_to((260.0, 280.0), 1.25);
+        let v = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT).expect("zoomed on the ship view");
+        assert_eq!(z.shown_level, 2.5, "no easing under the fingers");
+        assert!(shows(Blit::new(v, SMALL), anchor, (260.0, 280.0)));
+        assert!(z.end_pinch(SMALL));
+        assert_eq!(z.level, 3.0);
+        z.pin = Some(cursor);
+        let mut view = None;
+        for _ in 0..120 {
+            view = z.advance(SMALL, Scene::Ship, cursor, ZOOM_MAX, DT);
+        }
+        assert!(shows(Blit::new(view.expect("zoomed on the ship view"), SMALL), anchor, (260.0, 280.0)));
+        assert!(!z.end_pinch(SMALL), "no pinch under way");
+    }
+
+    #[test]
+    fn a_pinch_back_to_its_level_keeps_the_setting_and_the_lowest_is_stored_as_the_whole_frame() {
+        let cases = [(Span::FRAME, 1.1, ZOOM_AUTO), (Span::FRAME, 0.5, ZOOM_MIN), (HUD, 0.85, ZOOM_MIN)];
+        for (span, scale, level) in cases {
+            let mut z = Zoom { level: ZOOM_AUTO, span, ..Zoom::default() };
+            for _ in 0..120 {
+                z.view = z.advance(SMALL, Scene::Ship, [640.0; 4], ZOOM_MAX, DT);
+            }
+            z.begin_pinch((640.0, 360.0), (320.0, 240.0));
+            z.pinch_to((320.0, 240.0), scale);
+            z.end_pinch(SMALL);
+            assert_eq!(z.level, level, "{span:?} pinched {scale}");
+        }
     }
 
     /// The Kestrel's HUD moved in on a narrow screen.

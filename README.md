@@ -35,6 +35,7 @@
   - **Tap** to click, **hold** to right-click, **drag** to select
   - **Swipe** up or down on a system icon or weapon box to set its power
   - **Two-finger tap** or the on-screen button to pause
+  - **Pinch** to zoom and move the ship view
   - **Near misses** land on the closest button, room or icon
 - **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
 

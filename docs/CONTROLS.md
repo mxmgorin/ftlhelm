@@ -146,6 +146,7 @@ A touchscreen acts as the mouse. A touch next to a target snaps to it.
 | move up or down from a system icon or a weapon box | add or take power |
 | drag | drag |
 | two-finger tap | pause or resume |
+| pinch on the ship view | zoom; the view moves with the fingers |
 
 After a touch, a pause button shows in the bottom right corner of the ship view. In the help,
 a tap on a tab opens its page; in a wheel, a tap on a plate acts on it; a tap elsewhere closes
