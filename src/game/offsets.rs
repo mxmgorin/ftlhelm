@@ -345,6 +345,11 @@ pub const POINTER_REGION: [f32; 4] = [0.0, 0.0, 14.0, 21.0];
 pub const SHIPMANAGER_SHIP: usize = 280;
 /// ShipManager::bJumping: set while the ship jumps away, gone from its place.
 pub const SHIPMANAGER_JUMPING: usize = 1652;
+pub const SHIPMANAGER_TARGETABLE: usize = 16;
+/// Targetable::hostile: cleared on a surrender and for a ship met in peace.
+pub const TARGETABLE_HOSTILE: usize = 12;
+/// ShipManager::bContainsPlayerCrew.
+pub const SHIPMANAGER_PLAYER_CREW: usize = 2258;
 pub const COMPLETE_SHIP_MANAGER: usize = 16;
 pub const CREW_ANIM: usize = 192;
 pub const CREW_ROOM: usize = 156;

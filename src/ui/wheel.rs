@@ -1370,14 +1370,18 @@ mod tests {
     }
 
     #[test]
-    fn the_other_ship_plate_waits_for_an_enemy_ship() {
+    fn the_other_ship_plate_waits_for_an_enemy_ship_in_reach() {
         with_game(|g| {
             let mut l = Layer::default();
             let layout = "[wheel:ship]\nup = center_swap \"Other ship\"\n";
             let p = plates(&mut l, layout);
             assert_eq!((p[0].available, p[0].glyph), (false, Some(Glyph::Swap)));
-            g.enemy_manager();
+            let enemy = g.enemy_manager();
             assert!(plates(&mut l, layout)[0].available);
+            enemy.set(SHIPMANAGER_TARGETABLE + TARGETABLE_HOSTILE, 0u8);
+            assert!(!plates(&mut l, layout)[0].available, "surrendered");
+            enemy.set(SHIPMANAGER_PLAYER_CREW, 1u8);
+            assert!(plates(&mut l, layout)[0].available, "the player's crew aboard");
         });
     }
 

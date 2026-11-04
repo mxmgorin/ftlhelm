@@ -38,8 +38,8 @@ const SCORE_KEEPER_SIZE: usize = SCORE_SHIP_LIST + SHIP_LIST_OPEN + size_of::<u8
 const APP_SIZE: usize = STAND_IN.capp_y_bar + size_of::<i32>();
 /// Reaches the equipment screen's last flag, the GUI field farthest in.
 const GUI_SIZE: usize = STAND_IN.gui_equip_screen + EQUIP_OVER_AUG_CAPACITY + size_of::<u8>();
-/// Reaches the jumping flag, past the hull image's x, the Ship field farthest in.
-const MANAGER_SIZE: usize = SHIPMANAGER_JUMPING + size_of::<u8>();
+/// Reaches the player crew flag, past the hull image's x, the Ship field farthest in.
+const MANAGER_SIZE: usize = SHIPMANAGER_PLAYER_CREW + size_of::<u8>();
 const _: () = assert!(MANAGER_SIZE >= SHIPMANAGER_SHIP + SHIP_IMAGE + IMAGE_X + size_of::<i32>());
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
@@ -653,9 +653,11 @@ impl Game {
         self.complete_ship(self.gui, GUI_SHIP_COMPLETE)
     }
 
-    /// The enemy's ShipManager, reached through the combat control's target.
+    /// The enemy's ShipManager, reached through the combat control's target; hostile.
     pub fn enemy_manager(&mut self) -> Obj {
-        self.complete_ship(self.gui.at(GUI_COMBAT_CONTROL), COMBAT_CURRENT_TARGET)
+        let manager = self.complete_ship(self.gui.at(GUI_COMBAT_CONTROL), COMBAT_CURRENT_TARGET);
+        manager.set(SHIPMANAGER_TARGETABLE + TARGETABLE_HOSTILE, 1u8);
+        manager
     }
 
     /// Points the std::string at `off` in `owner` at a copy of `text`.

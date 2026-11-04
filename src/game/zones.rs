@@ -291,11 +291,13 @@ impl Zones {
         }
     }
 
-    /// The rooms of the player's ship and of the enemy's when there is one, the enemy's first
-    /// when `enemy_first`.
+    /// The rooms of the player's ship and of the enemy's when it is in reach, the enemy's
+    /// first when `enemy_first`.
     fn add_ship_rooms(&mut self, gui: Obj, player: Obj, enemy_first: bool) {
-        let ships =
-            [(Some(player), state::player_origin(gui), false), (state::enemy_ship(), state::enemy_origin(gui), true)];
+        let ships = [
+            (Some(player), state::player_origin(gui), false),
+            (state::enemy_ship_in_reach(), state::enemy_origin(gui), true),
+        ];
         let order = if enemy_first { [1, 0] } else { [0, 1] };
         for (ship, origin, enemy) in order.map(|i| ships[i]) {
             if let Some(ship) = ship {
@@ -609,6 +611,21 @@ mod tests {
                     (ZoneKind::EnemyRoom, 1, moved(rect(0, 0), ENEMY_AT)),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn a_surrendered_enemy_lists_its_rooms_only_with_the_players_crew_aboard() {
+        with_game(|g| {
+            two_ships(g);
+            let target = g.gui.at(GUI_COMBAT_CONTROL).obj(COMBAT_CURRENT_TARGET);
+            let manager = target.and_then(|c| c.obj(COMPLETE_SHIP_MANAGER)).expect("two_ships places an enemy");
+            manager.set(SHIPMANAGER_TARGETABLE + TARGETABLE_HOSTILE, 0u8);
+            let kinds = |l: &mut Layer| built(l).into_iter().map(|(k, id, _)| (k, id)).collect::<Vec<_>>();
+            let mut l = Layer::default();
+            assert_eq!(kinds(&mut l), [(ZoneKind::Room, 3), (ZoneKind::Room, 5)]);
+            manager.set(SHIPMANAGER_PLAYER_CREW, 1u8);
+            assert_eq!(kinds(&mut l), [(ZoneKind::Room, 3), (ZoneKind::Room, 5), (ZoneKind::EnemyRoom, 1)]);
         });
     }
 

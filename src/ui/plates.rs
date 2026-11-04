@@ -306,7 +306,7 @@ pub(super) fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Im
             pl.glyph = Some(Glyph::Autofire);
         }
         match pdef.action {
-            Action::Builtin(Builtin::CenterSwap) => pl.available = state::enemy_ship().is_some(),
+            Action::Builtin(Builtin::CenterSwap) => pl.available = state::enemy_ship_in_reach().is_some(),
             Action::Builtin(Builtin::ArmAll) => pl.available = state::weapon_control().is_some_and(any_powered),
             _ => {}
         }

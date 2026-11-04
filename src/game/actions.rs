@@ -186,7 +186,7 @@ impl Layer {
         };
         let p =
             state::player_ship().and_then(|s| ship_center(s, state::player_origin(gui))).map(|c| (c, ZoneKind::Room));
-        let e = state::enemy_ship()
+        let e = state::enemy_ship_in_reach()
             .and_then(|s| ship_center(s, state::enemy_origin(gui)))
             .map(|c| (c, ZoneKind::EnemyRoom));
         let (cx, cy) = (self.cursor.x, self.cursor.y);

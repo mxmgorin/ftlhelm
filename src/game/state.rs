@@ -70,6 +70,14 @@ pub fn enemy_ship() -> Option<Obj> {
     ship_of(enemy_complete())
 }
 
+/// The enemy's Ship while its rooms take orders: it is hostile or holds the player's crew,
+/// as the game's teleporter requires.
+pub fn enemy_ship_in_reach() -> Option<Obj> {
+    let manager = enemy_complete()?.obj(COMPLETE_SHIP_MANAGER)?;
+    let reach = manager.flag(SHIPMANAGER_TARGETABLE + TARGETABLE_HOSTILE) || manager.flag(SHIPMANAGER_PLAYER_CREW);
+    reach.then(|| manager.at(SHIPMANAGER_SHIP))
+}
+
 /// Where the player ship's room rectangles start on screen.
 pub fn player_origin(gui: Obj) -> Point {
     gui.point(GUI_SHIP_POSITION)
