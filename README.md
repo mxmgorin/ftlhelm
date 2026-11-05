@@ -20,24 +20,39 @@
 
 ## Features
 
-- **Zones**: the D-pad and sticks jump between rooms, weapon and drone boxes, doors, event choices, beacons and buttons
-- **Wheels** for weapons, crew, systems, ship orders and abilities, in the game's own art
-- **Small screens**, on by default below 1280x720:
-  - **Zoom**: the ship view magnified around the cursor; the map, ship and store screens enlarged to fit
+- **Zones**: the D-pad and sticks jump between rooms, doors, weapon and drone boxes, event choices, beacons, store items and menu buttons
+- **Weapons**:
+  - **Arm** the next powered weapon with one press, aim with another
+  - **Volleys**: fire all weapons, or those selected on the weapons wheel, at one room
+  - **Beams**: lay beams through as many rooms as possible, then turn, slide or move them with the pad
+  - **Reorder**: move weapons and drones one slot at a time
+- **Crew**: select a room's crew one at a time, then all, with repeated presses; step to the next crew member with another button; add or remove crew members with the crew wheel
+- **Doors**: open or close all doors in a room at once, or control individual doors
+- **Wheels** for weapons, crew, systems, ship orders and abilities, using the game's own artwork
+- **Overlay**:
+  - **Focus brackets** around the item under the cursor
+  - **Crew markers** over selected crew members
+  - **Mode badge** where the game writes PAUSED, showing the aimed weapon, selected crew and active modes
+- **Autopause**: the game pauses while a wheel is open, while aiming, or both
+- **Fast forward**: speed up the game while a button is held
+- **Mouse mode**: move the game's cursor freely with the D-pad and sticks
+- **In-game help**: button, wheel, weapon, crew and door controls; shown on first run
+- **Small screens**, enabled by default below 1280x720:
+  - **Zoom**: magnify the ship view around the cursor; enlarge the map, ship and store screens to fit
   - **Frame filter**: smoother, sharper picture
-  - **Text size**: event boxes and tooltips 1 to 2 times the game's own
-  - **Pointer size**: the mouse arrow drawn up to twice as large
-  - **HUD shift**: on screens narrower than 16:9, the HUD's edge panels move toward the middle as far as the player ship leaves room
-- **iPad icons**: the map's beacons and the crew station buttons in the larger art of FTL's iPad edition, each on its own switch
-- **Fast forward** while a button is held
-- **Mouse mode**: the D-pad and sticks move the game's cursor freely
-- **Touch**: the touchscreen works as the mouse
+  - **Text size**: scale event boxes and tooltips up to 2x the game's original size
+  - **Pointer size**: keep the mouse cursor at the game's own size, or set it from half to twice that
+  - **HUD shift**: on screens narrower than 16:9, move the HUD's edge panels toward the middle, as far as the ship allows
+- **iPad icons**: use the larger icons from FTL's iPad edition for map beacons and crew station buttons, each controlled by its own switch
+- **Touch**: use the touchscreen as a mouse
   - **Tap** to click, **hold** to right-click, **drag** to select
-  - **Swipe** up or down on a system icon or weapon box to set its power
+  - **Swipe** up or down on a system icon or weapon box to adjust its power
   - **Two-finger tap** or the on-screen button to pause
   - **Pinch** to zoom and move the ship view
   - **Near misses** land on the closest button, room or icon
-- **Remappable**: tap and hold actions on every button, wheels and their plates in `ftlhelm.ini`, re-read while the game runs
+- **In-game settings**: adjust zoom, text size, pointer size, autopause, fast-forward speed, overlay, frame filter, iPad artwork, button swap, touch and rumble from the settings wheel
+- **Any pad**: the last controller used takes control; the game pauses if it disconnects; A/B and X/Y can be swapped for controllers with different button layouts; rumble support
+- **Remappable**: configure tap and hold actions for every button, and the wheels and their plates, in `ftlhelm.ini`; changes are reloaded while the game is running
 
 <table align="center">
   <tr>
