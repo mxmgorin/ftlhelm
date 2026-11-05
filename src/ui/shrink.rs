@@ -38,9 +38,12 @@ const FAILED_PROGRAM: c_uint = !0;
 /// The shader table size and growth the engine sets up for its own generator.
 const TABLE_SIZE: c_int = 0xf00;
 const TABLE_GROWS: c_int = 0;
-/// The unsharp mask's amount by default, and its most.
-pub const SHARPEN_DEFAULT: f32 = 0.5;
-pub const SHARPEN_MAX: f32 = 1.0;
+/// Filter levels: below FILTER_SOFT the game's own filter, at it the plain area average, and
+/// each level above adds SHARPEN_STEP of unsharp mask.
+pub const FILTER_SOFT: i32 = 1;
+pub const FILTER_DEFAULT: i32 = 3;
+pub const FILTER_MAX: i32 = 5;
+const SHARPEN_STEP: f32 = 0.25;
 /// The engine allocator's default alignment and no flags.
 const ALLOC_DEFAULT_ALIGN: c_int = 0;
 const ALLOC_NO_FLAGS: c_int = 0;
@@ -91,7 +94,7 @@ static FILTERING: AtomicBool = AtomicBool::new(false);
 static LAST_FILTER_KEY: AtomicU32 = AtomicU32::new(INVALID_KEY);
 /// Whether shrunk frames are area-averaged, and the unsharp amount, as last configured.
 static ENABLED: AtomicBool = AtomicBool::new(true);
-static SHARPEN: AtomicU32 = AtomicU32::new(SHARPEN_DEFAULT.to_bits());
+static SHARPEN: AtomicU32 = AtomicU32::new(sharpen(FILTER_DEFAULT).to_bits());
 
 enum State {
     Uninstalled,
@@ -205,11 +208,15 @@ fn filter_built() -> Option<bool> {
     Some(!info.is_null() && unsafe { (*info).program } != FAILED_PROGRAM)
 }
 
-/// Sets whether shrunk frames are area-averaged and the unsharp amount, for the blits that
-/// follow.
-pub fn configure(enabled: bool, sharpen: f32) {
-    ENABLED.store(enabled, Ordering::Relaxed);
-    SHARPEN.store(sharpen.to_bits(), Ordering::Relaxed);
+/// The unsharp mask's amount at filter `level`.
+const fn sharpen(level: i32) -> f32 {
+    (level - FILTER_SOFT) as f32 * SHARPEN_STEP
+}
+
+/// Sets the filter level of the blits that follow.
+pub fn configure(level: i32) {
+    ENABLED.store(level >= FILTER_SOFT, Ordering::Relaxed);
+    SHARPEN.store(sharpen(level).to_bits(), Ordering::Relaxed);
 }
 
 /// Runs `blit`, the game's blit of a `frame_w` x `frame_h` frame, with each screen pixel
@@ -252,5 +259,10 @@ mod tests {
         assert_eq!(filter_key(7, false), 7);
         assert_eq!(filter_key(7, true), 7 | FILTER_KEY);
         assert_eq!(filter_key(INVALID_KEY, true), INVALID_KEY);
+    }
+
+    #[test]
+    fn the_softest_level_does_not_sharpen_and_the_top_one_sharpens_fully() {
+        assert_eq!((sharpen(FILTER_SOFT), sharpen(FILTER_MAX)), (0.0, 1.0));
     }
 }

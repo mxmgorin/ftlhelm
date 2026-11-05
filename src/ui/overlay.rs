@@ -113,7 +113,7 @@ impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
     /// should be drawn, as they would cover an open wheel or the help.
     pub fn draw_overlay(&mut self) -> bool {
-        if !self.wheel_at_cursor() && !self.help.shown && self.cfg.overlay {
+        if !self.wheel_at_cursor() && !self.help.shown {
             if self.cfg.crew_marker {
                 self.draw_crew_marks();
             }
@@ -179,7 +179,7 @@ impl Layer {
     }
 
     fn brackets_shown(&self) -> bool {
-        self.cfg.overlay && self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help.shown
+        self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help.shown
     }
 
     /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,
@@ -335,9 +335,6 @@ mod tests {
             assert!(!l.pointer_hidden(), "no focus move yet");
             l.focus_move(1.0, 0.0);
             assert!(l.pointer_hidden());
-            l.cfg.overlay = false;
-            assert!(!l.pointer_hidden(), "no brackets drawn");
-            l.cfg.overlay = true;
             l.cfg.focus_brackets = false;
             assert!(!l.pointer_hidden(), "brackets switched off");
             l.cfg.focus_brackets = true;

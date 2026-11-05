@@ -6,10 +6,9 @@ use super::glyph::{Glyph, HELP_GLYPH, LETTER_A, LETTER_B, LETTER_X, LETTER_Y, TE
 use super::wheel::Plate;
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    is_switch, option_name, Tuning, AUTOPAUSE_ALL, CANCEL_PAUSE_KEY, CREW_MARKER_KEY, FLICK_THRESHOLD_KEY,
-    FOCUS_BRACKETS_KEY, FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY,
-    ROOM_CREW_PICK_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY, SWAP_ALL, SWAP_BUTTONS_KEY, SWAP_XY, TAP_HOLD_KEY,
-    TOUCH_KEY,
+    is_switch, option_name, Tuning, AUTOPAUSE_ALL, BADGE_KEY, CANCEL_PAUSE_KEY, CREW_MARKER_KEY, FLICK_THRESHOLD_KEY,
+    FOCUS_BRACKETS_KEY, FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, POINTER_SIZE_KEY,
+    ROOM_CREW_PICK_KEY, RUMBLE_KEY, SPEED_LEVEL_KEY, SWAP_ALL, SWAP_BUTTONS_KEY, SWAP_XY, TAP_HOLD_KEY, TOUCH_KEY,
 };
 use crate::game::actions::{move_drone, move_weapon};
 use crate::game::mem::Obj;
@@ -177,14 +176,14 @@ pub(super) fn swap_glyph(swaps: i32) -> Glyph {
 /// The glyph of a `set` plate whose setting has a look of its own.
 fn setting_glyph(key: &str) -> Option<Glyph> {
     match key {
-        OVERLAY_KEY => Some(Glyph::Overlay),
+        BADGE_KEY => Some(Glyph::Badge),
         RUMBLE_KEY => Some(Glyph::Rumble),
-        SHARPEN_KEY => Some(Glyph::Sharpen),
         SPEED_LEVEL_KEY => Some(Glyph::FastForward),
         FOCUS_BRACKETS_KEY => Some(Glyph::Brackets),
         CREW_MARKER_KEY => Some(Glyph::Marker),
         HUD_SHIFT_KEY => Some(Glyph::HudShift),
         FRAME_FILTER_KEY => Some(Glyph::FrameFilter),
+        POINTER_SIZE_KEY => Some(Glyph::PointerSize),
         IPAD_BEACONS_KEY => Some(Glyph::Beacon),
         FOCUS_REPEAT_KEY => Some(Glyph::FocusRepeat),
         TOUCH_KEY => Some(Glyph::Touch),

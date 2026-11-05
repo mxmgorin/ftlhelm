@@ -65,19 +65,17 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
-| `overlay` | 1 | switch | the badge, the focus brackets and the crew markers; 0: none of them |
 | `badge` | 1 | switch | the badge with the selected crew and the active modes |
 | `focus_brackets` | 1 | switch | brackets on the zone under the cursor |
 | `crew_marker` | 1 | switch | markers over the selected crew |
-| `pointer_scale_max` | 2 | 1 to 4 | the largest pointer scale on small screens |
+| `pointer_size` | 1 | 0.5 to 2 | pointer size against the game's own |
 | `zoom` | 0 | 0, 1 to 3 | ship view [zoom](CONTROLS.md#zoom); 0: auto |
 | `ipad_beacons` | 1 | switch | map beacons in the iPad art |
 | `ipad_station_buttons` | 1 | switch | crew station buttons in the iPad art |
 | `hud_shift` | 1 | switch | HUD panels moved toward the middle on narrow screens |
 | `text_scale` | 0 | 0, 1 to 2 | event and tooltip [text size](CONTROLS.md#text-size); 0: auto |
 | `help_at_start` | 1 | switch | the help on the first run |
-| `frame_filter` | 1 | switch | smoother picture on small screens |
-| `sharpen` | 0.5 | 0 to 1 | sharpening of the filtered picture |
+| `frame_filter` | 3 | 0 to 5 | smoother picture on small screens, sharper at higher levels; 0: the game's own filter |
 
 ### Touch
 

@@ -105,13 +105,13 @@ A plate is greyed out where it does nothing.
 
 | Plate | Switches |
 | --- | --- |
-| Overlay | the badge, the zone brackets and the crew markers |
+| Badge | the badge on the PAUSED row |
 | Crew marker | markers over the selected crew |
 | HUD shift | HUD panels moved toward the middle on narrow screens |
 | iPad beacons | map beacons in the iPad art |
 | iPad buttons | crew station buttons in the iPad art |
-| Frame filter | smoother picture on small screens |
-| Sharpen | sharpening of the filtered picture |
+| Pointer size | pointer size against the game's own |
+| Frame filter | smoother picture on small screens, sharper at higher levels |
 | Focus brackets | brackets on the zone under the cursor |
 
 ## Controls wheel

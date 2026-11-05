@@ -867,7 +867,7 @@ mod tests {
     fn a_stick_held_through_a_wheel_flicks_only_after_it_recentres() {
         with_game(|_| {
             let mut l = Layer::default();
-            let layout = "[controls]\nleft_analog = flick\n[wheel:settings]\nkind = settings\nup = set overlay\n";
+            let layout = "[controls]\nleft_analog = flick\n[wheel:settings]\nkind = settings\nup = set badge\n";
             l.layout = Layout::parse(layout).0;
             let zone = |x| Zone { rect: Rect { x, y: 100, w: 40, h: 40 }, id: 0, kind: ZoneKind::Button };
             l.zones.list = vec![zone(100), zone(200)];
@@ -946,7 +946,7 @@ mod tests {
         with_game(|_| {
             let mut l = Layer::default();
             let layout = "[controls]\nl2 = precision | room_doors\nr2 = fast_forward | j\n\
-                          [wheel:settings]\nkind = settings\nup = set overlay\n";
+                          [wheel:settings]\nkind = settings\nup = set badge\n";
             l.layout = Layout::parse(layout).0;
             let mut p = PadFrame::default();
             let mut set = |l: &mut Layer, input: Input, down: bool, in_wheel: bool| {
@@ -961,9 +961,9 @@ mod tests {
             set(&mut l, Input::L2, false, true);
             assert!(!l.bind.precision, "its release still ends the hold");
             set(&mut l, Input::L2, true, true);
-            assert!(!l.cfg.overlay, "L2 steps down");
+            assert!(!l.cfg.badge, "L2 steps down");
             set(&mut l, Input::R2, true, true);
-            assert!(l.cfg.overlay, "R2 steps up");
+            assert!(l.cfg.badge, "R2 steps up");
             l.close_wheel();
             calls();
             set(&mut l, Input::L2, false, false);

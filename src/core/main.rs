@@ -140,7 +140,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         }
         text::keep_boxes_to(l.zoom.span);
         text::update(l.cfg.text_scale, state::app(), l.zoom.target);
-        shrink::configure(l.cfg.frame_filter, l.cfg.sharpen);
+        shrink::configure(l.cfg.frame_filter);
         l.run_queued_clicks();
         l.run_volley();
         l.sync_cursor();
@@ -263,7 +263,7 @@ extern "C" fn render_tooltip_hook(this: Ptr, at: Point, fixed: bool) {
     let drawn = POINTERS[0].load(Ordering::Relaxed) != 0 && !POINTER_HIDDEN.load(Ordering::Relaxed);
     let tip = state::mouse_point();
     let below_tip = at == Point { x: tip.x, y: tip.y + POINTER_TOOLTIP_DROP };
-    let at = if drawn && below_tip && k > 1.0 {
+    let at = if drawn && below_tip {
         Point { y: tip.y + (POINTER_TOOLTIP_DROP as f32 * k).round() as i32, ..at }
     } else {
         at

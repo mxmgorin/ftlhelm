@@ -518,23 +518,6 @@ pub fn draw_diamond(cx: f32, cy: f32, w: f32, h: f32, color: GlColor) {
     draw_side_triangle(cx, cy, -w / 2.0, h, color);
 }
 
-/// The lower edge of the diamond `w` wide and `h` tall centred on (`cx`, `cy`), `thick` lines
-/// deep: a chevron pointing down, on the diamond's rows.
-pub fn draw_chevron(cx: f32, cy: f32, w: f32, h: f32, thick: f32, color: GlColor) {
-    let half = h / 2.0;
-    let mut top = -half;
-    while top < half {
-        // The diamond's row less the same diamond's row `thick` lines higher up.
-        let outer = triangle_row(w / 2.0, half, top);
-        let inner = if top + thick < half { triangle_row(w / 2.0, half, top + thick) } else { 0.0 };
-        if outer > inner {
-            draw_rect(cx - outer, cy + top, outer - inner, OVERLAY_LINE, color);
-            draw_rect(cx + inner, cy + top, outer - inner, OVERLAY_LINE, color);
-        }
-        top += OVERLAY_LINE;
-    }
-}
-
 /// A triangle pointing down, `w` wide and `h` tall, its tip at (`cx`, `tip`), over a dark edge
 /// one line wider; out of one-line rows like a disc.
 pub fn draw_down_marker(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {

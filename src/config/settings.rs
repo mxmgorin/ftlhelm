@@ -11,7 +11,7 @@ use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
 use crate::input::pad::{FOCUS_REPEAT_S, RUMBLE_MAX};
 use crate::ui::overlay::{Notice, LAYOUT_NOTICE_S, LAYOUT_UPDATED_NOTICE};
-use crate::ui::shrink::{SHARPEN_DEFAULT, SHARPEN_MAX};
+use crate::ui::shrink::{FILTER_DEFAULT, FILTER_MAX};
 use crate::ui::text::{TEXT_SCALE_AUTO, TEXT_SCALE_MAX};
 use crate::ui::wheel::{Backdrop, WheelPlace, BACKDROPS, WHEEL_PLACES};
 use crate::ui::zoom::{ZOOM_AUTO, ZOOM_MAX};
@@ -21,14 +21,14 @@ const LAYOUT_ENV: &str = "FTLHELM_LAYOUT";
 const ZOOM_KEY: &str = "zoom";
 const TEXT_SCALE_KEY: &str = "text_scale";
 const HELP_AT_START_KEY: &str = "help_at_start";
-pub const OVERLAY_KEY: &str = "overlay";
+pub const BADGE_KEY: &str = "badge";
 pub const RUMBLE_KEY: &str = "rumble";
-pub const SHARPEN_KEY: &str = "sharpen";
 pub const SPEED_LEVEL_KEY: &str = "speed_level";
 pub const FOCUS_BRACKETS_KEY: &str = "focus_brackets";
 pub const CREW_MARKER_KEY: &str = "crew_marker";
 pub const HUD_SHIFT_KEY: &str = "hud_shift";
 pub const FRAME_FILTER_KEY: &str = "frame_filter";
+pub const POINTER_SIZE_KEY: &str = "pointer_size";
 pub const IPAD_BEACONS_KEY: &str = "ipad_beacons";
 pub const AUTOPAUSE_KEY: &str = "autopause";
 pub const SWAP_BUTTONS_KEY: &str = "swap_buttons";
@@ -51,7 +51,7 @@ const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
 const LAYOUT_VERSION_KEY: &str = "layout_version";
-const LAYOUT_VERSION: i32 = 6;
+const LAYOUT_VERSION: i32 = 7;
 const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -97,9 +97,12 @@ const TOUCH_SNAP: f32 = 32.0;
 /// Window pixels a finger on a power box travels per bar.
 const TOUCH_STEP: f32 = 16.0;
 const TOUCH_PX_MAX: f32 = 100.0;
-/// The most times its size the game's pointer is drawn by default, and the highest setting.
-const POINTER_SCALE_MAX: f32 = 2.0;
-const POINTER_SCALE_LIMIT: f32 = 4.0;
+/// The pointer's size against the game's own: by default, its least and most, and the step
+/// a plate moves it by.
+const POINTER_SIZE: f32 = 1.0;
+const POINTER_SIZE_MIN: f32 = 0.5;
+const POINTER_SIZE_MAX: f32 = 2.0;
+const POINTER_SIZE_STEP: f32 = 0.25;
 /// How `set` moves a number: in `step`s within `range`, else within the setting's own range;
 /// a step up lowers a `falling` number.
 struct Stepping {
@@ -116,7 +119,8 @@ const fn stepping(key: &'static str, step: f32) -> Stepping {
 /// The numbers `set` moves.
 const STEPS: &[Stepping] = &[
     stepping(RUMBLE_KEY, RUMBLE_STEP),
-    stepping(SHARPEN_KEY, SHARPEN_STEP),
+    stepping(FRAME_FILTER_KEY, FILTER_STEP),
+    stepping(POINTER_SIZE_KEY, POINTER_SIZE_STEP),
     stepping(SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
     stepping(AUTOPAUSE_KEY, AUTOPAUSE_STEP),
     stepping(SWAP_BUTTONS_KEY, SWAP_STEP),
@@ -130,7 +134,7 @@ const TAP_HOLD_STEP: f32 = 0.1;
 const TAP_HOLD_STEP_MAX: f32 = 0.5;
 const FLICK_STEP: f32 = 0.1;
 const RUMBLE_STEP: f32 = 0.5;
-const SHARPEN_STEP: f32 = 0.25;
+const FILTER_STEP: f32 = 1.0;
 const SPEED_LEVEL_STEP: f32 = 1.0;
 /// Each step is the next combination of autopause flags.
 const AUTOPAUSE_STEP: f32 = 1.0;
@@ -144,16 +148,14 @@ pub struct Settings {
     pub cursor_speed: f32,
     pub cursor_deadzone: f32,
     pub cursor_curve: f32,
-    /// The badge, the focus brackets and the crew markers show, each as its own switch allows.
-    pub overlay: bool,
     /// The mode badge on the game's pause row.
     pub badge: bool,
     /// A zone a focus move lands on is framed with brackets in place of the pointer.
     pub focus_brackets: bool,
     /// Selected crew are marked on the ship view.
     pub crew_marker: bool,
-    /// The most times its size the game's pointer is drawn where the frame is shown smaller.
-    pub pointer_scale_max: f32,
+    /// The pointer's size on screen, times the game's own on a whole frame shown at its size.
+    pub pointer_size: f32,
     pub snap_dpad: bool,
     /// When the game pauses itself, as AUTOPAUSE_* flags.
     pub autopause: i32,
@@ -195,10 +197,8 @@ pub struct Settings {
     pub ipad_station_buttons: bool,
     /// The help shows at start, until it is first closed.
     pub help_at_start: bool,
-    /// A frame the screen shrinks is area-averaged; off, the game filters it.
-    pub frame_filter: bool,
-    /// The unsharp mask's amount over the area-averaged frame.
-    pub sharpen: f32,
+    /// The filter level of a frame the screen shrinks: 0 the game's own filter, higher sharper.
+    pub frame_filter: i32,
     /// Touches act as the mouse.
     pub touch: bool,
     /// Seconds a finger stays down for its lift to right-click.
@@ -221,11 +221,10 @@ impl Default for Settings {
             cursor_speed: CURSOR_SPEED,
             cursor_deadzone: STICK_DEADZONE,
             cursor_curve: CURSOR_CURVE,
-            overlay: true,
             badge: true,
             focus_brackets: true,
             crew_marker: true,
-            pointer_scale_max: POINTER_SCALE_MAX,
+            pointer_size: POINTER_SIZE,
             snap_dpad: true,
             autopause: AUTOPAUSE_WHEEL,
             speed_level: SPEED_LEVEL_MAX as i32,
@@ -251,8 +250,7 @@ impl Default for Settings {
             ipad_beacons: true,
             ipad_station_buttons: true,
             help_at_start: true,
-            frame_filter: true,
-            sharpen: SHARPEN_DEFAULT,
+            frame_filter: FILTER_DEFAULT,
             touch: true,
             touch_long_press: TOUCH_LONG_PRESS_S,
             touch_slop: TOUCH_SLOP,
@@ -278,11 +276,10 @@ const OPTIONS: &[(&str, Field)] = &[
     ("cursor_speed", Field::Float(|c| &mut c.cursor_speed, CURSOR_SPEED_MIN, f32::INFINITY)),
     ("cursor_deadzone", Field::Float(|c| &mut c.cursor_deadzone, 0.0, STICK_DEADZONE_MAX)),
     ("cursor_curve", Field::Float(|c| &mut c.cursor_curve, CURSOR_CURVE_MIN, CURSOR_CURVE_MAX)),
-    (OVERLAY_KEY, Field::Bool(|c| &mut c.overlay)),
-    ("badge", Field::Bool(|c| &mut c.badge)),
+    (BADGE_KEY, Field::Bool(|c| &mut c.badge)),
     (FOCUS_BRACKETS_KEY, Field::Bool(|c| &mut c.focus_brackets)),
     (CREW_MARKER_KEY, Field::Bool(|c| &mut c.crew_marker)),
-    ("pointer_scale_max", Field::Float(|c| &mut c.pointer_scale_max, 1.0, POINTER_SCALE_LIMIT)),
+    (POINTER_SIZE_KEY, Field::Float(|c| &mut c.pointer_size, POINTER_SIZE_MIN, POINTER_SIZE_MAX)),
     ("snap_dpad", Field::Bool(|c| &mut c.snap_dpad)),
     (AUTOPAUSE_KEY, Field::Int(|c| &mut c.autopause, 0.0, AUTOPAUSE_ALL as f32)),
     (SPEED_LEVEL_KEY, Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
@@ -308,8 +305,7 @@ const OPTIONS: &[(&str, Field)] = &[
     (IPAD_BEACONS_KEY, Field::Bool(|c| &mut c.ipad_beacons)),
     ("ipad_station_buttons", Field::Bool(|c| &mut c.ipad_station_buttons)),
     (HELP_AT_START_KEY, Field::Bool(|c| &mut c.help_at_start)),
-    (FRAME_FILTER_KEY, Field::Bool(|c| &mut c.frame_filter)),
-    (SHARPEN_KEY, Field::Float(|c| &mut c.sharpen, 0.0, SHARPEN_MAX)),
+    (FRAME_FILTER_KEY, Field::Int(|c| &mut c.frame_filter, 0.0, FILTER_MAX as f32)),
     (TOUCH_KEY, Field::Bool(|c| &mut c.touch)),
     ("touch_long_press", Field::Float(|c| &mut c.touch_long_press, HOLD_S_MIN, HOLD_S_MAX)),
     ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
@@ -883,14 +879,12 @@ mod tests {
     }
 
     #[test]
-    fn the_frame_filter_switches_off_and_sharpen_stays_in_range() {
+    fn the_frame_filter_level_stays_in_range() {
         let mut cfg = Settings::default();
-        cfg.apply("frame_filter", "0");
-        assert!(!cfg.frame_filter);
-        cfg.apply("sharpen", "3");
-        assert_eq!(cfg.sharpen, SHARPEN_MAX);
-        cfg.apply("sharpen", "-1");
-        assert_eq!(cfg.sharpen, 0.0);
+        cfg.apply(FRAME_FILTER_KEY, "9");
+        assert_eq!(cfg.frame_filter, FILTER_MAX);
+        cfg.apply(FRAME_FILTER_KEY, "-1");
+        assert_eq!(cfg.frame_filter, 0);
     }
 
     #[test]
@@ -938,11 +932,11 @@ mod tests {
         assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32);
         cfg.cycle(speed);
         assert_eq!(cfg.speed_level, SPEED_LEVEL_MIN as i32 + 1);
-        let overlay = tunable(OVERLAY_KEY).expect("a switch");
-        cfg.cycle(overlay);
-        assert_eq!(cfg.tuning(overlay), Tuning::Switch(false));
-        cfg.step(overlay, true);
-        assert!(cfg.overlay);
+        let badge = tunable(BADGE_KEY).expect("a switch");
+        cfg.cycle(badge);
+        assert_eq!(cfg.tuning(badge), Tuning::Switch(false));
+        cfg.step(badge, true);
+        assert!(cfg.badge);
         assert_eq!((tunable("cursor_speed"), tunable("bogus")), (None, None));
     }
 
@@ -950,9 +944,9 @@ mod tests {
     fn only_the_changed_settings_are_written() {
         let mut cfg = Settings::default();
         let before = cfg.values();
-        (cfg.sharpen, cfg.overlay) = (0.75, false);
+        (cfg.frame_filter, cfg.badge) = (FILTER_MAX, false);
         let changed = differing(&before, &cfg.values());
-        assert_eq!(changed, [(OVERLAY_KEY, "0".to_string()), (SHARPEN_KEY, "0.75".to_string())]);
+        assert_eq!(changed, [(BADGE_KEY, "0".to_string()), (FRAME_FILTER_KEY, FILTER_MAX.to_string())]);
     }
 
     #[test]

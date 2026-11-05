@@ -507,8 +507,8 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::settings::{
-        CANCEL_PAUSE_KEY, FLICK_THRESHOLD_KEY, FOCUS_REPEAT_KEY, HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY,
-        SPEED_LEVEL_KEY, SWAP_AB, SWAP_BUTTONS_KEY, TAP_HOLD_KEY, TOUCH_KEY,
+        BADGE_KEY, CANCEL_PAUSE_KEY, FLICK_THRESHOLD_KEY, FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY,
+        RUMBLE_KEY, SPEED_LEVEL_KEY, SWAP_AB, SWAP_BUTTONS_KEY, TAP_HOLD_KEY, TOUCH_KEY,
     };
 
     #[test]
@@ -606,7 +606,7 @@ mod tests {
                 assert!(wheel.plates.iter().flatten().any(|p| p.action == set), "{name}: {key}");
             }
         };
-        sets("view", &[OVERLAY_KEY, HUD_SHIFT_KEY]);
+        sets("view", &[BADGE_KEY, HUD_SHIFT_KEY]);
         let controls = [
             RUMBLE_KEY,
             FOCUS_REPEAT_KEY,
@@ -623,15 +623,15 @@ mod tests {
     fn set_takes_switches_and_stepped_numbers() {
         let (l, _) = Layout::parse(
             "[controls]
-a = set overlay
-b = set sharpen
+a = set badge
+b = set frame_filter
 x = set cursor_speed
 y = set
 ",
         );
         let hold = |i: Input| l.states[0].bind[i as usize].map(|b| b.hold);
-        assert_eq!(hold(Input::FaceDown), tunable(OVERLAY_KEY).map(Action::Set));
-        assert_eq!(hold(Input::FaceRight), tunable(SHARPEN_KEY).map(Action::Set));
+        assert_eq!(hold(Input::FaceDown), tunable(BADGE_KEY).map(Action::Set));
+        assert_eq!(hold(Input::FaceRight), tunable(FRAME_FILTER_KEY).map(Action::Set));
         assert_eq!((hold(Input::FaceLeft), hold(Input::FaceUp)), (None, None), "no step, no key");
     }
 }

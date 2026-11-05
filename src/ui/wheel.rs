@@ -15,8 +15,8 @@ use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{Action, Builtin, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    option_name, Tuning, AUTOPAUSE_AIM, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
-    FRAME_FILTER_KEY, HUD_SHIFT_KEY, SHARPEN_KEY, SWAP_BUTTONS_KEY, TOUCH_KEY,
+    option_name, Tuning, AUTOPAUSE_AIM, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, FRAME_FILTER_KEY, HUD_SHIFT_KEY,
+    SWAP_BUTTONS_KEY, TOUCH_KEY,
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
@@ -618,9 +618,7 @@ impl Layer {
                     pl.glyph = Some(swap_glyph(self.cfg.swap_buttons));
                 }
                 pl.available = match key {
-                    SHARPEN_KEY => shrunk && self.cfg.frame_filter,
                     FRAME_FILTER_KEY => shrunk,
-                    FOCUS_BRACKETS_KEY | CREW_MARKER_KEY => self.cfg.overlay,
                     HUD_SHIFT_KEY => narrow,
                     SWAP_BUTTONS_KEY => swaps,
                     TOUCH_KEY => touchscreen,
@@ -1237,8 +1235,8 @@ mod tests {
     fn set_plates_show_and_step_their_settings() {
         with_game(|_| {
             let mut l = Layer::default();
-            let layout = "[wheel:settings]\nkind = settings\nup = set overlay\nright = set rumble\n\
-                          down = set sharpen\nleft = set speed_level\n";
+            let layout = "[wheel:settings]\nkind = settings\nup = set badge\nright = set rumble\n\
+                          down = set frame_filter\nleft = set speed_level\n";
             let p = plates(&mut l, layout);
             let shown = |p: &Plate| (p.powered, p.pips, p.pips_on, p.badge.clone());
             assert_eq!(shown(&p[0]), (true, SWITCH_PIPS, 1, ON_BADGE.to_string()));
@@ -1247,7 +1245,7 @@ mod tests {
             let glyphs = [0, 2, 4, 6].map(|i| p[i].glyph);
             assert_eq!(
                 glyphs,
-                [Some(Glyph::Overlay), Some(Glyph::Rumble), Some(Glyph::Sharpen), Some(Glyph::FastForward)]
+                [Some(Glyph::Badge), Some(Glyph::Rumble), Some(Glyph::FrameFilter), Some(Glyph::FastForward)]
             );
             assert!(!p[4].available, "the frame is shown whole");
             l.zoom.view = Some(View { x: 0.0, y: 0.0, w: GAME_W as f32, h: GAME_H as f32, k: 0.5 });
@@ -1265,7 +1263,7 @@ mod tests {
             assert_eq!((l.cfg.speed_level, l.wheel.open), (1, Some(0)), "the top cycles to the lowest");
             l.wheel.sel = Some(0);
             l.act_on_plate();
-            assert_eq!((l.cfg.overlay, l.wheel.open), (false, None));
+            assert_eq!((l.cfg.badge, l.wheel.open), (false, None));
         });
     }
 
@@ -1294,7 +1292,7 @@ mod tests {
     fn a_wheel_plate_opens_its_wheel_and_cancel_goes_back() {
         with_game(|_| {
             let mut l = Layer::default();
-            let layout = "[wheel:settings]\nkind = settings\nup = set overlay\nleft = wheel view \"View\"\n\
+            let layout = "[wheel:settings]\nkind = settings\nup = set badge\nleft = wheel view \"View\"\n\
                           [wheel:view]\nkind = settings\nup = set hud_shift\n";
             l.layout = Layout::parse(layout).0;
             let (settings, view) = (0, 1);
@@ -1326,20 +1324,26 @@ mod tests {
         with_game(|_| {
             let mut l = Layer::default();
             let layout = "[wheel:view]\nkind = settings\nup = set focus_brackets\nright = set crew_marker\n\
-                          down = set frame_filter\nleft = set hud_shift\nup_left = set ipad_beacons\n";
+                          down = set frame_filter\ndown_left = set pointer_size\nleft = set hud_shift\n\
+                          up_left = set ipad_beacons\n";
             let p = plates(&mut l, layout);
-            let glyphs = [0, 2, 4, 6, 7].map(|i| p[i].glyph);
-            let drawn = [Glyph::Brackets, Glyph::Marker, Glyph::FrameFilter, Glyph::HudShift, Glyph::Beacon].map(Some);
+            let glyphs = [0, 2, 4, 5, 6, 7].map(|i| p[i].glyph);
+            let drawn = [
+                Glyph::Brackets,
+                Glyph::Marker,
+                Glyph::FrameFilter,
+                Glyph::PointerSize,
+                Glyph::HudShift,
+                Glyph::Beacon,
+            ]
+            .map(Some);
             assert_eq!(glyphs, drawn);
-            assert!(p[0].available && p[2].available);
+            assert!(p[0].available && p[2].available && p[5].available);
             assert!(!p[4].available, "the frame is shown whole");
             assert!(p[6].available, "the stand-in screen is narrower than the frame");
-            l.cfg.overlay = false;
             l.zoom.view = Some(View { x: 0.0, y: 0.0, w: GAME_W as f32, h: GAME_H as f32, k: 0.5 });
             l.refresh_wheel();
-            let p = &l.wheel.plates;
-            assert!(!p[0].available && !p[2].available, "the overlay is off");
-            assert!(p[4].available, "the frame is shrunk");
+            assert!(l.wheel.plates[4].available, "the frame is shrunk");
         });
     }
 

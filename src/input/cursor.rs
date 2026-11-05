@@ -251,10 +251,10 @@ impl Layer {
         true
     }
 
-    /// How many times its size the game's pointer is drawn: as large on screen as on a whole
-    /// frame shown at its size, up to `pointer_scale_max`.
+    /// How many times its size the game's pointer is drawn: `pointer_size` times as large on
+    /// screen as on a whole frame shown at its size.
     pub fn pointer_scale(&self) -> f32 {
-        self.mark_scale().min(self.cfg.pointer_scale_max)
+        self.mark_scale() * self.cfg.pointer_size
     }
 
     /// Marks the zone under the cursor as focused, for as long as the cursor stays.

@@ -36,12 +36,13 @@ const SWAP_SPACING: f32 = 10.0;
 const PAUSE_GLYPH_BAR_W: f32 = 6.0;
 const PAUSE_GLYPH_BAR_H: f32 = 20.0;
 const PAUSE_GLYPH_GAP: f32 = 6.0;
-/// The overlay glyph: layers, a diamond over the edge of one more below it, GLYPH_W by GLYPH_H.
-const LAYER_H: f32 = 16.0;
-const LAYER_STEP: f32 = GLYPH_H - LAYER_H;
-/// The sharpen glyph: a four-point star, a tall diamond across a wide one.
-const STAR_LONG: f32 = 30.0;
-const STAR_SHORT: f32 = 10.0;
+/// The badge glyph: a row of title letters over a row of smaller caption letters, each row
+/// BADGE_LETTERS blocks a line apart.
+const BADGE_LETTERS: usize = 5;
+const BADGE_TITLE: (f32, f32) = (5.0, 8.0);
+const BADGE_CAPTION: (f32, f32) = (3.0, 4.0);
+const BADGE_ROW_GAP: f32 = 4.0;
+const BADGE_H: f32 = BADGE_TITLE.1 + BADGE_ROW_GAP + BADGE_CAPTION.1;
 /// The rumble glyph: a pad body, and each side of it waves that shorten outward.
 const RUMBLE_BODY_W: f32 = 8.0;
 const RUMBLE_BODY_H: f32 = 20.0;
@@ -85,6 +86,34 @@ const DISPLAY_SCREEN_H: f32 = 22.0;
 const DISPLAY_NECK_W: f32 = 6.0;
 const DISPLAY_BASE_W: f32 = 18.0;
 const DISPLAY_H: f32 = DISPLAY_SCREEN_H + 2.0 * GLYPH_STROKE;
+/// The pointer size glyph: a pointer in one-line cells over a dimension line SIZE_LINE_W wide,
+/// SIZE_LINE_GAP under it, with end ticks SIZE_TICK_H tall centred on the line.
+const POINTER_ROWS: [&str; 20] = [
+    "#............",
+    "##...........",
+    "###..........",
+    "####.........",
+    "#####........",
+    "######.......",
+    "########.....",
+    "#########....",
+    "##########...",
+    "###########..",
+    "############.",
+    "#############",
+    "########.....",
+    "########.....",
+    "###..####....",
+    "##...####....",
+    "#.....####...",
+    "......####...",
+    ".......####..",
+    ".......#.....",
+];
+const SIZE_LINE_W: f32 = 28.0;
+const SIZE_LINE_GAP: f32 = 3.0;
+const SIZE_TICK_H: f32 = 8.0;
+const SIZE_STROKE: f32 = 2.0;
 /// A six-row A in LETTER_CELL squares.
 const TALL_A: [&str; 6] = [".###.", "#...#", "#...#", "#####", "#...#", "#...#"];
 const LETTER_CELL: f32 = 2.0;
@@ -239,10 +268,8 @@ pub(super) enum Glyph {
     Swap,
     /// The bars of a pause sign.
     Pause,
-    /// Corner brackets round a crew marker.
-    Overlay,
-    /// A four-point star.
-    Sharpen,
+    /// A line of title letters over a smaller caption line.
+    Badge,
     /// A pad body between waves.
     Rumble,
     /// Corner brackets alone.
@@ -277,6 +304,8 @@ pub(super) enum Glyph {
     Buttons(Letter, Letter),
     /// A pause button with a B over its lower right.
     CancelPause,
+    /// A pointer over a dimension line.
+    PointerSize,
 }
 
 /// Draws `rows` of `#` cells `cell` square from (`left`, `top`), a row's run as one rect.
@@ -344,17 +373,17 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(cx - gap / 2.0 - w, top, w, h, INK_COLOR);
             draw_rect(cx + gap / 2.0, top, w, h, INK_COLOR);
         }
-        Glyph::Overlay => {
-            // On whole pixels: each row stays one line.
-            let (cx, top) = (cx.round(), (cy - GLYPH_H / 2.0).round());
-            draw_diamond(cx, top + LAYER_H / 2.0, GLYPH_W, LAYER_H, INK_COLOR);
-            let below = top + LAYER_STEP + LAYER_H / 2.0;
-            draw_chevron(cx, below, GLYPH_W, LAYER_H, GLYPH_STROKE, INK_COLOR);
-        }
-        Glyph::Sharpen => {
-            let (cx, cy) = (cx.round(), cy.round());
-            draw_diamond(cx, cy, STAR_SHORT, STAR_LONG, INK_COLOR);
-            draw_diamond(cx, cy, STAR_LONG, STAR_SHORT, INK_COLOR);
+        Glyph::Badge => {
+            // On whole pixels: the letters keep one size.
+            let mut top = (cy - BADGE_H / 2.0).round();
+            for (w, h) in [BADGE_TITLE, BADGE_CAPTION] {
+                let step = w + OVERLAY_LINE;
+                let left = (cx - (BADGE_LETTERS as f32 * step - OVERLAY_LINE) / 2.0).round();
+                for i in 0..BADGE_LETTERS {
+                    draw_rect(left + i as f32 * step, top, w, h, INK_COLOR);
+                }
+                top += h + BADGE_ROW_GAP;
+            }
         }
         Glyph::Rumble => {
             let t = GLYPH_STROKE;
@@ -542,6 +571,18 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_rect(left, top, w, h, INK_COLOR);
             draw_rect(left + w + gap, top, w, h, INK_COLOR);
             draw_cells(&LETTER_B, rx + bx - l_w / 2.0, ry + by - l_h / 2.0, LETTER_CELL);
+        }
+        Glyph::PointerSize => {
+            let (w, h) = cells_size(&POINTER_ROWS, OVERLAY_LINE);
+            let t = SIZE_STROKE;
+            // On whole pixels: each row stays one line.
+            let top = (cy - (h + SIZE_LINE_GAP + (t + SIZE_TICK_H) / 2.0) / 2.0).round();
+            draw_cells(&POINTER_ROWS, (cx - w / 2.0).round(), top, OVERLAY_LINE);
+            let (left, line_top) = ((cx - SIZE_LINE_W / 2.0).round(), top + h + SIZE_LINE_GAP);
+            draw_rect(left, line_top, SIZE_LINE_W, t, INK_COLOR);
+            let tick_top = line_top + (t - SIZE_TICK_H) / 2.0;
+            draw_rect(left, tick_top, t, SIZE_TICK_H, INK_COLOR);
+            draw_rect(left + SIZE_LINE_W - t, tick_top, t, SIZE_TICK_H, INK_COLOR);
         }
     }
 }

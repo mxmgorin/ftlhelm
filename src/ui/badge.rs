@@ -204,7 +204,7 @@ impl Layer {
     }
 
     fn badge_on(&self) -> bool {
-        let shown = self.cursor.synced && self.cfg.overlay && self.cfg.badge && self.wheel.open.is_none();
+        let shown = self.cursor.synced && self.cfg.badge && self.wheel.open.is_none();
         shown && state::gui().is_some() && !state::menu_paused()
     }
 
