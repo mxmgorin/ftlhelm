@@ -20,7 +20,7 @@ use crate::config::settings::{
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
-use crate::game::actions::{tap_key, toggle_pause, MouseButton};
+use crate::game::actions::{self, tap_key, toggle_pause, MouseButton};
 use crate::game::api::{api, GlColor, Ptr};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
@@ -772,6 +772,7 @@ impl Layer {
         match action {
             // With Shift, a crew member joins the selection.
             Some(Action::Key { code, .. }) if kind == WheelKind::Crew => tap_key(code, state::any_crew_selected()),
+            Some(Action::Key { code: KEY_LOCKDOWN, .. }) if kind == WheelKind::Action => actions::lockdown(),
             Some(Action::Key { code, shift }) => {
                 tap_key(code, shift);
                 if kind == WheelKind::Action && state::ability_system(code).is_some() {
@@ -910,7 +911,7 @@ mod tests {
     use crate::game::fake::{calls, with_game, Call, Game, WEAPON_SIZE};
     use crate::ui::draw::rects_of;
     use crate::ui::glyph::{HELP_GLYPH, LETTER_A, LETTER_B, LETTER_X, LETTER_Y, TEXT_GLYPH};
-    use crate::ui::plates::{EMPTY_LABEL, OFF_BADGE, ON_BADGE, SWITCH_PIPS, WEAPON_ICON_SHIFT};
+    use crate::ui::plates::{EMPTY_LABEL, LOCKDOWN_PIPS, OFF_BADGE, ON_BADGE, SWITCH_PIPS, WEAPON_ICON_SHIFT};
     use crate::ui::zoom::View;
     use std::mem::size_of;
 
@@ -1141,20 +1142,32 @@ mod tests {
     }
 
     #[test]
-    fn lockdown_needs_a_living_crystal_and_plates_keep_their_icons() {
+    fn lockdown_needs_a_charged_crystal_and_plates_keep_their_icons() {
         with_game(|g| {
             let mut l = Layer::default();
             let door_icon = g.arena.alloc(size_of::<usize>());
             l.images.insert("door.png", door_icon.addr());
             let layout = "[wheel:actions]\nup = p \"Lockdown\"\nright = z \"Open doors\" door.png@1,2,3,4\n";
             g.player_manager();
-            let lockdown_available = |l: &mut Layer| plates(l, layout)[0].available;
-            assert!(!lockdown_available(&mut l));
+            let lockdown = |l: &mut Layer| {
+                let p = &plates(l, layout)[0];
+                (p.available, p.pips_on, p.pips, p.badge.clone())
+            };
+            let none = (false, 0, 0, String::new());
+            assert_eq!(lockdown(&mut l), none);
             let crew = [g.crew("Ann", "human", PLAYER_SHIP_ID, false), g.crew("Cy", "crystal", PLAYER_SHIP_ID, true)];
             g.crew_boxes(&crew);
-            assert!(!lockdown_available(&mut l));
+            assert_eq!(lockdown(&mut l), none, "no living crystal");
             crew[1].set(CREW_DEAD, 0u8);
-            assert!(lockdown_available(&mut l));
+            crew[1].set(CRYSTAL_CHARGE_FULL, 20.0f32);
+            crew[1].set(CRYSTAL_CHARGE, 15.0f32);
+            assert_eq!(lockdown(&mut l), (false, LOCKDOWN_PIPS - 1, LOCKDOWN_PIPS, String::new()));
+            crew[1].set(CRYSTAL_CHARGE, 20.0f32);
+            assert_eq!(lockdown(&mut l), (true, LOCKDOWN_PIPS, LOCKDOWN_PIPS, "Cy".to_string()));
+            calls();
+            l.wheel.sel = Some(0);
+            l.act_on_plate();
+            assert_eq!(calls(), [Call::Lockdown(crew[1].addr())], "set off unselected, without the key");
             let doors = &plates(&mut l, layout)[2];
             assert!(doors.available);
             assert_eq!(

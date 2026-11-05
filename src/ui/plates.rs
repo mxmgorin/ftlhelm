@@ -14,7 +14,7 @@ use crate::config::settings::{
 use crate::game::actions::{move_drone, move_weapon};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
-use crate::game::state;
+use crate::game::state::{self, Lockdown};
 
 /// Weapon art sits right of its texture's centre by this many texture pixels.
 pub(super) const WEAPON_ICON_SHIFT: f32 = 3.0;
@@ -32,6 +32,8 @@ pub(super) const OFF_BADGE: &str = "Off";
 pub(super) const AUTOPAUSE_BADGES: [&str; AUTOPAUSE_ALL as usize + 1] = [OFF_BADGE, "Wheels", "Aim", "Both"];
 /// The button swap plate's badge for each combination of the flags.
 pub(super) const SWAP_BADGES: [&str; SWAP_ALL as usize + 1] = [OFF_BADGE, "A/B", "X/Y", "Both"];
+/// The lockdown plate's pips for a crystal's charge.
+pub(super) const LOCKDOWN_PIPS: i32 = 4;
 
 /// Where a power wheel finds the item a slot key powers.
 pub(super) struct Armament {
@@ -254,6 +256,26 @@ fn show_power(pl: &mut Plate, sys: Obj) {
     pl.badge = format!("{}/{}", pl.pips_on, pl.pips);
 }
 
+/// Shows a lockdown on its plate: pickable and lit while it has crystals to set off, named as
+/// the badge; the charge as pips, all lit once charged.
+fn show_lockdown(pl: &mut Plate, lockdown: Lockdown) {
+    pl.available = matches!(lockdown, Lockdown::Ready(_));
+    pl.powered = pl.available;
+    let charge = match lockdown {
+        Lockdown::NoCrystal => return,
+        Lockdown::Ready(crystals) => {
+            pl.badge = match crystals[..] {
+                [one] => truncate_label(&state::display_text(one.at(CREW_BLUEPRINT + CREWBP_NAME))),
+                _ => format!("{} crystals", crystals.len()),
+            };
+            1.0
+        }
+        Lockdown::Ambiguous => 1.0,
+        Lockdown::Charging(charge) => charge,
+    };
+    (pl.pips, pl.pips_on) = (LOCKDOWN_PIPS, (charge * LOCKDOWN_PIPS as f32) as i32);
+}
+
 /// Gives the plate of built-in `b` its art when it has a look of its own: the game's pointer
 /// for the mouse mode, glyphs for the zoom, the text size and the help.
 fn builtin_art(images: &mut Images, pl: &mut Plate, b: Builtin) {
@@ -350,7 +372,7 @@ pub(super) fn layout_plates(def: &WheelDef, wheels: &[WheelDef], images: &mut Im
             if let Some(sys) = state::ability_system(code) {
                 pl.available = state::has_system(sys);
             } else if code == KEY_LOCKDOWN {
-                pl.available = state::has_crystal_crew();
+                show_lockdown(pl, state::lockdown());
             }
         }
     }

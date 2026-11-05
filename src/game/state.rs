@@ -464,9 +464,53 @@ pub fn keyed_system(key: i32) -> Option<Obj> {
     powered_by(key).into_iter().find_map(player_system)
 }
 
-/// Whether the player's crew has a living crystal member.
-pub fn has_crystal_crew() -> bool {
-    boxed_crew().into_iter().any(|(_, m)| !crew_dead(m) && m.at(CREW_BLUEPRINT).string(CREWBP_RACE) == CRYSTAL_RACE)
+/// What a crystal lockdown would set off now.
+#[derive(Debug, PartialEq)]
+pub enum Lockdown {
+    /// The player's crew has no living crystal.
+    NoCrystal,
+    /// The charged crystals among the selected ones, else the only charged crystal.
+    Ready(Vec<Obj>),
+    /// Several crystals are charged and none is selected.
+    Ambiguous,
+    /// No crystal in question is charged: the most charged one's charge, from 0 to 1.
+    Charging(f32),
+}
+
+/// Whether a crystal's lockdown is charged.
+fn lockdown_charged(crystal: Obj) -> bool {
+    crystal.f32(CRYSTAL_CHARGE) >= crystal.f32(CRYSTAL_CHARGE_FULL)
+}
+
+/// A crystal's lockdown charge, from 0 to 1.
+fn lockdown_charge(crystal: Obj) -> f32 {
+    if lockdown_charged(crystal) {
+        1.0
+    } else {
+        crystal.f32(CRYSTAL_CHARGE) / crystal.f32(CRYSTAL_CHARGE_FULL)
+    }
+}
+
+/// The lockdown of the player's living crystals: the selected ones are in question, all of them
+/// while none is selected.
+pub fn lockdown() -> Lockdown {
+    let crystals: Vec<Obj> = boxed_crew()
+        .into_iter()
+        .map(|(_, m)| m)
+        .filter(|&m| !crew_dead(m) && m.at(CREW_BLUEPRINT).string_is(CREWBP_RACE, CRYSTAL_RACE))
+        .collect();
+    if crystals.is_empty() {
+        return Lockdown::NoCrystal;
+    }
+    let selected: Vec<Obj> = crystals.iter().copied().filter(|&c| crew_is_selected(c)).collect();
+    let chosen = !selected.is_empty();
+    let pool = if chosen { selected } else { crystals };
+    let charged: Vec<Obj> = pool.iter().copied().filter(|&c| lockdown_charged(c)).collect();
+    match charged.len() {
+        0 => Lockdown::Charging(pool.into_iter().map(lockdown_charge).fold(0.0, f32::max)),
+        n if n == 1 || chosen => Lockdown::Ready(charged),
+        _ => Lockdown::Ambiguous,
+    }
 }
 
 pub fn has_system(kind: i32) -> bool {
@@ -504,7 +548,7 @@ pub fn fps_control() -> Obj {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::fake::{live_strings, set_tutorial_running, with_game};
+    use crate::game::fake::{live_strings, set_tutorial_running, with_game, Game};
 
     #[test]
     fn the_topmost_window_gives_the_rect() {
@@ -554,6 +598,45 @@ mod tests {
             g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &[Some(a), Some(b)]);
             assert_eq!((selected_count(), first_selected_crew()), (2, Some(a)));
             assert!(any_crew_selected() && crew_is_selected(b) && !crew_is_selected(c));
+        });
+    }
+
+    /// Makes `members` the crew control's selection.
+    fn select(g: &mut Game, members: &[Obj]) {
+        let items: Vec<Option<Obj>> = members.iter().copied().map(Some).collect();
+        g.arena.ptr_vector(g.gui.at(GUI_CREW_CONTROL + CREW_SELECTED), 0, &items);
+    }
+
+    #[test]
+    fn a_lockdown_takes_the_selected_charged_crystals_else_the_only_charged_one() {
+        with_game(|g| {
+            let crew = [("Ann", "human"), ("Cy", "crystal"), ("Quartz", "crystal")]
+                .map(|(name, race)| g.crew(name, race, PLAYER_SHIP_ID, false));
+            let [ann, cy, quartz] = crew;
+            g.crew_boxes(&crew);
+            let charge = |crystal: Obj, k: f32| {
+                crystal.set(CRYSTAL_CHARGE_FULL, 20.0f32);
+                crystal.set(CRYSTAL_CHARGE, 20.0 * k);
+            };
+            charge(cy, 1.0);
+            charge(quartz, 1.0);
+            assert_eq!(lockdown(), Lockdown::Ambiguous);
+            select(g, &[ann]);
+            assert_eq!(lockdown(), Lockdown::Ambiguous, "no crystal selected");
+            select(g, &[ann, quartz]);
+            assert_eq!(lockdown(), Lockdown::Ready(vec![quartz]));
+            select(g, &[cy, quartz]);
+            assert_eq!(lockdown(), Lockdown::Ready(vec![cy, quartz]));
+            charge(cy, 0.25);
+            select(g, &[cy]);
+            assert_eq!(lockdown(), Lockdown::Charging(0.25), "the selected crystal keeps the other out");
+            select(g, &[]);
+            assert_eq!(lockdown(), Lockdown::Ready(vec![quartz]));
+            charge(quartz, 0.5);
+            assert_eq!(lockdown(), Lockdown::Charging(0.5));
+            quartz.set(CREW_DEAD, 1u8);
+            cy.set(CREW_DEAD, 1u8);
+            assert_eq!(lockdown(), Lockdown::NoCrystal);
         });
     }
 

@@ -43,8 +43,9 @@ const MANAGER_SIZE: usize = SHIPMANAGER_PLAYER_CREW + size_of::<u8>();
 const _: () = assert!(MANAGER_SIZE >= SHIPMANAGER_SHIP + SHIP_IMAGE + IMAGE_X + size_of::<i32>());
 const ROOM_SIZE: usize = ROOM_ID + size_of::<i32>();
 const DOOR_SIZE: usize = DOOR_Y + size_of::<i32>();
-/// Reaches the literal flag of the member's name, its field farthest in.
-const CREW_SIZE: usize = CREW_BLUEPRINT + CREWBP_NAME + TEXTSTRING_LITERAL + size_of::<u8>();
+/// Reaches a crystal's full charge, a member's field farthest in.
+const CREW_SIZE: usize = CRYSTAL_CHARGE_FULL + size_of::<f32>();
+const _: () = assert!(CREW_SIZE >= CREW_BLUEPRINT + CREWBP_NAME + TEXTSTRING_LITERAL + size_of::<u8>());
 
 /// The display size the stand-in engine reports.
 pub const SCREEN: (c_int, c_int) = (640, 480);
@@ -130,6 +131,8 @@ pub enum Call {
     MouseMove(i32, i32),
     /// CrewControl::ClearSelectedCrew on the control at this address.
     ClearCrew(usize),
+    /// CrystalAlien::ActivatePower on the crystal at this address.
+    Lockdown(usize),
     /// TabbedWindow::SetTab on the window at this address, to this tab.
     SetTab(usize, u32),
     /// CrewControl::ClearCrewBoxes on the control at this address.
@@ -346,6 +349,10 @@ extern "C" fn clear_crew(control: Ptr) {
     record(Call::ClearCrew(control as usize));
 }
 
+extern "C" fn crystal_lockdown(crystal: Ptr) {
+    record(Call::Lockdown(crystal as usize));
+}
+
 extern "C" fn clear_crew_boxes(control: Ptr) {
     record(Call::ClearCrewBoxes(control as usize));
 }
@@ -546,6 +553,7 @@ fn install_api() -> Statics {
     stand_in.joy_rumble = joy_rumble;
     stand_in.set_tab = set_tab;
     stand_in.clear_crew = clear_crew;
+    stand_in.crystal_lockdown = crystal_lockdown;
     stand_in.weapon_swap = swap_armaments;
     stand_in.weapon_check = check_armaments;
     stand_in.drone_swap = swap_armaments;

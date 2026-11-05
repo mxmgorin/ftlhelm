@@ -377,6 +377,9 @@ pub const CREW_BLUEPRINT: usize = 576;
 pub const CREWBP_NAME: usize = 120;
 pub const CREWBP_RACE: usize = 8;
 pub const CRYSTAL_RACE: &str = "crystal";
+/// CrystalAlien::powerCooldown: the lockdown's charge, then the charge that readies it.
+pub const CRYSTAL_CHARGE: usize = 1860;
+pub const CRYSTAL_CHARGE_FULL: usize = CRYSTAL_CHARGE + std::mem::size_of::<f32>();
 pub const CREW_SELECTED: usize = 8;
 /// CrewControl's crew under the pointer, or in the selection box while one is drawn.
 pub const CREW_POTENTIAL: usize = 32;

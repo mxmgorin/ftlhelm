@@ -79,6 +79,9 @@ screen. A wheel stays open after the button is released, and the game pauses whi
 | the wheel's own button | close |
 | another wheel's button, held | switch to that wheel |
 
+Lockdown, on the abilities wheel: locks the room of the selected charged crystal, or of the only
+charged crystal when none is selected; its pips show the charge.
+
 ## Settings wheel
 
 A steps a plate to its next value; D-pad up, down or R2, L2 step it up or down.

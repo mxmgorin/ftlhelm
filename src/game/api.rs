@@ -192,6 +192,7 @@ game_api! {
     set_tab: unsafe extern "C" fn(Ptr, u32) = "_ZN12TabbedWindow6SetTabEj",
     clear_crew: unsafe extern "C" fn(Ptr) = "_ZN11CrewControl17ClearSelectedCrewEv",
     deselect_crew: unsafe extern "C" fn(Ptr, Ptr) = "_ZN11CrewControl12DeselectCrewEP10CrewMember",
+    crystal_lockdown: unsafe extern "C" fn(Ptr) = "_ZN12CrystalAlien13ActivatePowerEv",
     weapon_swap: unsafe extern "C" fn(Ptr, c_uint, c_uint) = "_ZN13WeaponControl13SwapArmamentsEjj",
     weapon_check: unsafe extern "C" fn(Ptr) = "_ZN13WeaponControl12CheckWeaponsEv",
     drone_swap: unsafe extern "C" fn(Ptr, c_uint, c_uint) = "_ZN12DroneControl13SwapArmamentsEjj",

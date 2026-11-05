@@ -545,6 +545,17 @@ pub fn select_next_crew() {
     }
 }
 
+/// Sets off the lockdowns of the selected charged crystals, else of the only charged crystal.
+pub fn lockdown() {
+    let state::Lockdown::Ready(crystals) = state::lockdown() else {
+        return;
+    };
+    for crystal in crystals {
+        // SAFETY: ActivatePower on a living crystal of the player's crew.
+        unsafe { (api().crystal_lockdown)(crystal.ptr()) };
+    }
+}
+
 /// Arms the first powered weapon without a target, or the first powered one when all hold
 /// one; with a weapon armed, the next powered one after it, wrapping.
 pub fn arm_next() {
