@@ -16,7 +16,7 @@
 
 **FTLHELM** is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
-<p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets through the ship's rooms, the weapons wheel arms the Burst Laser, a volley takes down the enemy's shield, the Artemis hits its weapons room, and the beacon map jumps the ship away" width="800"><br><sub>The D-pad, the weapons wheel, a volley and a jump, all on a gamepad</sub></p>
+<p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets onto a room, X arms the Burst Laser, a volley takes down the enemy's shield, the weapons wheel arms the Pike Beam, its line is laid through the enemy's rooms and turned, the beam cuts through them, and the beacon map jumps the ship away" width="800"><br><sub>The D-pad, a volley, the weapons wheel, an aimed beam and a jump, all on a gamepad</sub></p>
 
 ## Features
 
@@ -61,7 +61,12 @@
   </tr>
 </table>
 
-<p align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="640"><br><sub><b>Zoom</b> on a 640x480 screen: the settings wheel sets the level, the view follows the cursor, the beacon map enlarged to fit</sub></p>
+<table align="center">
+  <tr>
+    <td align="center" valign="top"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="480"><br><sub><b>Zoom</b> on a 640x480 screen: the settings wheel sets the level, the view follows the cursor, the beacon map enlarged to fit</sub></td>
+    <td align="center" valign="top"><img src="docs/images/beams.gif" alt="Beams up close: the Pike Beam's line laid through the shields room over the most rooms, turned and back, slid along itself, moved a column over with A held, then the beam cuts through the rooms" width="230"><br><sub><b>Beams</b>: lay the line, turn it, slide it, move it with A held</sub></td>
+  </tr>
+</table>
 
 <p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without FTLHELM on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without FTLHELM on the left, with it on the right</sub></p>
 
