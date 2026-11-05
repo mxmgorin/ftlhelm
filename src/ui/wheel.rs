@@ -1340,7 +1340,7 @@ mod tests {
             let p = plates(&mut l, layout);
             let glyphs = [0, 1, 3, 4, 5, 7].map(|i| p[i].glyph);
             let drawn = [
-                Glyph::Repeat,
+                Glyph::FocusRepeat,
                 Glyph::Stick,
                 Glyph::Buttons(LETTER_A, LETTER_B),
                 Glyph::Touch,

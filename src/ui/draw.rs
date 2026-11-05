@@ -539,14 +539,19 @@ pub fn draw_chevron(cx: f32, cy: f32, w: f32, h: f32, thick: f32, color: GlColor
 /// one line wider; out of one-line rows like a disc.
 pub fn draw_down_marker(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {
     for (grow, shade) in [(OVERLAY_LINE, PLATE_BEVEL_COLOR), (0.0, color)] {
-        let (w, h) = (w + 2.0 * grow, h + 2.0 * grow);
-        let top = tip + grow - h;
-        let mut row = 0.0;
-        while row < h {
-            let half = w / 2.0 * (1.0 - row / h);
-            draw_rect(cx - half, top + row, 2.0 * half, OVERLAY_LINE, shade);
-            row += OVERLAY_LINE;
-        }
+        draw_down_triangle(cx, tip + grow, w + 2.0 * grow, h + 2.0 * grow, shade);
+    }
+}
+
+/// A triangle pointing down, `w` wide and `h` tall, its tip at (`cx`, `tip`); out of one-line
+/// rows like a disc.
+pub fn draw_down_triangle(cx: f32, tip: f32, w: f32, h: f32, color: GlColor) {
+    let top = tip - h;
+    let mut row = 0.0;
+    while row < h {
+        let half = w / 2.0 * (1.0 - row / h);
+        draw_rect(cx - half, top + row, 2.0 * half, OVERLAY_LINE, color);
+        row += OVERLAY_LINE;
     }
 }
 

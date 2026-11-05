@@ -184,7 +184,7 @@ fn setting_glyph(key: &str) -> Option<Glyph> {
         HUD_SHIFT_KEY => Some(Glyph::HudShift),
         FRAME_FILTER_KEY => Some(Glyph::FrameFilter),
         IPAD_BEACONS_KEY => Some(Glyph::Beacon),
-        FOCUS_REPEAT_KEY => Some(Glyph::Repeat),
+        FOCUS_REPEAT_KEY => Some(Glyph::FocusRepeat),
         TOUCH_KEY => Some(Glyph::Touch),
         ROOM_CREW_PICK_KEY => Some(Glyph::RoomCrew),
         TAP_HOLD_KEY => Some(Glyph::HoldTime),

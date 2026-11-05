@@ -104,6 +104,14 @@ const REPEAT_SHAFT: f32 = 4.0;
 const REPEAT_HEAD_W: f32 = 7.0;
 const REPEAT_HEAD_H: f32 = 12.0;
 const REPEAT_GAP: f32 = 2.0;
+/// The focus repeat glyph: HOP_ZONES squares HOP_ZONE wide, HOP_STEP apart, the last filled, and
+/// half rings of HOP_STEP across arcing from each zone to the next, the last ending in a head.
+const HOP_ZONES: usize = 3;
+const HOP_ZONE: f32 = 9.0;
+const HOP_STEP: f32 = 12.0;
+const HOP_LINE: f32 = 2.0;
+const HOP_HEAD_W: f32 = 8.0;
+const HOP_HEAD_H: f32 = 6.0;
 /// The pad glyph: a pill's outline PAD_W by PAD_H, a D-pad's cross PAD_CROSS long in its left
 /// end and two PAD_BUTTON squares in its right one, the second up and right of the first.
 const PAD_W: f32 = 32.0;
@@ -253,6 +261,8 @@ pub(super) enum Glyph {
     Autofire,
     /// Two arrows chasing each other round a loop.
     Repeat,
+    /// The focus hopping from zone to zone.
+    FocusRepeat,
     /// A pad's outline with a D-pad and two buttons.
     Pad,
     /// A hand pointing up with a ring round its fingertip.
@@ -431,6 +441,30 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             let side_h = REPEAT_H - head_h / 2.0 - REPEAT_GAP + t / 2.0;
             draw_rect(left, upper - t / 2.0, t, side_h, INK_COLOR);
             draw_rect(right - t, lower + t / 2.0 - side_h, t, side_h, INK_COLOR);
+        }
+        Glyph::FocusRepeat => {
+            let r = HOP_STEP / 2.0;
+            let last = (HOP_ZONES - 1) as f32 * HOP_STEP;
+            // The head starts on the hops' bottom row.
+            let drop = HOP_HEAD_H - OVERLAY_LINE;
+            let (w, h) = (last + HOP_ZONE, r + drop + HOP_ZONE);
+            let (left, top) = ((cx - w / 2.0).round(), (cy - h / 2.0).round());
+            let (arc_y, zone_top) = (top + r, top + r + drop);
+            // On whole pixels: every hop keeps one shape.
+            let hop_mid = |zone: f32| (zone + HOP_ZONE / 2.0 - r).floor();
+            for k in 0..HOP_ZONES {
+                let x = left + k as f32 * HOP_STEP;
+                if k + 1 < HOP_ZONES {
+                    draw_outline(x, zone_top, HOP_ZONE, HOP_ZONE, HOP_LINE, INK_COLOR);
+                } else {
+                    draw_rect(x, zone_top, HOP_ZONE, HOP_ZONE, INK_COLOR);
+                }
+                if k > 0 {
+                    draw_pixel_arc(hop_mid(x), arc_y, r, HOP_LINE, (TURN_DEG / 2.0, TURN_DEG), INK_COLOR);
+                }
+            }
+            let head_x = hop_mid(left + last) + r - HOP_LINE / 2.0;
+            draw_down_triangle(head_x, zone_top, HOP_HEAD_W, HOP_HEAD_H, INK_COLOR);
         }
         Glyph::Pad => {
             // On whole pixels: the pill and the cross stay symmetric.
