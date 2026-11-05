@@ -313,6 +313,7 @@ impl Layer {
         if self.wheel.open.is_some() {
             self.back_wheel();
         } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
+            || state::game_over().is_some()
             || state::open_options().is_some()
             || state::hangar().is_some()
             || state::score_screen().is_some()
@@ -531,6 +532,16 @@ mod tests {
             l.cfg.cancel_pause = false;
             l.bind.backed_out_at = None;
             assert_eq!(cancel(&mut l), [], "cancel_pause off");
+        });
+    }
+
+    #[test]
+    fn cancel_sends_escape_to_the_game_over_window_instead_of_pausing() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            g.gui.at(GUI_GAME_OVER).set(FOCUS_OPEN, 1u8);
+            l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
+            assert_eq!(calls(), [Call::KeyDown(KEY_ESCAPE), Call::KeyUp(KEY_ESCAPE)]);
         });
     }
 

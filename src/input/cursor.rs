@@ -46,6 +46,7 @@ enum FirstScreen {
     /// Keeps the focus it opens with; told apart so the main menu reopens on its first item.
     Hangar,
     GameMenu,
+    GameOver,
     Choice,
     Map,
     Options,
@@ -76,7 +77,9 @@ fn first_screen() -> FirstScreen {
         let notice = state::options_choices(options).is_some_and(|c| c != options);
         return if notice { FirstScreen::OptionsNotice } else { FirstScreen::Options };
     }
-    if state::gui_window_open(GUI_MENU_BOX) {
+    if state::game_over().is_some() {
+        FirstScreen::GameOver
+    } else if state::gui_window_open(GUI_MENU_BOX) {
         FirstScreen::GameMenu
     } else if state::choice_open() {
         FirstScreen::Choice
@@ -636,6 +639,22 @@ mod tests {
             l.zones.buttons = vec![button(rect(431, 231))];
             frames(&mut l, 1);
             assert_eq!((l.cursor.x, l.cursor.y), rect(431, 231).center());
+        });
+    }
+
+    #[test]
+    fn the_game_over_window_opens_on_its_top_button() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let over = g.gui.at(GUI_GAME_OVER);
+            let (restart, menu) =
+                (Button { rect: rect(560, 400), object: 1 }, Button { rect: rect(560, 350), object: 2 });
+            g.arena.vector(over, GAME_OVER_BUTTONS, &[restart.object, menu.object]);
+            over.set(FOCUS_OPEN, 1u8);
+            frames(&mut l, FIRST_FOCUS_SETTLE + 1);
+            l.zones.buttons = vec![restart, menu];
+            frames(&mut l, 1);
+            assert_eq!((l.cursor.x, l.cursor.y), menu.rect.center());
         });
     }
 

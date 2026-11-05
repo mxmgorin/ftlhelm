@@ -365,6 +365,45 @@ impl Zones {
         self.add_icons(list.vec_items::<ScoreIcon>().map(|i| (i.achievement, i.at, SCORE_ACHIEVEMENT_SIDE)));
     }
 
+    /// The achievements of the score screen's tabs shown; none under its ship list.
+    fn add_score_screen(&mut self, score: Obj) {
+        if score.at(SCORE_SHIP_LIST).flag(SHIP_LIST_OPEN) {
+            return;
+        }
+        for (tab, list) in
+            [(SCORE_ACHIEVEMENTS_TAB, SCORE_ACHIEVEMENTS), (SCORE_SHIP_BEST_TAB, SCORE_SHIP_ACHIEVEMENTS)]
+        {
+            if score.flag(tab) {
+                self.add_score_achievements(score.at(list));
+            }
+        }
+    }
+
+    /// The game over window's buttons, else the score screen's over it; none under the credits.
+    fn add_game_over(&mut self, over: Obj) {
+        if over.flag(GAME_OVER_CREDITS) {
+            return;
+        }
+        let listed = |list: Obj, object: usize| list.vec_objs().any(|(_, b)| b.addr() == object);
+        if let Some(score) = state::score_screen() {
+            self.add_score_screen(score);
+            let ships = score.at(SCORE_SHIP_LIST + SHIP_LIST_BUTTONS);
+            self.add_own_buttons(|o| score.contains(SCORE_SIZE, o) || listed(ships, o));
+        } else {
+            self.add_own_buttons(|o| listed(over.at(GAME_OVER_BUTTONS), o));
+        }
+    }
+
+    /// The hit-tested buttons whose object `own` accepts.
+    fn add_own_buttons(&mut self, own: impl Fn(usize) -> bool) {
+        for i in 0..self.buttons.len() {
+            let b = self.buttons[i];
+            if own(b.object) {
+                self.push(b.rect, i as i32, ZoneKind::Button);
+            }
+        }
+    }
+
     /// Achievement icons, each its achievement, corner and side, as the game hit-tests them;
     /// those without an achievement left out.
     fn add_icons(&mut self, icons: impl Iterator<Item = (usize, Point, i32)>) {
@@ -468,6 +507,11 @@ impl Layer {
         let Some(gui) = state::gui() else {
             return;
         };
+        // The game over window takes every click from the GUI behind it.
+        if let Some(over) = state::game_over() {
+            zones.add_game_over(over);
+            return;
+        }
         // The GUI keeps the last game's ship behind the main menu.
         let player = state::player_ship().filter(|_| !state::main_menu_open());
         let options = state::open_options();
@@ -491,14 +535,8 @@ impl Layer {
         if let Some(menu) = state::game_menu_alone().filter(|_| !state::tutorial_running()) {
             zones.add_achievements(menu.at(MENU_ACHIEVEMENTS));
         }
-        if let Some(score) = state::score_screen().filter(|s| !s.at(SCORE_SHIP_LIST).flag(SHIP_LIST_OPEN)) {
-            for (tab, list) in
-                [(SCORE_ACHIEVEMENTS_TAB, SCORE_ACHIEVEMENTS), (SCORE_SHIP_BEST_TAB, SCORE_SHIP_ACHIEVEMENTS)]
-            {
-                if score.flag(tab) {
-                    zones.add_score_achievements(score.at(list));
-                }
-            }
+        if let Some(score) = state::score_screen() {
+            zones.add_score_screen(score);
         }
         let screen_open = state::open_tabbed().is_some() || modal_open;
         let map = state::star_map().filter(|m| m.flag(FOCUS_OPEN));
@@ -1011,6 +1049,33 @@ mod tests {
             assert_eq!(built(&mut l), [at(700), at(400)]);
             score.at(SCORE_SHIP_LIST).set(SHIP_LIST_OPEN, 1u8);
             assert_eq!(built(&mut l), [], "none under the ship list");
+        });
+    }
+
+    #[test]
+    fn the_game_over_window_lists_its_own_buttons_the_score_screens_over_it_and_none_under_the_credits() {
+        with_game(|g| {
+            two_ships(g);
+            let over = g.gui.at(GUI_GAME_OVER);
+            over.set(FOCUS_OPEN, 1u8);
+            let score = score_keeper();
+            let past = score.addr() + SCORE_SIZE;
+            let (hud, own, ship) = (past, past + 1, past + 2);
+            g.arena.vector(over, GAME_OVER_BUTTONS, &[own]);
+            g.arena.vector(score, SCORE_SHIP_LIST + SHIP_LIST_BUTTONS, &[ship]);
+            let mut l = Layer::default();
+            let objects = [hud, own, score.addr(), ship];
+            l.zones.buttons = objects.iter().map(|&object| Button { rect: rect(500, 400), object }).collect();
+            let ids = |l: &mut Layer| built(l).into_iter().map(|(k, id, _)| (k, id)).collect::<Vec<_>>();
+            assert_eq!(ids(&mut l), [(ZoneKind::Button, 1)], "its own button, no rooms or HUD");
+            over.set(GAME_OVER_STATS, 1u8);
+            assert_eq!(
+                ids(&mut l),
+                [(ZoneKind::Button, 2), (ZoneKind::Button, 3)],
+                "the score screen's and its ships'"
+            );
+            over.set(GAME_OVER_CREDITS, 1u8);
+            assert_eq!(built(&mut l), [], "none under the credits");
         });
     }
 

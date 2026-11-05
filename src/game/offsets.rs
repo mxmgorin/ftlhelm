@@ -155,6 +155,8 @@ pub const GUI_SHIP_COMPLETE: usize = 6512;
 pub const GUI_SHIP_POSITION: usize = 6656;
 pub const GUI_CHOICE_BOX: usize = 6688;
 pub const GUI_MENU_BOX: usize = 7232;
+/// CommandGui::gameOverScreen, the window a run ends on.
+pub const GUI_GAME_OVER: usize = 8368;
 pub const GUI_OPTIONS_BOX: usize = 8592;
 
 pub const FOCUS_OPEN: usize = 8;
@@ -174,6 +176,11 @@ pub const MENU_TUTORIAL_SHIFT: i32 = 150;
 pub const MENU_ACHIEVEMENTS: usize = 888;
 /// ShipAchievementInfo: the achievement, its icon's corner on screen and the icon's side.
 pub const ACHIEVEMENT_INFO_SIZE: usize = 24;
+/// GameOver::buttons, the TextButtons of its list, kept apart from it.
+pub const GAME_OVER_BUTTONS: usize = 32;
+/// GameOver::bShowStats and bShowingCredits: the score screen or the credits over it.
+pub const GAME_OVER_STATS: usize = 96;
+pub const GAME_OVER_CREDITS: usize = 216;
 /// OptionsScreen::bCustomizeControls: the hotkey screen over the whole frame.
 pub const OPTIONS_CUSTOMIZE_CONTROLS: usize = 672;
 /// OptionsScreen::controls, the hotkey screen.
@@ -212,6 +219,7 @@ pub const SCORE_SHIP_ACHIEVEMENTS: usize = 552;
 pub const SCORE_ACHIEVEMENTS_TAB: usize = 1184;
 pub const SCORE_SHIP_BEST_TAB: usize = 1185;
 pub const SCORE_SHIP_LIST: usize = 3024;
+pub const SCORE_SIZE: usize = 4968;
 /// A score screen achievement icon's side.
 pub const SCORE_ACHIEVEMENT_SIDE: i32 = 64;
 /// MainMenu::shipBuilder, the hangar, with its open flag, equipment boxes and ship list.
@@ -221,6 +229,8 @@ pub const HANGAR_EQUIP_BOXES: usize = 4360;
 pub const HANGAR_SHIP_LIST: usize = 5120;
 pub const HANGAR_ACHIEVEMENTS: usize = 7672;
 pub const SHIP_LIST_OPEN: usize = 88;
+/// ShipSelect::shipButtons, the ship buttons, kept apart from it.
+pub const SHIP_LIST_BUTTONS: usize = 40;
 
 pub const STARMAP_SIZE: usize = 3280;
 pub const STARMAP_LOCATIONS: usize = 40;

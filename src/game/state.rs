@@ -201,8 +201,8 @@ pub fn hidden_store_buttons() -> Vec<usize> {
         .collect()
 }
 
-/// Whether the ship view is up with nothing over it: no menu, ship or store screen, dialog
-/// or map.
+/// Whether the ship view is up with nothing over it: no menu, ship or store screen, dialog,
+/// map or game over window.
 pub fn ship_view() -> bool {
     let Some(gui) = gui() else {
         return false;
@@ -213,6 +213,7 @@ pub fn ship_view() -> bool {
         && modal_window(gui).is_none()
         && !choice_open()
         && !star_map_open()
+        && game_over().is_none()
 }
 
 /// The extent of the topmost window over the frame: the options, the game menu, a store or
@@ -262,9 +263,18 @@ pub fn modal_window(gui: Obj) -> Option<Obj> {
     [GUI_OPTIONS_BOX, GUI_MENU_BOX].into_iter().map(|off| gui.at(off)).find(|w| w.flag(FOCUS_OPEN))
 }
 
-/// The score keeper while the main menu shows its screen.
+/// The game over window while it is up.
+pub fn game_over() -> Option<Obj> {
+    let over = gui()?.at(GUI_GAME_OVER);
+    (over.flag(FOCUS_OPEN) && !main_menu_open()).then_some(over)
+}
+
+/// The score keeper while its screen shows, over the main menu or the game over window.
 pub fn score_screen() -> Option<Obj> {
-    main_menu().filter(|m| m.flag(MAIN_MENU_OPEN) && m.flag(MAIN_MENU_SCORE_SCREEN))?;
+    let over_menu = main_menu().is_some_and(|m| m.flag(MAIN_MENU_OPEN) && m.flag(MAIN_MENU_SCORE_SCREEN));
+    if !over_menu && !game_over().is_some_and(|o| o.flag(GAME_OVER_STATS)) {
+        return None;
+    }
     // SAFETY: the score keeper is a game global.
     unsafe { Obj::from_addr(api().score_keeper) }
 }
