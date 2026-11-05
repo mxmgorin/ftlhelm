@@ -31,8 +31,8 @@ pub const HUD_SHIFT_KEY: &str = "hud_shift";
 pub const FRAME_FILTER_KEY: &str = "frame_filter";
 pub const IPAD_BEACONS_KEY: &str = "ipad_beacons";
 pub const AUTOPAUSE_KEY: &str = "autopause";
-pub const SWAP_AB_KEY: &str = "swap_ab";
-pub const SWAP_XY_KEY: &str = "swap_xy";
+pub const SWAP_BUTTONS_KEY: &str = "swap_buttons";
+pub const CANCEL_PAUSE_KEY: &str = "cancel_pause";
 pub const FLICK_THRESHOLD_KEY: &str = "flick_threshold";
 pub const TAP_HOLD_KEY: &str = "tap_hold";
 pub const ROOM_CREW_PICK_KEY: &str = "room_crew_pick";
@@ -42,11 +42,16 @@ pub const TOUCH_KEY: &str = "touch";
 pub const AUTOPAUSE_WHEEL: i32 = 1;
 pub const AUTOPAUSE_AIM: i32 = 2;
 pub const AUTOPAUSE_ALL: i32 = AUTOPAUSE_WHEEL | AUTOPAUSE_AIM;
+/// Swap flags: the face button pairs swapped for their labels, A/B (east/south) and X/Y
+/// (north/west).
+pub const SWAP_AB: i32 = 1;
+pub const SWAP_XY: i32 = 2;
+pub const SWAP_ALL: i32 = SWAP_AB | SWAP_XY;
 const FILE_POLL_S: f64 = 1.0;
 /// The layout's format in its [config] section; a file with an older or no version gives way
 /// to the default, its settings carried over and the file kept with PREVIOUS_LAYOUT_EXT.
 const LAYOUT_VERSION_KEY: &str = "layout_version";
-const LAYOUT_VERSION: i32 = 5;
+const LAYOUT_VERSION: i32 = 6;
 const PREVIOUS_LAYOUT_EXT: &str = "old.ini";
 
 const SPEED_LEVEL_MIN: f32 = 1.0;
@@ -114,6 +119,7 @@ const STEPS: &[Stepping] = &[
     stepping(SHARPEN_KEY, SHARPEN_STEP),
     stepping(SPEED_LEVEL_KEY, SPEED_LEVEL_STEP),
     stepping(AUTOPAUSE_KEY, AUTOPAUSE_STEP),
+    stepping(SWAP_BUTTONS_KEY, SWAP_STEP),
     stepping(FOCUS_REPEAT_KEY, FOCUS_REPEAT_STEP),
     Stepping { range: Some((TAP_HOLD_STEP, TAP_HOLD_STEP_MAX)), ..stepping(TAP_HOLD_KEY, TAP_HOLD_STEP) },
     // A step up asks for less deflection: a more sensitive stick.
@@ -128,6 +134,8 @@ const SHARPEN_STEP: f32 = 0.25;
 const SPEED_LEVEL_STEP: f32 = 1.0;
 /// Each step is the next combination of autopause flags.
 const AUTOPAUSE_STEP: f32 = 1.0;
+/// Each step is the next combination of swap flags.
+const SWAP_STEP: f32 = 1.0;
 /// Room for float error when a value is matched to a step.
 const STEP_SLACK: f32 = 0.001;
 
@@ -155,10 +163,11 @@ pub struct Settings {
     pub flick_threshold: f32,
     /// How fast a held direction repeats its focus step, as a level; 0: once per press.
     pub focus_repeat: i32,
-    /// Which raw pairs to swap for the labels when no SDL mapping names the face buttons:
-    /// A/B (east/south) and X/Y (north/west).
-    pub swap_ab: bool,
-    pub swap_xy: bool,
+    /// The face button pairs swapped for their labels when no SDL mapping names them, as
+    /// SWAP_* flags.
+    pub swap_buttons: i32,
+    /// Cancel with nothing to back out of pauses or resumes the game on the ship view.
+    pub cancel_pause: bool,
     pub tap_hold: f32,
     pub focus_cone_narrow: f32,
     pub focus_cone_wide: f32,
@@ -223,8 +232,8 @@ impl Default for Settings {
             rumble: RUMBLE,
             flick_threshold: FLICK_ON,
             focus_repeat: FOCUS_REPEAT,
-            swap_ab: false,
-            swap_xy: false,
+            swap_buttons: 0,
+            cancel_pause: true,
             tap_hold: TAP_HOLD_S,
             focus_cone_narrow: CONE_NARROW_DEG,
             focus_cone_wide: CONE_WIDE_DEG,
@@ -278,8 +287,8 @@ const OPTIONS: &[(&str, Field)] = &[
     (AUTOPAUSE_KEY, Field::Int(|c| &mut c.autopause, 0.0, AUTOPAUSE_ALL as f32)),
     (SPEED_LEVEL_KEY, Field::Int(|c| &mut c.speed_level, SPEED_LEVEL_MIN, SPEED_LEVEL_MAX)),
     (RUMBLE_KEY, Field::Float(|c| &mut c.rumble, 0.0, RUMBLE_MAX)),
-    (SWAP_AB_KEY, Field::Bool(|c| &mut c.swap_ab)),
-    (SWAP_XY_KEY, Field::Bool(|c| &mut c.swap_xy)),
+    (SWAP_BUTTONS_KEY, Field::Int(|c| &mut c.swap_buttons, 0.0, SWAP_ALL as f32)),
+    (CANCEL_PAUSE_KEY, Field::Bool(|c| &mut c.cancel_pause)),
     (FLICK_THRESHOLD_KEY, Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
     (FOCUS_REPEAT_KEY, Field::Int(|c| &mut c.focus_repeat, 0.0, FOCUS_REPEAT_S.len() as f32)),
     (TAP_HOLD_KEY, Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
@@ -352,7 +361,6 @@ impl Settings {
     pub fn autopauses(&self, flag: i32) -> bool {
         self.autopause & flag != 0
     }
-
     /// Sets one option from a "key = value" line; unknown keys and unreadable values are
     /// logged and skipped.
     pub fn apply(&mut self, key: &str, value: &str) {

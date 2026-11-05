@@ -118,8 +118,9 @@ A plate is greyed out where it does nothing.
 | Repeat | repeat speed of a held direction |
 | Stick | stick sensitivity |
 | Room crew | A on a room selects its crew |
-| Swap A/B, Swap X/Y | swap the buttons when the pad's labels do not match |
+| Swap buttons | swap A/B, X/Y or both when the pad's labels do not match |
 | Touch | touchscreen on or off |
+| B pause | B pauses and resumes when there is nothing to cancel |
 | Rumble | rumble strength |
 | Hold time | how long a press lasts to count as a hold |
 

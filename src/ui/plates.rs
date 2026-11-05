@@ -6,9 +6,10 @@ use super::glyph::{Glyph, HELP_GLYPH, LETTER_A, LETTER_B, LETTER_X, LETTER_Y, TE
 use super::wheel::Plate;
 use crate::config::layout::{truncate_label, Action, Builtin, WheelDef, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
-    is_switch, option_name, Tuning, AUTOPAUSE_ALL, CREW_MARKER_KEY, FLICK_THRESHOLD_KEY, FOCUS_BRACKETS_KEY,
-    FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY, ROOM_CREW_PICK_KEY, RUMBLE_KEY,
-    SHARPEN_KEY, SPEED_LEVEL_KEY, SWAP_AB_KEY, SWAP_XY_KEY, TAP_HOLD_KEY, TOUCH_KEY,
+    is_switch, option_name, Tuning, AUTOPAUSE_ALL, CANCEL_PAUSE_KEY, CREW_MARKER_KEY, FLICK_THRESHOLD_KEY,
+    FOCUS_BRACKETS_KEY, FOCUS_REPEAT_KEY, FRAME_FILTER_KEY, HUD_SHIFT_KEY, IPAD_BEACONS_KEY, OVERLAY_KEY,
+    ROOM_CREW_PICK_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY, SWAP_ALL, SWAP_BUTTONS_KEY, SWAP_XY, TAP_HOLD_KEY,
+    TOUCH_KEY,
 };
 use crate::game::actions::{move_drone, move_weapon};
 use crate::game::mem::Obj;
@@ -29,6 +30,8 @@ pub(super) const SWITCH_PIPS: i32 = 1;
 pub(super) const OFF_BADGE: &str = "Off";
 /// The autopause plate's badge for each combination of the flags.
 pub(super) const AUTOPAUSE_BADGES: [&str; AUTOPAUSE_ALL as usize + 1] = [OFF_BADGE, "Wheels", "Aim", "Both"];
+/// The button swap plate's badge for each combination of the flags.
+pub(super) const SWAP_BADGES: [&str; SWAP_ALL as usize + 1] = [OFF_BADGE, "A/B", "X/Y", "Both"];
 
 /// Where a power wheel finds the item a slot key powers.
 pub(super) struct Armament {
@@ -159,6 +162,16 @@ pub(super) fn show_tuning(pl: &mut Plate, tuning: Tuning) {
     }
 }
 
+/// The button swap plate's glyph for swap flags `swaps`: the X/Y pair while it is swapped
+/// alone, else the A/B pair.
+pub(super) fn swap_glyph(swaps: i32) -> Glyph {
+    if swaps == SWAP_XY {
+        Glyph::Buttons(LETTER_X, LETTER_Y)
+    } else {
+        Glyph::Buttons(LETTER_A, LETTER_B)
+    }
+}
+
 /// The glyph of a `set` plate whose setting has a look of its own.
 fn setting_glyph(key: &str) -> Option<Glyph> {
     match key {
@@ -176,8 +189,8 @@ fn setting_glyph(key: &str) -> Option<Glyph> {
         ROOM_CREW_PICK_KEY => Some(Glyph::RoomCrew),
         TAP_HOLD_KEY => Some(Glyph::HoldTime),
         FLICK_THRESHOLD_KEY => Some(Glyph::Stick),
-        SWAP_AB_KEY => Some(Glyph::Buttons(LETTER_A, LETTER_B)),
-        SWAP_XY_KEY => Some(Glyph::Buttons(LETTER_X, LETTER_Y)),
+        SWAP_BUTTONS_KEY => Some(swap_glyph(0)),
+        CANCEL_PAUSE_KEY => Some(Glyph::CancelPause),
         _ => None,
     }
 }

@@ -49,6 +49,7 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 | `wheel_place` | center | `center`, `cursor` | where a wheel opens |
 | `wheel_backdrop` | octagon | `octagon`, `octagon_dark`, `circle`, `circle_dark`, `dim`, `disc` | the backdrop under a wheel |
 | `autopause` | 1 | 0 to 3 | the game pauses: 1 while a wheel is open, 2 while aiming, 3 both; 0: never |
+| `cancel_pause` | 1 | switch | `cancel` with nothing to cancel pauses or resumes the game on the ship view |
 | `speed_level` | 6 | 1 to 6 | fast forward speed |
 
 ### Pad
@@ -58,7 +59,7 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 | `tap_hold` | 0.2 | 0.05 to 2 | seconds a press lasts to count as a hold |
 | `rumble` | 1 | 0 to 2.5 | rumble strength; 0: none |
 | `rumble_time` | 0.05 | 0.01 to 0.5 | rumble pulse in seconds |
-| `swap_ab`, `swap_xy` | 0 | switch | swap A/B, X/Y; ignored with `SDL_GAMECONTROLLERCONFIG` set |
+| `swap_buttons` | 0 | 0 to 3 | swap face buttons: 1 A/B, 2 X/Y, 3 both; ignored with `SDL_GAMECONTROLLERCONFIG` set |
 
 ### Screen
 
@@ -127,7 +128,7 @@ state below for inputs it does not bind.
 | Built-in | Effect |
 | --- | --- |
 | `context_click` | click; with crew selected, send them to the room; in a wheel, act |
-| `cancel` | close the wheel or go back; cancel the aim, clear the crew, close a menu or a screen |
+| `cancel` | close the wheel or go back; cancel the aim, clear the crew, close a menu or a screen; with nothing to cancel, pause (`cancel_pause`) |
 | `arm_next` | arm the next powered weapon |
 | `arm_all` | arm every powered weapon for a volley |
 | `aim_crew` | select the next crew member |

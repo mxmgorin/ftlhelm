@@ -213,7 +213,7 @@ thread_local! {
 
 /// A ring timer has as many segments as the game's, each a share of a turn less a gap.
 pub const RING_SEGMENTS: usize = 12;
-const TURN_DEG: f32 = 360.0;
+pub(super) const TURN_DEG: f32 = 360.0;
 /// The renderer's pies put a point every PIE_STEP_DEG from the start while short of the end,
 /// none at the end itself.
 pub const PIE_STEP_DEG: f32 = 10.0;

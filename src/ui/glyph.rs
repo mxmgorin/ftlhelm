@@ -197,6 +197,15 @@ pub(super) const LETTER_A: Letter = [".###.", "#...#", "#####", "#...#", "#...#"
 pub(super) const LETTER_B: Letter = ["####.", "#...#", "####.", "#...#", "####."];
 pub(super) const LETTER_X: Letter = ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"];
 pub(super) const LETTER_Y: Letter = ["#...#", ".#.#.", "..#..", "..#..", "..#.."];
+/// The B pause glyph: a pause button, two bars in a ring, and a B PAUSE_B_AT from the ring's
+/// middle; the ring is left out over PAUSE_RING_GAP, degrees clockwise from the right, round the B.
+const PAUSE_RING_R: f32 = 12.0;
+const PAUSE_RING_LINE: f32 = 2.0;
+const PAUSE_RING_BAR_W: f32 = 4.0;
+const PAUSE_RING_BAR_H: f32 = 12.0;
+const PAUSE_RING_BAR_GAP: f32 = 4.0;
+const PAUSE_B_AT: (f32, f32) = (14.0, 10.0);
+const PAUSE_RING_GAP: (f32, f32) = (15.0, 50.0);
 
 /// A face button's letter in rows of LETTER_CELL squares.
 pub(super) type Letter = [&'static str; 5];
@@ -256,6 +265,8 @@ pub(super) enum Glyph {
     Stick,
     /// Two face buttons, the second up and right of the first, and arrows trading them.
     Buttons(Letter, Letter),
+    /// A pause button with a B over its lower right.
+    CancelPause,
 }
 
 /// Draws `rows` of `#` cells `cell` square from (`left`, `top`), a row's run as one rect.
@@ -484,6 +495,19 @@ pub(super) fn draw_glyph(glyph: Glyph, font: i32, cx: f32, cy: f32, size: f32) {
             draw_side_triangle(cx - bx, cy - by - r + t / 2.0, SWAP_ARROW_W, SWAP_ARROW_H, INK_COLOR);
             draw_pixel_arc(cx + bx, cy + by, r, t, (0.0, 90.0), INK_COLOR);
             draw_side_triangle(cx + bx, cy + by + r - t / 2.0, -SWAP_ARROW_W, SWAP_ARROW_H, INK_COLOR);
+        }
+        Glyph::CancelPause => {
+            let (l_w, l_h) = cells_size(&LETTER_B, LETTER_CELL);
+            let (r, (bx, by)) = (PAUSE_RING_R, PAUSE_B_AT);
+            // The ring and the B centred as one box.
+            let (rx, ry) = ((cx - (bx + l_w / 2.0 - r) / 2.0).round(), (cy - (by + l_h / 2.0 - r) / 2.0).round());
+            let (from, to) = PAUSE_RING_GAP;
+            draw_pixel_arc(rx, ry, r, PAUSE_RING_LINE, (to, from + TURN_DEG), INK_COLOR);
+            let (w, h, gap) = (PAUSE_RING_BAR_W, PAUSE_RING_BAR_H, PAUSE_RING_BAR_GAP);
+            let (left, top) = (rx - gap / 2.0 - w, (ry - h / 2.0).round());
+            draw_rect(left, top, w, h, INK_COLOR);
+            draw_rect(left + w + gap, top, w, h, INK_COLOR);
+            draw_cells(&LETTER_B, rx + bx - l_w / 2.0, ry + by - l_h / 2.0, LETTER_CELL);
         }
     }
 }

@@ -2,7 +2,7 @@
 //! inputs, flicks, and the per-frame dispatch.
 
 use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLOT_COUNT};
-use crate::config::settings::{AUTOPAUSE_AIM, FLICK_OFF};
+use crate::config::settings::{AUTOPAUSE_AIM, FLICK_OFF, SWAP_AB, SWAP_XY};
 use crate::core::layer::Layer;
 use crate::core::util::log;
 use crate::game::actions::{mouse_move, toggle_pause};
@@ -70,8 +70,8 @@ pub struct PadState {
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
     held: [bool; INPUT_COUNT],
-    /// The A/B and X/Y swaps reads apply: the settings', taken up while no face button is down.
-    swaps: (bool, bool),
+    /// The swap flags reads apply: the settings', taken up while no face button is down.
+    swaps: i32,
     dpad_spent: [bool; 4],
     trigger_spent: [bool; WHEEL_TRIGGERS.len()],
     /// The D-pad direction whose focus step repeats while held, and when it steps next.
@@ -109,7 +109,7 @@ impl Default for PadState {
             resolved: None,
             sil_mapping: None,
             held: [false; INPUT_COUNT],
-            swaps: (false, false),
+            swaps: 0,
             dpad_spent: [false; 4],
             trigger_spent: [false; WHEEL_TRIGGERS.len()],
             dpad_repeat: None,
@@ -372,7 +372,7 @@ impl Layer {
         self.pad.resolve_sil_mapping(dev);
         let p = self.read_pad(dev);
         if !FACE_BUTTONS.iter().any(|&b| p.down[b as usize]) {
-            self.pad.swaps = (self.cfg.swap_ab, self.cfg.swap_xy);
+            self.pad.swaps = self.cfg.swap_buttons;
         }
         p
     }
@@ -398,10 +398,10 @@ impl Layer {
             p.down[b] = pressed(raw_button(b));
         }
         if sdl.is_none() {
-            if self.pad.swaps.0 {
+            if self.pad.swaps & SWAP_AB != 0 {
                 p.down.swap(Input::FaceDown as usize, Input::FaceRight as usize);
             }
-            if self.pad.swaps.1 {
+            if self.pad.swaps & SWAP_XY != 0 {
                 p.down.swap(Input::FaceLeft as usize, Input::FaceUp as usize);
             }
         }
@@ -777,7 +777,7 @@ mod tests {
             let expected = [Input::Start, Input::FaceDown, Input::L2, Input::DpadRight, Input::LsLeft, Input::RsDown];
             assert_eq!(held(&p), expected);
             assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
-            l.pad.swaps.0 = true;
+            l.pad.swaps = SWAP_AB;
             assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
         });
     }
@@ -791,7 +791,7 @@ mod tests {
             let mut l = Layer::default();
             set_pad(pad(vec![a]));
             l.poll_pad(0.0);
-            l.cfg.swap_ab = true;
+            l.cfg.swap_buttons = SWAP_AB;
             assert_eq!(held(&l.poll_pad(0.0)), [Input::FaceDown], "A held through the change stays A");
             set_pad(pad(vec![]));
             l.poll_pad(0.0);

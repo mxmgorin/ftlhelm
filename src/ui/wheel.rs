@@ -8,15 +8,15 @@ use super::draw::*;
 use super::glyph::{draw_glyph, Glyph};
 use super::overlay::band_text_top;
 use super::plates::{
-    armament_of, crew_plates, is_knob, layout_plates, show_tuning, system_plates, times, weapon_slot, Armament,
-    AUTOPAUSE_BADGES, AUTO_BADGE, ZOOM_OFF_BADGE,
+    armament_of, crew_plates, is_knob, layout_plates, show_tuning, swap_glyph, system_plates, times, weapon_slot,
+    Armament, AUTOPAUSE_BADGES, AUTO_BADGE, SWAP_BADGES, ZOOM_OFF_BADGE,
 };
 use super::text::{self, TEXT_SCALE_AUTO, TEXT_SIZES};
 use super::zoom::{self, ZOOM_AUTO, ZOOM_MIN};
 use crate::config::layout::{Action, Builtin, WheelKind, WHEEL_SLOTS};
 use crate::config::settings::{
     option_name, Tuning, AUTOPAUSE_AIM, AUTOPAUSE_ALL, AUTOPAUSE_WHEEL, CREW_MARKER_KEY, FOCUS_BRACKETS_KEY,
-    FRAME_FILTER_KEY, HUD_SHIFT_KEY, SHARPEN_KEY, SWAP_AB_KEY, SWAP_XY_KEY, TOUCH_KEY,
+    FRAME_FILTER_KEY, HUD_SHIFT_KEY, SHARPEN_KEY, SWAP_BUTTONS_KEY, TOUCH_KEY,
 };
 use crate::core::layer::Layer;
 use crate::core::util::{clampf, log};
@@ -612,12 +612,17 @@ impl Layer {
         for pl in &mut self.wheel.plates {
             if let Some(Action::Set(i)) = pl.action {
                 show_tuning(pl, self.cfg.tuning(i));
-                pl.available = match option_name(i) {
+                let key = option_name(i);
+                if key == SWAP_BUTTONS_KEY {
+                    pl.badge = SWAP_BADGES[self.cfg.swap_buttons as usize].to_string();
+                    pl.glyph = Some(swap_glyph(self.cfg.swap_buttons));
+                }
+                pl.available = match key {
                     SHARPEN_KEY => shrunk && self.cfg.frame_filter,
                     FRAME_FILTER_KEY => shrunk,
                     FOCUS_BRACKETS_KEY | CREW_MARKER_KEY => self.cfg.overlay,
                     HUD_SHIFT_KEY => narrow,
-                    SWAP_AB_KEY | SWAP_XY_KEY => swaps,
+                    SWAP_BUTTONS_KEY => swaps,
                     TOUCH_KEY => touchscreen,
                     _ => true,
                 };
@@ -901,10 +906,10 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::layout::{Input, Layout, LABEL_CHARS};
-    use crate::config::settings::FLICK_ON;
+    use crate::config::settings::{FLICK_ON, SWAP_ALL};
     use crate::game::fake::{calls, with_game, Call, Game, WEAPON_SIZE};
     use crate::ui::draw::rects_of;
-    use crate::ui::glyph::{HELP_GLYPH, LETTER_A, LETTER_B, TEXT_GLYPH};
+    use crate::ui::glyph::{HELP_GLYPH, LETTER_A, LETTER_B, LETTER_X, LETTER_Y, TEXT_GLYPH};
     use crate::ui::plates::{EMPTY_LABEL, OFF_BADGE, ON_BADGE, SWITCH_PIPS, WEAPON_ICON_SHIFT};
     use crate::ui::zoom::View;
     use std::mem::size_of;
@@ -1330,11 +1335,18 @@ mod tests {
         with_game(|_| {
             let mut l = Layer::default();
             let layout = "[wheel:controls]\nkind = settings\nup = set focus_repeat\nup_right = set flick_threshold\n\
-                          down_right = set swap_ab\ndown = set touch\nup_left = set tap_hold\n";
+                          down_right = set swap_buttons\ndown = set touch\ndown_left = set cancel_pause\n\
+                          up_left = set tap_hold\n";
             let p = plates(&mut l, layout);
-            let glyphs = [0, 1, 3, 4, 7].map(|i| p[i].glyph);
-            let drawn =
-                [Glyph::Repeat, Glyph::Stick, Glyph::Buttons(LETTER_A, LETTER_B), Glyph::Touch, Glyph::HoldTime];
+            let glyphs = [0, 1, 3, 4, 5, 7].map(|i| p[i].glyph);
+            let drawn = [
+                Glyph::Repeat,
+                Glyph::Stick,
+                Glyph::Buttons(LETTER_A, LETTER_B),
+                Glyph::Touch,
+                Glyph::CancelPause,
+                Glyph::HoldTime,
+            ];
             assert_eq!(glyphs, drawn.map(Some));
             let pips = |i: usize| (p[i].pips, p[i].pips_on);
             assert_eq!(pips(0), (3, 2), "repeat: medium of three");
@@ -1345,6 +1357,24 @@ mod tests {
             l.wheel.sel = Some(1);
             l.adjust_plate(1);
             assert_eq!((l.wheel.plates[1].pips_on, l.cfg.flick_threshold < FLICK_ON), (4, true), "up: more sensitive");
+        });
+    }
+
+    #[test]
+    fn the_swap_plate_steps_through_the_pairs() {
+        with_game(|_| {
+            let mut l = Layer::default();
+            let p = plates(&mut l, "[wheel:controls]\nkind = settings\nup = set swap_buttons\n");
+            assert_eq!((p[0].powered, p[0].badge.as_str(), p[0].pips), (false, "Off", SWAP_ALL));
+            l.wheel.sel = Some(0);
+            let mut shown = Vec::new();
+            for _ in 0..=SWAP_ALL {
+                l.act_on_plate();
+                shown.push((l.wheel.plates[0].badge.clone(), l.wheel.plates[0].glyph));
+            }
+            let (ab, xy) = (Some(Glyph::Buttons(LETTER_A, LETTER_B)), Some(Glyph::Buttons(LETTER_X, LETTER_Y)));
+            let names = ["A/B", "X/Y", "Both", "Off"].map(String::from);
+            assert_eq!(shown, names.into_iter().zip([ab, xy, ab, ab]).collect::<Vec<_>>());
         });
     }
 

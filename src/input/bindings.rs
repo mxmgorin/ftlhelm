@@ -4,12 +4,15 @@
 use crate::config::layout::{Action, Binding, Builtin, Input, Layout, Slot, SlotMode, State, INPUT_COUNT, MAX_STATES};
 use crate::config::settings::{tunable, AUTOPAUSE_KEY};
 use crate::core::layer::Layer;
-use crate::core::util::log;
+use crate::core::util::{log, now_s};
 use crate::game::actions::{self, key_down, key_up, set_shift, tap_key, toggle_pause, MouseButton};
 use crate::game::api::api;
 use crate::game::offsets::*;
 use crate::game::state;
 use crate::game::zones::ZoneKind;
+
+/// A cancel press this soon after one that backed out or was held back leaves the pause alone.
+const MASH_GUARD_S: f64 = 0.4;
 
 /// Who an action runs for: an input, or a wheel plate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -50,6 +53,8 @@ pub struct Bindings {
     pub last_ability_key: Option<i32>,
     /// dpad_mode toggled: the D-pad and the sticks move the cursor.
     pub dpad_mouse: bool,
+    /// When cancel last backed out of something or was held back from pausing.
+    backed_out_at: Option<f64>,
 }
 
 impl Bindings {
@@ -179,27 +184,12 @@ impl Layer {
                 }
             }
             Builtin::Cancel if down => {
-                if self.wheel.open.is_some() {
-                    self.back_wheel();
-                } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
-                    || state::open_options().is_some()
-                    || state::hangar().is_some()
-                    || state::score_screen().is_some()
-                    || state::credits_open()
-                {
-                    tap_key(KEY_ESCAPE, false);
-                } else if self.take_beam_start() {
-                    // A beam being set gives back its start alone and stays armed.
-                } else if state::aiming() {
-                    // The right button cancels targeting.
-                    self.click_tap(MouseButton::Right);
-                } else if state::any_crew_selected() {
-                    if let Some(gui) = state::gui() {
-                        // SAFETY: ClearSelectedCrew on the GUI's CrewControl.
-                        unsafe { (api().clear_crew)(gui.at(GUI_CREW_CONTROL).ptr()) };
-                    }
-                } else if state::open_tabbed().is_some() || state::choice_open() || state::star_map_open() {
-                    tap_key(KEY_ESCAPE, false);
+                let t = now_s();
+                let mashed = self.bind.backed_out_at.is_some_and(|at| t - at < MASH_GUARD_S);
+                if self.back_out() || mashed {
+                    self.bind.backed_out_at = Some(t);
+                } else if self.cfg.cancel_pause && state::ship_view() {
+                    toggle_pause();
                 }
             }
             Builtin::ArmNext if down => actions::arm_next(),
@@ -315,6 +305,36 @@ impl Layer {
     fn start_hold(&mut self, action: Action, input: Input) {
         self.perform(action, Source::Input(input), true);
         self.bind.active[input as usize] = Some(action);
+    }
+
+    /// Backs out of what is on top: the wheel, a window or screen, the beam's start, the aim
+    /// or the crew selection; returns whether there was one.
+    fn back_out(&mut self) -> bool {
+        if self.wheel.open.is_some() {
+            self.back_wheel();
+        } else if state::gui().is_some_and(|gui| state::modal_window(gui).is_some())
+            || state::open_options().is_some()
+            || state::hangar().is_some()
+            || state::score_screen().is_some()
+            || state::credits_open()
+        {
+            tap_key(KEY_ESCAPE, false);
+        } else if self.take_beam_start() {
+            // A beam being set gives back its start alone and stays armed.
+        } else if state::aiming() {
+            // The right button cancels targeting.
+            self.click_tap(MouseButton::Right);
+        } else if state::any_crew_selected() {
+            if let Some(gui) = state::gui() {
+                // SAFETY: ClearSelectedCrew on the GUI's CrewControl.
+                unsafe { (api().clear_crew)(gui.at(GUI_CREW_CONTROL).ptr()) };
+            }
+        } else if state::open_tabbed().is_some() || state::choice_open() || state::star_map_open() {
+            tap_key(KEY_ESCAPE, false);
+        } else {
+            return false;
+        }
+        true
     }
 
     /// Whether wheels may open: anywhere, or with wheels_ship_only only on the ship view.
@@ -484,6 +504,33 @@ mod tests {
             l.wheel.open = Some(0);
             assert_eq!(cancel(&mut l), []);
             assert_eq!(l.wheel.open, None);
+        });
+    }
+
+    #[test]
+    fn cancel_with_nothing_to_back_out_of_pauses_unless_it_just_backed_out() {
+        with_game(|g| {
+            let mut l = Layer::default();
+            let cancel = |l: &mut Layer| {
+                l.builtin(Builtin::Cancel, Source::Input(Input::Select), true);
+                calls()
+            };
+            let space = [Call::KeyDown(KEY_SPACE), Call::KeyUp(KEY_SPACE)];
+            assert_eq!(cancel(&mut l), [], "no ship view");
+            g.player_manager();
+            assert_eq!(cancel(&mut l), space);
+            assert_eq!(cancel(&mut l), space, "a second press resumes");
+            g.mouse.set(MOUSE_AIMING, 1i32);
+            let right = |down| Call::Button(MouseButton::Right, down, 0, 0);
+            assert_eq!(cancel(&mut l), [right(true), right(false)]);
+            g.mouse.set(MOUSE_AIMING, 0i32);
+            assert_eq!(cancel(&mut l), [], "a press right after backing out");
+            assert_eq!(cancel(&mut l), [], "and one right after that");
+            l.bind.backed_out_at = Some(now_s() - MASH_GUARD_S);
+            assert_eq!(cancel(&mut l), space, "once the guard passes");
+            l.cfg.cancel_pause = false;
+            l.bind.backed_out_at = None;
+            assert_eq!(cancel(&mut l), [], "cancel_pause off");
         });
     }
 

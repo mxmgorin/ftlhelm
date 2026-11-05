@@ -56,7 +56,7 @@
 | --- | --- | --- |
 | D-pad, sticks | the next zone that way | |
 | A | click; select the room's crew | drag |
-| B | cancel, back | abilities wheel |
+| B | cancel, back; pause with nothing to cancel | abilities wheel |
 | X | arm the next weapon | weapons wheel |
 | Y | next crew member | crew wheel |
 | L1 | previous tab | systems wheel |
@@ -67,7 +67,7 @@
 | Start | pause | zoom out while zoomed |
 | Select | settings wheel | |
 
-<p align="center"><img src="docs/images/wheels.png" alt="The eight wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, view with the overlay, HUD shift, iPad art and frame filter switches, and controls with focus repeat, stick sensitivity, hold time, room crew picking, button swaps, touch and rumble" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings, view and controls</sub></p>
+<p align="center"><img src="docs/images/wheels.png" alt="The eight wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, view with the overlay, HUD shift, iPad art and frame filter switches, and controls with focus repeat, stick sensitivity, hold time, room crew picking, button swap, B pause, touch and rumble" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings, view and controls</sub></p>
 
 ## Install
 

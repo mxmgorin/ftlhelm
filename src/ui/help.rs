@@ -54,6 +54,8 @@ const PLUS_TEXT: &str = "+";
 const CLICK_HOLD_TITLE: &str = "Drag select";
 /// A held pause shows a zoomed view at its lowest level.
 const PAUSE_HOLD_TITLE: &str = "Zoom out";
+/// Cancel with nothing to back out of pauses.
+const CANCEL_PAUSE_TITLE: &str = "Cancel / pause";
 const CURSOR_ROLE: &str = "Cursor";
 const ZONE_ROLE: &str = "Next zone";
 const BACK_TITLE: &str = "Back";
@@ -598,6 +600,7 @@ impl Layer {
                 let first: String = chars.next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
                 format!("{first}{} wheel", chars.as_str())
             }
+            Action::Builtin(Builtin::Cancel) if self.cfg.cancel_pause => CANCEL_PAUSE_TITLE.to_string(),
             Action::Builtin(b) => builtin_title(b).to_string(),
             Action::Set(i) => option_name(i).to_string(),
         }
@@ -798,12 +801,14 @@ mod tests {
             l.button_rows(),
             [
                 row(&[Chip::Key("A")], &["Click", "Drag select"]),
-                row(&[Chip::Key("B")], &["Cancel", "X wheel"]),
+                row(&[Chip::Key("B")], &["Cancel / pause", "X wheel"]),
                 row(&[Chip::Key("Start")], &["Pause", "Zoom out"]),
                 row(&joined, &["Mouse / zones", ""]),
                 row(&pointers, &["Next zone", ""]),
             ]
         );
+        l.cfg.cancel_pause = false;
+        assert_eq!(l.button_rows()[1], row(&[Chip::Key("B")], &["Cancel", "X wheel"]), "cancel alone");
         l.bind.dpad_mouse = true;
         assert_eq!(l.button_rows().last(), Some(&row(&pointers, &["Cursor", ""])), "in mouse mode");
         l.bind.dpad_mouse = false;

@@ -507,8 +507,8 @@ impl Layer {
 mod tests {
     use super::*;
     use crate::config::settings::{
-        FLICK_THRESHOLD_KEY, FOCUS_REPEAT_KEY, HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY, SPEED_LEVEL_KEY,
-        SWAP_AB_KEY, TAP_HOLD_KEY, TOUCH_KEY,
+        CANCEL_PAUSE_KEY, FLICK_THRESHOLD_KEY, FOCUS_REPEAT_KEY, HUD_SHIFT_KEY, OVERLAY_KEY, RUMBLE_KEY, SHARPEN_KEY,
+        SPEED_LEVEL_KEY, SWAP_AB, SWAP_BUTTONS_KEY, TAP_HOLD_KEY, TOUCH_KEY,
     };
 
     #[test]
@@ -573,9 +573,9 @@ mod tests {
 
     #[test]
     fn config_section_sets_the_settings() {
-        let (l, cfg) = Layout::parse("[config]\ntap_hold = 0.3 # s\nswap_ab = 0\n[controls]\na = space\n");
+        let (l, cfg) = Layout::parse("[config]\ntap_hold = 0.3 # s\nswap_buttons = 1\n[controls]\na = space\n");
         assert_eq!(cfg.tap_hold, 0.3);
-        assert!(!cfg.swap_ab);
+        assert_eq!(cfg.swap_buttons, SWAP_AB);
         assert_eq!(cfg.cursor_speed, Settings::default().cursor_speed);
         assert!(l.states[0].bind[Input::FaceDown as usize].is_some());
     }
@@ -607,7 +607,16 @@ mod tests {
             }
         };
         sets("view", &[OVERLAY_KEY, HUD_SHIFT_KEY]);
-        sets("controls", &[RUMBLE_KEY, FOCUS_REPEAT_KEY, FLICK_THRESHOLD_KEY, TAP_HOLD_KEY, SWAP_AB_KEY, TOUCH_KEY]);
+        let controls = [
+            RUMBLE_KEY,
+            FOCUS_REPEAT_KEY,
+            FLICK_THRESHOLD_KEY,
+            TAP_HOLD_KEY,
+            SWAP_BUTTONS_KEY,
+            TOUCH_KEY,
+            CANCEL_PAUSE_KEY,
+        ];
+        sets("controls", &controls);
     }
 
     #[test]
