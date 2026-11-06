@@ -346,13 +346,18 @@ impl Zones {
     fn add_hangar_boxes(&mut self, hangar: Obj) {
         for (i, b) in hangar.at(HANGAR_EQUIP_BOXES).vec_objs() {
             let held = b.get::<[usize; EQUIPBOX_ITEM_PTRS]>(EQUIPBOX_ITEM).iter().any(|&p| p != 0);
-            let mut r = b.rect(EQUIPBOX_HITBOX);
-            let inside = |s: Rect| s.x < r.x + r.w && r.x < s.x + s.w && s.y > r.y && s.y < r.y + r.h;
-            r.h = self.buttons.iter().filter(|b| inside(b.rect)).map(|b| b.rect.y - r.y).fold(r.h, i32::min);
+            let r = self.above_buttons(b.rect(EQUIPBOX_HITBOX));
             if held && r.w > 0 && r.h > 0 {
                 self.push(r, i as i32, ZoneKind::Slot);
             }
         }
+    }
+
+    /// `r` cut above the hit-tested buttons that start inside it.
+    fn above_buttons(&self, mut r: Rect) -> Rect {
+        let inside = |s: Rect| s.x < r.x + r.w && r.x < s.x + s.w && s.y > r.y && s.y < r.y + r.h;
+        r.h = self.buttons.iter().filter(|b| inside(b.rect)).map(|b| b.rect.y - r.y).fold(r.h, i32::min);
+        r
     }
 
     /// The icons of a ship achievement list that hold an achievement.
@@ -438,8 +443,9 @@ impl Zones {
         }
     }
 
-    /// Equipment and crew slots of an open ship screen, which are not buttons; the overflow
-    /// boxes only while shown, then the store's sell box.
+    /// Equipment and crew slots of an open ship screen, which are not buttons, each cut above
+    /// the buttons that start inside it; the overflow boxes only while shown, then the store's
+    /// sell box.
     fn add_slot_zones(&mut self, gui: Obj) {
         let screens: [(usize, usize, &[ShownBox]); 2] = [
             (layout().gui_equip_screen, EQUIP_BOXES, &EQUIP_OVERFLOW),
@@ -456,7 +462,7 @@ impl Zones {
                 .filter_map(|&(b, _)| window.obj(b))
                 .collect();
             for (i, slot) in window.at(boxes).vec_objs().filter(|(_, s)| !hidden.contains(s)) {
-                let r = slot.rect(EQUIPBOX_HITBOX);
+                let r = self.above_buttons(slot.rect(EQUIPBOX_HITBOX));
                 if r.w > 0 && r.h > 0 {
                     self.push(r, i as i32, ZoneKind::Slot);
                 }
@@ -1104,6 +1110,26 @@ mod tests {
                     (ZoneKind::Slot, 3, rect(200, 200)),
                     (ZoneKind::Button, 1, rect(600, 300)),
                 ]
+            );
+        });
+    }
+
+    #[test]
+    fn the_crew_screen_cuts_its_slots_above_their_buttons() {
+        with_game(|g| {
+            two_ships(g);
+            g.gui.at(layout().gui_ship_screens).set(FOCUS_OPEN, 1u8);
+            let crew = g.gui.at(layout().gui_crew_screen);
+            crew.set(FOCUS_OPEN, 1u8);
+            let slot = g.arena.alloc(EQUIPBOX_HITBOX + size_of::<Rect>());
+            slot.set(EQUIPBOX_HITBOX, rect(100, 200));
+            g.arena.ptr_vector(crew, CREWSCREEN_BOXES, &[Some(slot)]);
+            let mut l = Layer::default();
+            let name = Button { rect: rect(100, 200 + SIDE / 2), object: g.gui.addr() };
+            l.zones.buttons = vec![name];
+            assert_eq!(
+                built(&mut l),
+                [(ZoneKind::Slot, 0, Rect { h: SIDE / 2, ..rect(100, 200) }), (ZoneKind::Button, 0, name.rect)]
             );
         });
     }
