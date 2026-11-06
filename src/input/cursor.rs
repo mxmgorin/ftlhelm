@@ -349,13 +349,14 @@ impl Layer {
 
     /// Keeps a focus on screen: when the zone a focus move left the cursor on goes away while
     /// the cursor stays, the focus moves to the nearest zone. Not while aiming, in doors mode or
-    /// while the ship jumps away.
+    /// while the ship jumps away or explodes.
     pub fn keep_focus(&mut self) {
         let busy = self.focus.waiting > 0
             || self.wheel.open.is_some()
             || self.bind.precision
             || state::aiming()
-            || state::player_jumping();
+            || state::player_jumping()
+            || state::player_destroyed();
         if !self.focus_held() || busy || self.zone_under_cursor().is_some() {
             return;
         }
@@ -703,6 +704,10 @@ mod tests {
             assert_eq!(l.zone_under_cursor(), None, "no zone takes the focus mid-jump");
             assert!(l.focus_held());
             manager.set(SHIPMANAGER_JUMPING, 0u8);
+            manager.set(SHIPMANAGER_DESTROYED, 1u8);
+            l.keep_focus();
+            assert_eq!(l.zone_under_cursor(), None, "nor while the ship explodes");
+            manager.set(SHIPMANAGER_DESTROYED, 0u8);
             l.keep_focus();
             assert_eq!(l.zone_under_cursor(), Some(0));
         });

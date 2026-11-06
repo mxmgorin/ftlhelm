@@ -362,6 +362,8 @@ pub const POINTER_REGION: [f32; 4] = [0.0, 0.0, 14.0, 21.0];
 pub const SHIPMANAGER_SHIP: usize = 280;
 /// ShipManager::bJumping: set while the ship jumps away, gone from its place.
 pub const SHIPMANAGER_JUMPING: usize = 1652;
+/// ShipManager::bDestroyed: set once the ship is destroyed, through its explosion.
+pub const SHIPMANAGER_DESTROYED: usize = 1557;
 pub const SHIPMANAGER_TARGETABLE: usize = 16;
 /// Targetable::hostile: cleared on a surrender and for a ship met in peace.
 pub const TARGETABLE_HOSTILE: usize = 12;

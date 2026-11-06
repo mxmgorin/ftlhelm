@@ -88,6 +88,11 @@ pub fn player_jumping() -> bool {
     player_manager().is_some_and(|m| m.flag(SHIPMANAGER_JUMPING))
 }
 
+/// Whether the player's ship is destroyed: it explodes until the game over window opens.
+pub fn player_destroyed() -> bool {
+    player_manager().is_some_and(|m| m.flag(SHIPMANAGER_DESTROYED))
+}
+
 pub fn player_manager() -> Option<Obj> {
     player_complete()?.obj(COMPLETE_SHIP_MANAGER)
 }

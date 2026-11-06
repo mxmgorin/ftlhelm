@@ -519,7 +519,8 @@ impl Layer {
             return;
         }
         // The GUI keeps the last game's ship behind the main menu.
-        let player = state::player_ship().filter(|_| !state::main_menu_open());
+        // A destroyed ship only explodes until the game over window opens.
+        let player = state::player_ship().filter(|_| !state::main_menu_open() && !state::player_destroyed());
         let options = state::open_options();
         let modal_open = options.is_some() || state::modal_window(gui).is_some();
         if let Some(choice) = state::open_choice().filter(|_| !modal_open) {
@@ -655,6 +656,15 @@ mod tests {
                     (ZoneKind::EnemyRoom, 1, moved(rect(0, 0), ENEMY_AT)),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn a_destroyed_player_ship_lists_no_rooms() {
+        with_game(|g| {
+            two_ships(g);
+            state::player_manager().expect("two_ships places the player").set(SHIPMANAGER_DESTROYED, 1u8);
+            assert_eq!(built(&mut Layer::default()), []);
         });
     }
 
