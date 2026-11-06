@@ -680,6 +680,12 @@ mod tests {
             assert_eq!(kinds(&mut l), [(ZoneKind::Room, 3), (ZoneKind::Room, 5)]);
             manager.set(SHIPMANAGER_PLAYER_CREW, 1u8);
             assert_eq!(kinds(&mut l), [(ZoneKind::Room, 3), (ZoneKind::Room, 5), (ZoneKind::EnemyRoom, 1)]);
+            manager.set(SHIPMANAGER_DESTROYED, 1u8);
+            assert_eq!(
+                kinds(&mut l),
+                [(ZoneKind::Room, 3), (ZoneKind::Room, 5)],
+                "a destroyed ship's rooms take no orders"
+            );
         });
     }
 

@@ -188,9 +188,10 @@ impl Layer {
     }
 
     /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,
-    /// or a held focus waits for the first item of a screen that opened, the jump or the explosion.
+    /// or a held focus waits for the first item of a screen that opened, the jump or an explosion.
     pub fn pointer_hidden(&self) -> bool {
-        let waiting = self.first_focus_pending() || state::player_jumping() || state::player_destroyed();
+        let exploding = state::player_destroyed() || state::enemy_destroyed();
+        let waiting = self.first_focus_pending() || state::player_jumping() || exploding;
         let awaiting = self.brackets_shown() && self.focus_held() && waiting;
         self.touch_in_use() || self.shown_focus(now_s()).is_some() || awaiting
     }

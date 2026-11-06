@@ -71,11 +71,16 @@ pub fn enemy_ship() -> Option<Obj> {
 }
 
 /// The enemy's Ship while its rooms take orders: it is hostile or holds the player's crew,
-/// as the game's teleporter requires.
+/// as the game's teleporter requires, and is not destroyed.
 pub fn enemy_ship_in_reach() -> Option<Obj> {
     let manager = enemy_complete()?.obj(COMPLETE_SHIP_MANAGER)?;
     let reach = manager.flag(SHIPMANAGER_TARGETABLE + TARGETABLE_HOSTILE) || manager.flag(SHIPMANAGER_PLAYER_CREW);
-    reach.then(|| manager.at(SHIPMANAGER_SHIP))
+    (reach && !manager.flag(SHIPMANAGER_DESTROYED)).then(|| manager.at(SHIPMANAGER_SHIP))
+}
+
+/// Whether the enemy's ship is destroyed: it explodes until the game moves on.
+pub fn enemy_destroyed() -> bool {
+    enemy_complete().and_then(|c| c.obj(COMPLETE_SHIP_MANAGER)).is_some_and(|m| m.flag(SHIPMANAGER_DESTROYED))
 }
 
 /// Where the player ship's room rectangles start on screen.
