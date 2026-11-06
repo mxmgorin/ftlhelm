@@ -196,16 +196,20 @@ pub const CONTROL_BUTTON_STATE: usize = 48;
 pub const CONTROL_IDLE: i32 = 0;
 pub const CONTROL_WAITING: i32 = 2;
 
-/// Windows' extents in the frame, tabs and buttons included, as the game places them.
-pub const SHIP_SCREENS_RECT: Rect = Rect { x: 342, y: 85, w: 587, h: 511 };
+/// The right edge of the column right of the ship screens and the store where the game
+/// describes the item under the pointer.
+const INFO_COLUMN_RIGHT: i32 = 1275;
+const SHIP_SCREENS_X: i32 = 342;
+/// Windows' extents in the frame, tabs and buttons included, as the game places them; the
+/// ship screens' and the store's with the description column.
+pub const SHIP_SCREENS_RECT: Rect = Rect { x: SHIP_SCREENS_X, y: 85, w: INFO_COLUMN_RIGHT - SHIP_SCREENS_X, h: 511 };
 pub const STAR_MAP_RECT: Rect = Rect { x: 340, y: 83, w: 752, h: 580 };
 pub const MENU_RECT: Rect = Rect { x: 421, y: 220, w: 479, h: 281 };
 pub const OPTIONS_RECT: Rect = Rect { x: 237, y: 150, w: 806, h: 430 };
 /// The left edge of the store's sell box.
 const SELL_BOX_X: i32 = 67;
 /// The store's sell tab: the ship screens' extent widened to the sell box.
-pub const STORE_SELL_RECT: Rect =
-    Rect { x: SELL_BOX_X, w: SHIP_SCREENS_RECT.x + SHIP_SCREENS_RECT.w - SELL_BOX_X, ..SHIP_SCREENS_RECT };
+pub const STORE_SELL_RECT: Rect = Rect { x: SELL_BOX_X, w: INFO_COLUMN_RIGHT - SELL_BOX_X, ..SHIP_SCREENS_RECT };
 
 pub const MAIN_MENU_OPEN: usize = 0;
 /// MainMenu::optionScreen, the main menu's own options screen.

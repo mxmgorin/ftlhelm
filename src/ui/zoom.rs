@@ -15,8 +15,9 @@
 //! nearest level and holds there as a pan does. A peek shows the span whole while it lasts, as
 //! does an event dialog. While zoomed on a screen that shrinks the frame,
 //! a window over the ship view is shown whole, as large as the screen allows, unless the
-//! tutorial runs, whose box stands beside its windows; otherwise the span is shown whole. An
-//! open wheel holds the level down to one whose view shows it whole.
+//! tutorial runs, whose box stands beside its windows, or a peek lasts; otherwise the span is
+//! shown whole, or the whole frame for a window reaching past it. An open wheel holds the
+//! level down to one whose view shows it whole.
 //! A frame shown smaller than it is drawn is area-averaged.
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -695,15 +696,18 @@ impl Layer {
         let focus = self.zoom_focus();
         let scene = if self.help.shown {
             Scene::Whole
-        } else if peeking {
-            Scene::Span
         } else if state::ship_view() {
-            Scene::Ship
+            if peeking {
+                Scene::Span
+            } else {
+                Scene::Ship
+            }
         } else if let Some(rect) = state::window_rect() {
             // An open wheel shows whole beside the window.
             let rect = if self.wheel_at_cursor() { hull(rect, focus) } else { rect };
-            window_scene(screen, rect, self.zoom.level, self.zoom.span, !state::tutorial_running())
-        } else if state::choice_open() {
+            let enlarge = !peeking && !state::tutorial_running();
+            window_scene(screen, rect, self.zoom.level, self.zoom.span, enlarge)
+        } else if peeking || state::choice_open() {
             Scene::Span
         } else {
             Scene::Whole
@@ -718,6 +722,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::offsets::SHIP_SCREENS_RECT;
 
     const SMALL: (f32, f32) = (640.0, 480.0);
     const SQUARE: (f32, f32) = (720.0, 720.0);
@@ -977,6 +982,11 @@ mod tests {
         }
         let wide = Rect { x: 0, w: GAME_W, ..map };
         assert_eq!(window_scene(DECK, wide, ZOOM_AUTO, HUD, true), Scene::Whole);
+        assert_eq!(
+            window_scene(SMALL, SHIP_SCREENS_RECT, ZOOM_AUTO, HUD, false),
+            Scene::Whole,
+            "described past the span"
+        );
     }
 
     #[test]
