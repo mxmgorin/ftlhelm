@@ -69,7 +69,7 @@ pub struct PadState {
     resolved: Option<((i32, i32), Resolved)>,
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
-    held: [bool; INPUT_COUNT],
+    pub held: [bool; INPUT_COUNT],
     /// The swap flags reads apply: the settings', taken up while no face button is down.
     swaps: i32,
     dpad_spent: [bool; 4],
@@ -466,6 +466,7 @@ impl Layer {
     pub fn apply_pad(&mut self, mut p: PadFrame, t: f64, dt: f32) {
         if any_input(&p, self.cfg.cursor_deadzone) {
             self.leave_touch();
+            self.cursor.moved_by_mouse = false;
         }
         let mode = self.pointer_modes(&mut p);
         let in_wheel = self.wheel.open.is_some();
@@ -484,7 +485,10 @@ impl Layer {
         }
         self.settle_pending(t);
         self.apply_buttons(&p, t, in_wheel, snapping);
-        if in_wheel || self.help.shown {
+        if self.keyboard.open {
+            self.repeat_keyboard(t);
+        }
+        if in_wheel || self.help.shown || self.keyboard.open {
             self.spend_flicks(&p);
         } else {
             self.move_pointers(&p, mode, t, dt);
@@ -494,12 +498,15 @@ impl Layer {
         self.follow_game_modes();
     }
 
-    /// Each pointer source's mode this frame, after the mode toggle; the directions of a
-    /// source that does not act as keys are cleared from `p`.
+    /// Each pointer source's mode this frame, after the mode toggle, every source acting as
+    /// keys while the keyboard is open; the directions of a source that does not act as keys
+    /// are cleared from `p`.
     fn pointer_modes(&self, p: &mut PadFrame) -> [SlotMode; SLOT_COUNT] {
         let mut mode = [SlotMode::Keys; SLOT_COUNT];
         for slot in Slot::ALL {
-            let m = if self.wheel.open.is_some() {
+            let m = if self.keyboard.open {
+                SlotMode::Keys
+            } else if self.wheel.open.is_some() {
                 self.slot_mode(slot)
             } else {
                 toggled_mode(slot, self.slot_mode(slot), self.bind.dpad_mouse)
@@ -545,6 +552,11 @@ impl Layer {
             // The help takes every press; that press does nothing else.
             if self.help.shown && p.down[i] {
                 self.help_press(input);
+                continue;
+            }
+            // So does the keyboard.
+            if self.keyboard.open && p.down[i] {
+                self.keyboard_press(input, t);
                 continue;
             }
             if (Input::DpadLeft as usize..=Input::DpadDown as usize).contains(&i) {
@@ -645,7 +657,7 @@ impl Layer {
 
     /// Returns when a direction that stepped the focus at `t` steps again while held, after
     /// its `first` step or a repeat; never with focus_repeat off.
-    fn next_step_at(&self, t: f64, first: bool) -> f64 {
+    pub fn next_step_at(&self, t: f64, first: bool) -> f64 {
         let level = usize::try_from(self.cfg.focus_repeat - 1).ok();
         match level.and_then(|i| FOCUS_REPEAT_S.get(i)) {
             Some(_) if first => t + FOCUS_REPEAT_DELAY_S,

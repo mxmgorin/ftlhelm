@@ -30,6 +30,8 @@ pub struct Cursor {
     /// The game's own cursor after our last move; a different one means it moved by itself.
     pub last_set: Point,
     pub synced: bool,
+    /// The game's cursor moved by itself since the last pad input: a mouse is in use.
+    pub moved_by_mouse: bool,
     pub l_held: bool,
     pub r_held: bool,
     /// Where a focus move left the cursor, and when: the zone there shows focused while the
@@ -169,6 +171,7 @@ impl Layer {
         c.synced = true;
         (self.cursor.last_wx, self.cursor.last_wy) = self.to_window(self.cursor.x, self.cursor.y);
         if moved_elsewhere {
+            self.cursor.moved_by_mouse = true;
             if self.debug && self.touch_in_use() {
                 log!("touch: left for the mouse at {},{}", p.x, p.y);
             }

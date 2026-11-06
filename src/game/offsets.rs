@@ -224,6 +224,9 @@ pub const SCORE_SIZE: usize = 4968;
 pub const SCORE_ACHIEVEMENT_SIDE: i32 = 64;
 /// MainMenu::shipBuilder, the hangar, with its open flag, equipment boxes and ship list.
 pub const MAIN_MENU_HANGAR: usize = 1096;
+/// ShipBuilder::vCrewBoxes, the crew's boxes, and ShipBuilder::nameInput, the ship's name.
+pub const HANGAR_CREW_BOXES: usize = 4256;
+pub const HANGAR_NAME_INPUT: usize = 7560;
 pub const HANGAR_OPEN: usize = 4280;
 pub const HANGAR_EQUIP_BOXES: usize = 4360;
 pub const HANGAR_SHIP_LIST: usize = 5120;
@@ -431,6 +434,21 @@ pub const DROPBOX_IMAGE: usize = 16;
 pub const DROPBOX_INSERT_HEIGHT: usize = 124;
 pub const DROPBOX_TITLE_INSERT: usize = 128;
 pub const CREWSCREEN_BOXES: usize = 184;
+/// CrewEquipBox::nameInput, the crew member's name.
+pub const CREWEQUIP_NAME_INPUT: usize = 704;
+/// TextInput: its text as code points, the caret's index in it, whether it takes typing, and
+/// the most characters it holds, none when negative.
+pub const TEXTINPUT_TEXT: usize = 8;
+pub const TEXTINPUT_CARET: usize = 56;
+pub const TEXTINPUT_ACTIVE: usize = 64;
+pub const TEXTINPUT_MAX: usize = 72;
+/// CEvent::TextEvent: the edits the game's text handlers take.
+pub const TEXT_CONFIRM: i32 = 0;
+pub const TEXT_CANCEL: i32 = 1;
+pub const TEXT_CLEAR: i32 = 2;
+pub const TEXT_BACKSPACE: i32 = 3;
+pub const TEXT_LEFT: i32 = 5;
+pub const TEXT_RIGHT: i32 = 6;
 pub const EQUIPBOX_HITBOX: usize = 96;
 /// EquipmentBox::item: its weapon, drone, crew and augment pointers, null where empty.
 pub const EQUIPBOX_ITEM: usize = 112;

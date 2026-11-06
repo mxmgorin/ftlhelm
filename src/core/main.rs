@@ -151,6 +151,7 @@ extern "C" fn onloop_hook(app: Ptr) {
         }
         l.update_beam();
         l.poll_commands();
+        l.follow_text_input();
         l.apply_touch(t);
         let pad = l.poll_pad(frame.dt);
         l.apply_pad(pad, t, frame.dt);

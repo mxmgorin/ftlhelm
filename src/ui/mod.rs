@@ -3,6 +3,7 @@ mod brand;
 pub mod draw;
 mod glyph;
 pub mod help;
+pub mod keyboard;
 pub mod overlay;
 mod plates;
 pub mod shrink;

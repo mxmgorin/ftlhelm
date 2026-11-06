@@ -1,5 +1,6 @@
-//! What the layer draws over the game each frame: the open wheel, the help, a notice and the
-//! mode badge, and the window helpers the help and the notice share.
+//! What the layer draws over the game each frame: the open wheel, the keyboard, the help, a
+//! notice and the mode badge, and the window helpers the help, the keyboard and the notice
+//! share.
 
 use super::draw::*;
 use super::text;
@@ -26,7 +27,7 @@ const PAUSE_BAR_GAP: f32 = 8.0;
 /// Text sits this far below a panel row's top edge.
 pub const TEXT_DY: f32 = 5.0;
 /// The least room a scaled panel leaves to the edges of what is shown.
-const PANEL_MARGIN: f32 = 8.0;
+pub const PANEL_MARGIN: f32 = 8.0;
 
 pub const PAD_LOST_NOTICE: &[&str] = &["Pad disconnected"];
 pub const LAYOUT_UPDATED_NOTICE: &[&str] =
@@ -111,9 +112,10 @@ pub fn band_text_top(top: f32, bottom: f32) -> f32 {
 
 impl Layer {
     /// Draws the overlay under the game's pointer; returns whether the pointer and its tooltip
-    /// should be drawn, as they would cover an open wheel or the help.
+    /// should be drawn, as they would cover an open wheel, the keyboard or the help.
     pub fn draw_overlay(&mut self) -> bool {
-        if !self.wheel_at_cursor() && !self.help.shown {
+        let covered = self.help.shown || self.keyboard.open;
+        if !self.wheel_at_cursor() && !covered {
             if self.cfg.crew_marker {
                 self.draw_crew_marks();
             }
@@ -127,10 +129,13 @@ impl Layer {
             draw_pause_button(x, y);
         }
         self.draw_badge();
+        if self.keyboard.open && self.cursor.synced {
+            self.draw_keyboard();
+        }
         if self.help.shown && self.cursor.synced {
             self.draw_help();
         }
-        self.wheel.open.is_none() && !self.help.shown
+        self.wheel.open.is_none() && !covered
     }
 
     /// The top right corner of what is shown.
@@ -179,7 +184,7 @@ impl Layer {
     }
 
     fn brackets_shown(&self) -> bool {
-        self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help.shown
+        self.cfg.focus_brackets && !self.wheel_at_cursor() && !self.help.shown && !self.keyboard.open
     }
 
     /// Whether the game's plain pointer is left undrawn: touch or focus brackets mark its point,

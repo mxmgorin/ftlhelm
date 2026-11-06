@@ -16,6 +16,24 @@ Buttons, Wheels, Weapons, Crew, Doors.
 | L1, R1 or D-pad left, right | previous, next page |
 | any other button | close |
 
+## Keyboard
+
+Opens while a name is being changed: the ship's or a crew member's in the hangar, a crew
+member's on the Crew tab. Stays closed while the mouse is in use.
+
+| Input | On the keyboard |
+| --- | --- |
+| D-pad, sticks | move between keys, and up to the name; held, repeat |
+| left, right on the name | move the caret |
+| A, or a tap on a key | press the key |
+| X, L1 | erase; held, repeats |
+| Y, R1 | space |
+| Start | done |
+| B | cancel, keeping the old name |
+
+A word's first letter is a capital. Shift changes the case of the next letter; pressed twice,
+it locks capitals.
+
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone that way: a room, a weapon or drone

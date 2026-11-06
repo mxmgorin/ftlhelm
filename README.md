@@ -37,6 +37,7 @@
 - **Fast forward**: speed up the game while a button is held
 - **Mouse mode**: move the game's cursor freely with the D-pad and sticks
 - **In-game help**: button, wheel, weapon, crew and door controls; shown on first run
+- **On-screen keyboard**: rename the ship and the crew with the pad or by touch
 - **Small screens**, enabled by default below 1280x720:
   - **Zoom**: magnify the ship view around the cursor; enlarge the map, ship and store screens to fit
   - **Frame filter**: smoother, sharper picture
@@ -129,7 +130,7 @@ If FTLHELM does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs
 
-- **[Controls](docs/CONTROLS.md)**: zones, doors, weapons, wheels, touch, zoom
+- **[Controls](docs/CONTROLS.md)**: zones, doors, weapons, wheels, keyboard, touch, zoom
 - **[Configuration](docs/CONFIGURATION.md)**: settings, bindings, wheels, environment variables
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: the log and what its lines mean
 - **[Building](docs/BUILDING.md)**: build commands, CI, test channel

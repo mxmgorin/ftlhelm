@@ -293,6 +293,44 @@ pub fn ship_list_open() -> bool {
     hangar().is_some_and(|h| h.at(HANGAR_SHIP_LIST).flag(SHIP_LIST_OPEN))
 }
 
+/// Whether the game takes typed text: one of its text fields is being edited.
+pub fn text_input_on() -> bool {
+    // SAFETY: the engine's flag, a resolved global.
+    unsafe { (api().text_input_on as *const u8).read() != 0 }
+}
+
+/// A text field as the game edits it: its text, the caret's index in it and the most
+/// characters it holds.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextField {
+    pub text: Vec<char>,
+    pub caret: usize,
+    pub max: Option<usize>,
+}
+
+impl TextField {
+    /// Whether the caret starts a word: the text's start or after a space.
+    pub fn at_word_start(&self) -> bool {
+        self.caret == 0 || self.text.get(self.caret - 1) == Some(&' ')
+    }
+}
+
+/// The name being edited: the ship's or a crew member's, in the hangar or on the crew screen.
+pub fn edited_name() -> Option<TextField> {
+    let mut inputs = Vec::new();
+    if let Some(hangar) = hangar() {
+        inputs.push(hangar.at(HANGAR_NAME_INPUT));
+        inputs.extend(hangar.at(HANGAR_CREW_BOXES).vec_objs().map(|(_, b)| b.at(CREWEQUIP_NAME_INPUT)));
+    }
+    if let Some(screen) = gui().map(|g| g.at(layout().gui_crew_screen)).filter(|s| s.flag(FOCUS_OPEN)) {
+        inputs.extend(screen.at(CREWSCREEN_BOXES).vec_objs().map(|(_, b)| b.at(CREWEQUIP_NAME_INPUT)));
+    }
+    let input = inputs.into_iter().find(|i| i.flag(TEXTINPUT_ACTIVE))?;
+    let text: Vec<char> = input.at(TEXTINPUT_TEXT).vec_items::<u32>().filter_map(char::from_u32).collect();
+    let caret = usize::try_from(input.i32(TEXTINPUT_CARET)).unwrap_or(0).min(text.len());
+    Some(TextField { text, caret, max: usize::try_from(input.i32(TEXTINPUT_MAX)).ok() })
+}
+
 /// The open options screen: the main menu's while the menu is up, else the game's.
 pub fn open_options() -> Option<Obj> {
     let options = if main_menu_open() { main_menu()?.at(MAIN_MENU_OPTIONS) } else { gui()?.at(GUI_OPTIONS_BOX) };

@@ -613,12 +613,14 @@ impl Layer {
         draw_ring_timer(x, y, HOLD_RING_R * k, HOLD_RING_W * k, lit, color, 1.0);
     }
 
-    /// Lets the help, a notice, an open wheel or the pause button take a touch landing at
-    /// frame point `at`: the help or the notice closes, a wheel acts on the plate there, the
-    /// button pauses or resumes. Returns whether one took it.
+    /// Lets the help, the keyboard, a notice, an open wheel or the pause button take a touch at
+    /// frame point `at`: the help or the notice closes, a key or a plate there acts, the button
+    /// pauses or resumes. Returns whether one took it.
     fn overlay_takes_touch(&mut self, (x, y): (f32, f32)) -> bool {
         if self.help.shown {
             self.touch_help((x, y));
+        } else if self.keyboard.open && self.touch_keyboard((x, y)) {
+            // The keyboard's window took it.
         } else if self.notice.is_some() && self.notice_shown() {
             self.notice = None;
         } else if self.wheel.open.is_some() {

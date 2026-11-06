@@ -1,7 +1,7 @@
 //! What the layer does to the game: keys, Shift, clicks and queued clicks, room doors,
 //! crew and weapon cycling, volleys, tabs, and the fast speed.
 
-use std::ffi::c_uint;
+use std::ffi::{c_int, c_uint};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::api::api;
@@ -83,6 +83,18 @@ pub fn key_down(code: i32) {
 pub fn key_up(code: i32) {
     // SAFETY: as for key_down.
     unsafe { (api().key_up)(state::app_ptr(), code) }
+}
+
+/// Types `c` into the text field the game edits.
+pub fn type_char(c: char) {
+    // SAFETY: the game's text handler on its CApp.
+    unsafe { (api().text_input)(state::app_ptr(), c as c_int) }
+}
+
+/// Applies `event`, a CEvent::TextEvent, to the text field the game edits.
+pub fn text_event(event: i32) {
+    // SAFETY: as for type_char.
+    unsafe { (api().text_event)(state::app_ptr(), event) }
 }
 
 /// Puts the module's process-wide state back as at load, for the next test.

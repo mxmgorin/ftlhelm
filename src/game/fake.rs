@@ -3,7 +3,7 @@
 //!
 //! The CApp pointer and the API are process globals, so `with_game` runs one test at a
 //! time. Every data symbol resolves into one zeroed block that starts with the mouse state,
-//! but the tutorial and the score keeper, each with a block of its own.
+//! but the tutorial, the score keeper and the text input flag, each with a block of its own.
 //! The game functions tests reach are typed stubs: input handlers record a `Call`, strings
 //! are malloc'd copies `live_strings` counts, the joystick reports `FakePad`s, also written
 //! into SIL's pad and device tables, the display is SCREEN. Any other call lands in
@@ -153,6 +153,10 @@ pub enum Call {
     Swap(usize, u32, u32),
     /// A pad rumble lasting this many seconds.
     Rumble(f32),
+    /// A character typed into the text field being edited.
+    Type(char),
+    /// A CEvent::TextEvent on the text field being edited.
+    TextEvent(i32),
 }
 
 /// The size of every image ResourceControl::GetImageId finds.
@@ -196,6 +200,7 @@ struct Statics {
     devices: usize,
     tutorial: usize,
     score_keeper: usize,
+    text_input: usize,
 }
 
 const JOYSTICKS_SIZE: usize = SIL_TABLE_LEN * SILJOY_SIZE;
@@ -223,6 +228,13 @@ fn leak_block(size: usize) -> usize {
 /// Takes the calls recorded since the last take.
 pub fn calls() -> Vec<Call> {
     std::mem::take(&mut CALLS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// Sets the engine's flag that the game takes typed text.
+pub fn set_text_input(on: bool) {
+    let statics = *STATICS.get().expect("the text input flag is set inside with_game");
+    // SAFETY: the leaked block of the flag.
+    unsafe { (statics.text_input as *mut u8).write(on as u8) };
 }
 
 pub fn set_tutorial_running(on: bool) {
@@ -300,6 +312,14 @@ fn select_weapon(code: c_int) {
 
 extern "C" fn key_up(_app: Ptr, code: c_int) {
     record(Call::KeyUp(code));
+}
+
+extern "C" fn text_input(_app: Ptr, c: c_int) {
+    record(Call::Type(char::from_u32(c as u32).expect("a typed character is a char")));
+}
+
+extern "C" fn text_event(_app: Ptr, event: c_int) {
+    record(Call::TextEvent(event));
 }
 
 extern "C" fn lbutton_down(_app: Ptr, x: c_int, y: c_int) {
@@ -535,6 +555,7 @@ fn install_api() -> Statics {
         devices: leak_block(DEVICES_SIZE),
         tutorial: leak_block(TUTORIAL_SIZE),
         score_keeper: leak_block(SCORE_KEEPER_SIZE),
+        text_input: leak_block(size_of::<u8>()),
     };
     // SAFETY: the data symbols read zeroed memory; the stubs below replace each function a
     // test reaches, and the rest are never called.
@@ -543,8 +564,11 @@ fn install_api() -> Statics {
     stand_in.sil_event_info = statics.devices;
     stand_in.tutorial = statics.tutorial;
     stand_in.score_keeper = statics.score_keeper;
+    stand_in.text_input_on = statics.text_input;
     stand_in.key_down = key_down;
     stand_in.key_up = key_up;
+    stand_in.text_input = text_input;
+    stand_in.text_event = text_event;
     stand_in.lbutton_down = lbutton_down;
     stand_in.lbutton_up = lbutton_up;
     stand_in.rbutton_down = rbutton_down;
@@ -625,6 +649,7 @@ pub fn with_game<R>(f: impl FnOnce(&mut Game) -> R) -> R {
         std::ptr::write_bytes(statics.devices as *mut u8, 0, DEVICES_SIZE);
         std::ptr::write_bytes(statics.tutorial as *mut u8, 0, TUTORIAL_SIZE);
         std::ptr::write_bytes(statics.score_keeper as *mut u8, 0, SCORE_KEEPER_SIZE);
+        std::ptr::write_bytes(statics.text_input as *mut u8, 0, size_of::<u8>());
     }
     calls();
     set_pads(Vec::new());
