@@ -71,6 +71,8 @@
 
 <p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without FTLHELM on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without FTLHELM on the left, with it on the right</sub></p>
 
+<p align="center"><img src="docs/images/keyboard.png" alt="The on-screen keyboard over the Crew tab: a crew member's new name typed with the pad, the focus on the Y key, the name and its length above the keys" width="400"><br><sub><b>On-screen keyboard</b>: rename the ship and the crew with the pad or by touch</sub></p>
+
 ## Controls
 
 | Button | Tap | Hold |
