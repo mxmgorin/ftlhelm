@@ -6,6 +6,7 @@ use super::util::FrameClock;
 use crate::config::layout::Layout;
 use crate::config::settings::{FileWatch, Settings};
 use crate::debug::commands::Commands;
+use crate::debug::fps::FpsLog;
 use crate::game::actions::Actions;
 use crate::game::hud::Hud;
 use crate::game::ipad_art::IpadArt;
@@ -49,6 +50,7 @@ pub struct Layer {
     pub keyboard: Keyboard,
     pub notice: Option<Notice>,
     pub cmd: Commands,
+    pub fps: FpsLog,
 }
 
 impl Default for Layer {
@@ -78,6 +80,7 @@ impl Default for Layer {
             keyboard: Keyboard::default(),
             notice: None,
             cmd: Commands::default(),
+            fps: FpsLog::default(),
         }
     }
 }

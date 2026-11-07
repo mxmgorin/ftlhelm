@@ -120,9 +120,10 @@ unsafe fn orig<F: Copy>(slot: &AtomicUsize) -> F {
 extern "C" fn onloop_hook(app: Ptr) {
     state::set_app(app);
     let t = now_s();
-    with_layer(|l| {
+    let fps_on = with_layer(|l| {
         let _phase = crash::enter(Phase::OnLoop);
         let frame = l.clock.tick(t);
+        let fps_on = l.fps.frame(t, l.cfg.fps_log);
         if frame.count == 1 {
             log!("first OnLoop");
             sound::report();
@@ -167,15 +168,25 @@ extern "C" fn onloop_hook(app: Ptr) {
                 l.bind.depth()
             );
         }
-    });
+        l.fps_count_layer(fps_on.then_some(t));
+        fps_on
+    })
+    .unwrap_or(false);
+    let game_t = fps_on.then(now_s);
     // SAFETY: the original CApp::OnLoop, called with the CApp it was given.
     unsafe { orig::<extern "C" fn(Ptr)>(&ONLOOP_ORIG)(app) };
+    if let Some(t0) = game_t {
+        with_layer(|l| l.fps.add_game(now_s() - t0));
+    }
 }
 
 extern "C" fn mouse_render_hook(this: Ptr) {
     let (draw_pointer, hide_arrow, scale) = with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
-        (l.draw_overlay(), l.pointer_hidden(), l.pointer_scale())
+        let mark = l.fps_mark();
+        let drawn = (l.draw_overlay(), l.pointer_hidden(), l.pointer_scale());
+        l.fps_count_layer(mark);
+        drawn
     })
     .unwrap_or((true, false, 1.0));
     if draw_pointer {
@@ -196,7 +207,9 @@ extern "C" fn mouse_render_hook(this: Ptr) {
     }
     with_layer(|l| {
         let _phase = crash::enter(Phase::Overlay);
+        let mark = l.fps_mark();
         l.draw_overlay_top();
+        l.fps_count_layer(mark);
     });
 }
 

@@ -97,6 +97,8 @@ const TOUCH_SNAP: f32 = 32.0;
 /// Window pixels a finger on a power box travels per bar.
 const TOUCH_STEP: f32 = 16.0;
 const TOUCH_PX_MAX: f32 = 100.0;
+/// The longest interval between frame rate lines.
+const FPS_LOG_S_MAX: f32 = 60.0;
 /// The pointer's size against the game's own: by default, its least and most, and the step
 /// a plate moves it by.
 const POINTER_SIZE: f32 = 1.0;
@@ -213,6 +215,8 @@ pub struct Settings {
     pub pause_button: bool,
     /// Rings mark a finger held toward a right click and the point a touch clicked.
     pub touch_marks: bool,
+    /// Seconds between frame rate lines in the log; 0: none.
+    pub fps_log: i32,
 }
 
 impl Default for Settings {
@@ -258,6 +262,7 @@ impl Default for Settings {
             touch_step: TOUCH_STEP,
             pause_button: true,
             touch_marks: true,
+            fps_log: 0,
         }
     }
 }
@@ -313,6 +318,7 @@ const OPTIONS: &[(&str, Field)] = &[
     ("touch_step", Field::Float(|c| &mut c.touch_step, 0.0, TOUCH_PX_MAX)),
     ("pause_button", Field::Bool(|c| &mut c.pause_button)),
     ("touch_marks", Field::Bool(|c| &mut c.touch_marks)),
+    ("fps_log", Field::Int(|c| &mut c.fps_log, 0.0, FPS_LOG_S_MAX)),
 ];
 
 /// Settings as the layout file writes them, by key, in table order.

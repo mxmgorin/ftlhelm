@@ -89,6 +89,12 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 | `pause_button` | 1 | switch | the pause button after a touch |
 | `touch_marks` | 1 | switch | rings where a finger holds and taps |
 
+### Log
+
+| Key | Default | Range | Effect |
+| --- | --- | --- | --- |
+| `fps_log` | 0 | 0 to 60 | seconds between frame rate lines in the [log](TROUBLESHOOTING.md); 0: none |
+
 ## Bindings
 
 ### States

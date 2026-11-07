@@ -22,6 +22,7 @@ before. Attach `ftlhelm.log` to a bug report.
 | `touch: touchscreen found` | the game takes touches as touches, see [Touch](CONTROLS.md#touch) |
 | `touch: no touchscreen found` | touches reach the game as mouse clicks, if at all |
 | no `touch: first event` after a touch | touches reach the game as mouse clicks; on a Steam Deck in Game Mode, see [Steam Deck](../README.md#steam-deck) |
+| `fps F, frame A ms (max M), game loop G ms, ftlhelm H ms` | with `fps_log` set: frames per second, average and longest frame, and the time the game's own loop and FTLHELM take per frame |
 | `panic at FILE:LINE` | an FTLHELM bug, at that place in its source |
 | `crash:` lines | the game crashed: the signal, the code it crashed in (`game` or `ftlhelm+OFFSET`), and the FTLHELM hook running, if any |
 
