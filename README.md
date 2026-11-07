@@ -128,6 +128,8 @@ A Steam copy runs from its own directory:
 
 On aarch64 handhelds, FTLHELM comes with the [FTL port for PortMaster](https://portmaster.games/detail.html?name=ftl).
 
+Each [release](https://github.com/mxmgorin/ftlhelm/releases) carries the port as `ftlhelm-portmaster.zip`; PortMaster installs it from its `autoinstall` folder.
+
 If FTLHELM does not start, see **[Troubleshooting](docs/TROUBLESHOOTING.md)**.
 
 ## Docs

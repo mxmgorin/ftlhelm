@@ -3,11 +3,15 @@
 Needs Rust for `x86_64-unknown-linux-gnu` and a C compiler for `ftlhelm_probe`. The only
 crate dependency is `libc`.
 
+The PortMaster port's files are in `packaging/portmaster/`.
+
 | Command | Result |
 | --- | --- |
 | `make` | `ftlhelm.so` (through `cargo build --release`) and `ftlhelm_probe` |
 | `make OUT=path.so` | the library at another path |
 | `make dist` | `dist/ftlhelm-linux-x86_64.tar.gz`: `lib/ftlhelm.so`, `ftlhelm.ini`, `ftlhelm.sh`, `LICENSE`, `NOTICE`, `TRADEMARKS.md` |
+| `make portmaster` | `dist/ftlhelm-portmaster.zip`: the FTL port for PortMaster with `ftlhelm.so` and box64, which is downloaded once to `dist/box64` |
+| `make portmaster BOX64=path` | the same with a local box64 |
 | `make test` | unit tests |
 | `make lint` | rustfmt check, clippy with warnings as errors |
 | `make clean` | removes the build output |
@@ -19,7 +23,7 @@ crate dependency is `libc`.
 | Workflow | Runs on | Does |
 | --- | --- | --- |
 | Check | a push to `main`, a pull request | `make lint`, `make test`, `make` |
-| Release | a published release | `make dist`; attaches the archive, its SHA-256 and a build provenance attestation to the release |
+| Release | a published release | `make dist`, `make portmaster`; attaches both archives, their SHA-256 and a build provenance attestation to the release |
 
 A release tag is the `Cargo.toml` version, with or without a leading `v`.
 
@@ -35,6 +39,8 @@ one).
     FTLHELM_CMD=/tmp/ftlhelm.cmd LD_PRELOAD=$PWD/ftlhelm.so FTLHELM_LAYOUT=$PWD/config/ftlhelm.ini \
         "/path/to/FTL Faster Than Light/FTL"
     echo dump > /tmp/ftlhelm.cmd
+
+The PortMaster launcher opens `/tmp/ftlhelm.cmd` while `ports/ftl/.debug` exists.
 
 ## Virtual pad
 

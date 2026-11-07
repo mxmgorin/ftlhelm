@@ -8,6 +8,12 @@ DIST_LIB := $(DIST)/lib
 LIB := target/release/libftlhelm.so
 # Shared libraries box64 provides to an x86_64 preload; any other NEEDED entry fails to load.
 ALLOWED_NEEDED := libc.so.6 libm.so.6 ld-linux-x86-64.so.2
+# The FTL port for PortMaster: packaging/portmaster around the library and box64.
+PORT := dist/ftlhelm-portmaster.zip
+# The box64 the Ittle Dew port ships, pinned by PortMaster-New commit and checksum.
+BOX64 ?= dist/box64
+BOX64_URL := https://raw.githubusercontent.com/PortsMaster/PortMaster-New/2cbd59830877df346a7f4dd3a62c17e8385eea52/ports/ittledew/ittledew/box64
+BOX64_SHA256 := 266d0aa3bc1e2d597df7c08f749dbcbcb2da6885d32f30e902bd2dd71b92e760
 
 all: $(OUT) $(PROBE)
 
@@ -27,6 +33,15 @@ dist: $(OUT)
 	cp config/ftlhelm.ini tools/ftlhelm.sh LICENSE NOTICE TRADEMARKS.md dist/$(DIST)/
 	tar -C dist -czf dist/$(DIST).tar.gz $(DIST)
 
+portmaster: $(OUT) $(BOX64)
+	python3 tools/mkzip.py --lib $(OUT) --box64 $(BOX64) $(PORT)
+
+$(BOX64):
+	mkdir -p $(@D)
+	curl -fsSL -o $@.part $(BOX64_URL)
+	echo "$(BOX64_SHA256)  $@.part" | sha256sum -c --quiet
+	mv $@.part $@
+
 test:
 	cargo test
 
@@ -38,4 +53,4 @@ clean:
 	cargo clean
 	rm -rf $(OUT) $(PROBE) dist
 
-.PHONY: all $(OUT) dist test lint clean
+.PHONY: all $(OUT) dist portmaster test lint clean

@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the Linux archive and attaches it to a published release.
+# Builds the Linux archive and the PortMaster port and attaches them to a published release.
 on:
   workflow_dispatch:
   release:
@@ -37,6 +37,11 @@ jobs:
           make dist
           cd dist && sha256sum ftlhelm-linux-x86_64.tar.gz > ftlhelm-linux-x86_64.tar.gz.sha256
 
+      - name: Package for PortMaster
+        run: |
+          make portmaster
+          cd dist && sha256sum ftlhelm-portmaster.zip > ftlhelm-portmaster.zip.sha256
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -44,11 +49,21 @@ jobs:
           path: dist/ftlhelm-linux-x86_64/
           retention-days: 14
 
+      # The zip itself: an artifact made of the port tree loses the launcher's exec bit.
+      - name: Upload PortMaster artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ftlhelm-portmaster
+          path: dist/ftlhelm-portmaster.zip
+          retention-days: 14
+
       - name: Attest build provenance
         if: github.event_name == 'release'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/ftlhelm-linux-x86_64.tar.gz
+          subject-path: |
+            dist/ftlhelm-linux-x86_64.tar.gz
+            dist/ftlhelm-portmaster.zip
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
@@ -57,3 +72,5 @@ jobs:
           files: |
             dist/ftlhelm-linux-x86_64.tar.gz
             dist/ftlhelm-linux-x86_64.tar.gz.sha256
+            dist/ftlhelm-portmaster.zip
+            dist/ftlhelm-portmaster.zip.sha256
