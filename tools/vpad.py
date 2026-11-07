@@ -22,7 +22,8 @@ frame, so a press must outlast a frame; a game slowed by an occluded window need
 import argparse
 import time
 
-from evdev import AbsInfo, UInput, ecodes as e
+from evdev import AbsInfo, UInput
+from evdev import ecodes as e
 
 STICK = AbsInfo(0, -32768, 32767, 16, 128, 0)
 HAT = AbsInfo(0, -1, 1, 0, 0, 0)
