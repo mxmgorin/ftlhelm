@@ -16,7 +16,7 @@
 
 **FTLHELM** is a gamepad and touchscreen layer for [FTL: Faster Than Light](https://subsetgames.com/ftl.html) on Linux, including the Steam Deck, written in Rust. It loads with the game and maps pad and touch input to the game's own mouse and keyboard controls; the game files remain untouched.
 
-<p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets onto a room, X arms the Burst Laser, a volley takes down the enemy's shield, the weapons wheel arms the Pike Beam, its line is laid through the enemy's rooms and turned, the beam cuts through them, and the beacon map jumps the ship away" width="800"><br><sub>The D-pad, a volley, the weapons wheel, an aimed beam and a jump, all on a gamepad</sub></p>
+<p align="center"><img src="docs/images/hero.gif" alt="A fight on a gamepad: the D-pad steps the focus brackets onto a room, X arms the Burst Laser, a volley takes down the enemy's shield, the weapons wheel arms the Pike Beam, its line is laid through the enemy's rooms and turned, the beam cuts through them, and the beacon map jumps the ship away" width="800"></p>
 
 ## Features
 
@@ -57,21 +57,17 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/images/zones.gif" alt="Zones: the D-pad steps the focus brackets through the ship's rooms, an event's choices down to Leave, the beacon map's beacons and a store's items" width="400"><br><sub><b>Zones</b>: the D-pad steps through rooms, event choices, beacons and store items</sub></td>
-    <td align="center"><img src="docs/images/touch.gif" alt="Touch: a tap selects a crew member and another sends them to a room, swipes on the shields icon take its power off and back on, a held finger fills the ring to a right click, and the on-screen button pauses the game" width="400"><br><sub><b>Touch</b>: tap to select and send crew, swipe to set power, hold to right-click, the pause button</sub></td>
+    <td align="center"><img src="docs/images/zones.gif" alt="Zones: the D-pad steps the focus brackets through the ship's rooms, an event's choices down to Leave, the beacon map's beacons and a store's items" width="400"><br><sub><b>Zones</b></sub></td>
+    <td align="center"><img src="docs/images/touch.gif" alt="Touch: a tap selects a crew member and another sends them to a room, swipes on the shields icon take its power off and back on, a held finger fills the ring to a right click, and the on-screen button pauses the game" width="400"><br><sub><b>Touch</b></sub></td>
   </tr>
-</table>
-
-<table align="center">
   <tr>
-    <td align="center" valign="top"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="480"><br><sub><b>Zoom</b> on a 640x480 screen: the settings wheel sets the level, the view follows the cursor, the beacon map enlarged to fit</sub></td>
-    <td align="center" valign="top"><img src="docs/images/beams.gif" alt="Beams up close: the Pike Beam's line laid through the shields room over the most rooms, turned and back, slid along itself, moved a column over with A held, then the beam cuts through the rooms" width="230"><br><sub><b>Beams</b>: lay the line, turn it, slide it, move it with A held</sub></td>
+    <td align="center"><img src="docs/images/zoom.gif" alt="Zoom on a 640x480 screen: the settings wheel steps the zoom from 1.33x to 2x, the view follows the cursor through the rooms onto the enemy ship, the wheel steps it back to 1.33x, and the beacon map shows enlarged to fit the screen" width="400"><br><sub><b>Zoom</b> at 640x480</sub></td>
+    <td align="center"><img src="docs/images/beams.gif" alt="Beams up close: the Pike Beam's line laid through the shields room over the most rooms, turned and back, slid along itself, moved a column over with A held, then the beam cuts through the rooms" width="192"><br><sub><b>Beams</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/images/small-screens.png" alt="A 640x480 screen without FTLHELM on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b>: without and with FTLHELM</sub></td>
   </tr>
 </table>
-
-<p align="center"><img src="docs/images/small-screens.png" alt="A 640x480 screen without FTLHELM on the left and with it on the right: the ship view letterboxed, then with the HUD moved in and larger; an event window small, then enlarged with larger text" width="800"><br><sub><b>Small screens</b> at 640x480: without FTLHELM on the left, with it on the right</sub></p>
-
-<p align="center"><img src="docs/images/keyboard.png" alt="The on-screen keyboard over the Crew tab: a crew member's new name typed with the pad, the focus on the Y key, the name and its length above the keys" width="400"><br><sub><b>On-screen keyboard</b>: rename the ship and the crew with the pad or by touch</sub></p>
 
 ## Controls
 
@@ -90,7 +86,7 @@
 | Start | pause | zoom out while zoomed |
 | Select | settings wheel | |
 
-<p align="center"><img src="docs/images/wheels.png" alt="The eight wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, view with the badge, HUD shift, iPad art, pointer size and frame filter switches, and controls with focus repeat, stick sensitivity, hold time, room crew picking, button swap, B pause, touch and rumble" width="800"><br><sub><b>Wheels</b>: weapons, crew, systems, ship orders, abilities, settings, view and controls</sub></p>
+<p align="center"><img src="docs/images/wheels.png" alt="The eight wheels: weapons and drones with their power pips and the all weapons plate, crew with their portraits and stations, systems with their power, ship orders, abilities, settings, view with the badge, HUD shift, iPad art, pointer size and frame filter switches, and controls with focus repeat, stick sensitivity, hold time, room crew picking, button swap, B pause, touch and rumble" width="800"><br><sub><b>Wheels</b></sub></p>
 
 ## Install
 

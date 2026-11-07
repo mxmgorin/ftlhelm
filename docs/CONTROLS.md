@@ -34,6 +34,8 @@ member's on the Crew tab. Stays closed while the mouse is in use.
 A word's first letter is a capital. Shift changes the case of the next letter; pressed twice,
 it locks capitals.
 
+<p align="center"><img src="images/keyboard.png" alt="The on-screen keyboard over the Crew tab: a crew member's new name typed with the pad, the focus on the Y key, the name and its length above the keys" width="400"></p>
+
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone that way: a room, a weapon or drone
