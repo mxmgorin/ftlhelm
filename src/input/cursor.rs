@@ -8,6 +8,7 @@ use crate::game::api::{Point, Rect};
 use crate::game::mem::Obj;
 use crate::game::offsets::*;
 use crate::game::state;
+use crate::game::volume;
 use crate::game::zones::{Zone, ZoneKind};
 use crate::ui::zoom::Span;
 
@@ -210,7 +211,7 @@ impl Layer {
     /// Moves the cursor to the zone `pick_toward` finds along a direction.
     pub fn focus_move(&mut self, dx: f32, dy: f32) {
         let len = dx.hypot(dy);
-        if self.zones.list.is_empty() || len <= 0.0 || self.beam_step(dx, dy) {
+        if self.zones.list.is_empty() || len <= 0.0 || self.beam_step(dx, dy) || self.slider_step(dx, dy) {
             return;
         }
         let from = self.zone_under_cursor();
@@ -255,6 +256,32 @@ impl Layer {
             }
         }
         true
+    }
+
+    /// Takes a sideways step while the cursor is on a volume slider: the slider moves one step
+    /// that way. False when the cursor is on none or the step is not sideways.
+    fn slider_step(&mut self, dx: f32, dy: f32) -> bool {
+        if dx.abs() <= dy.abs() {
+            return false;
+        }
+        let Some(slider) = self.slider_under_cursor() else {
+            return false;
+        };
+        if volume::step(slider, dx.signum() as i32) {
+            self.buzz();
+        } else {
+            self.bump();
+        }
+        true
+    }
+
+    /// The open options' volume slider under the cursor.
+    pub fn slider_under_cursor(&self) -> Option<Obj> {
+        let zone = self.zones.list[self.zone_under_cursor()?];
+        if zone.kind != ZoneKind::Slider {
+            return None;
+        }
+        volume::slider(state::open_options()?, zone.id)
     }
 
     /// How many times its size the game's pointer is drawn: `pointer_size` times as large on
@@ -734,6 +761,25 @@ mod tests {
             l.send_cursor();
             l.focus_move(0.0, -1.0);
             assert_eq!(l.zone_under_cursor(), Some(2), "nothing above the next column's top");
+        });
+    }
+
+    #[test]
+    fn sideways_steps_on_a_volume_slider_move_its_marker_and_up_leaves_it() {
+        with_game(|g| {
+            let bar = Rect { x: 557, y: 481, w: 200, h: 20 };
+            let slider = g.options_with_sound_slider(Rect { x: 662, y: 353, w: 258, h: 34 }, bar);
+            let mut l = Layer::default();
+            l.build_zones();
+            (l.cursor.x, l.cursor.y) = bar.center();
+            l.send_cursor();
+            l.focus_move(1.0, 0.0);
+            l.focus_move(1.0, 0.0);
+            l.focus_move(-1.0, 0.0);
+            assert_eq!(slider.i32(SLIDER_MARKER_X), bar.x + bar.w / volume::VOLUME_STEPS, "two steps up, one down");
+            assert_eq!(l.zone_under_cursor(), Some(1), "the focus stays on the slider");
+            l.focus_move(0.0, -1.0);
+            assert_eq!(l.zone_under_cursor(), Some(0), "up leaves for the choice");
         });
     }
 

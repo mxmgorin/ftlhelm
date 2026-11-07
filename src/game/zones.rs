@@ -42,6 +42,7 @@ pub enum ZoneKind {
     SellBox,
     Armament,
     Achievement,
+    Slider,
 }
 
 impl ZoneKind {
@@ -58,6 +59,7 @@ impl ZoneKind {
             ZoneKind::SellBox => "sell box",
             ZoneKind::Armament => "armament box",
             ZoneKind::Achievement => "achievement",
+            ZoneKind::Slider => "slider",
         }
     }
 }
@@ -427,6 +429,16 @@ impl Zones {
         }
     }
 
+    /// The options' volume sliders, each by its bar; the id is its index in OPTIONS_SLIDERS.
+    fn add_sliders(&mut self, options: Obj) {
+        for (i, off) in OPTIONS_SLIDERS.into_iter().enumerate() {
+            let r = options.at(off).rect(SLIDER_BOX);
+            if r.w > 0 && r.h > 0 {
+                self.push(r, i as i32, ZoneKind::Slider);
+            }
+        }
+    }
+
     /// The hit-tested buttons: only those of `holder` (its object and size) when given, else
     /// with another screen or the menu open none from the HUD's top and bottom rows.
     /// None from the store page not shown.
@@ -533,6 +545,7 @@ impl Layer {
             if choices != options {
                 return;
             }
+            zones.add_sliders(options);
         }
         if let Some(hangar) = state::hangar().filter(|_| !state::ship_list_open()) {
             zones.add_hangar_boxes(hangar);

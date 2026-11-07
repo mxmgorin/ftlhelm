@@ -172,6 +172,9 @@ impl Layer {
                     self.bind.context_done[slot] = None;
                 } else if !state::aiming() && self.pick_room_crew() {
                     self.bind.context_done[slot] = None;
+                } else if self.focus_held() && self.slider_under_cursor().is_some() {
+                    // A click puts the marker under the cursor, which a focus leaves mid-bar.
+                    self.bind.context_done[slot] = None;
                 } else {
                     // Crew selected over a room: the game orders them there on the right button.
                     let room = self
@@ -425,6 +428,7 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::api::Rect;
     use crate::game::fake::{calls, with_game, Call};
 
     const PAGES: &str = "[controls]\nl1 = hold_state depower\nr1 = hold_state solo\na = space\nb = esc\n\
@@ -477,6 +481,29 @@ mod tests {
             b.push_state(1, Input::L1);
         }
         assert_eq!(b.depth(), MAX_STATES - 1);
+    }
+
+    #[test]
+    fn a_click_on_a_focused_volume_slider_is_held_back() {
+        with_game(|g| {
+            let bar = Rect { x: 557, y: 481, w: 200, h: 20 };
+            g.options_with_sound_slider(Rect { x: 662, y: 353, w: 258, h: 34 }, bar);
+            let mut l = Layer::default();
+            l.build_zones();
+            (l.cursor.x, l.cursor.y) = bar.center();
+            l.send_cursor();
+            l.mark_focus();
+            calls();
+            let a = |l: &mut Layer| {
+                l.builtin(Builtin::ContextClick, Source::Input(Input::FaceDown), true);
+                l.builtin(Builtin::ContextClick, Source::Input(Input::FaceDown), false);
+                calls().into_iter().filter(|c| matches!(c, Call::Button(..))).count()
+            };
+            assert_eq!(a(&mut l), 0);
+            l.cursor.x += 1.0;
+            l.send_cursor();
+            assert_eq!(a(&mut l), 2, "a cursor moved by hand clicks");
+        });
     }
 
     #[test]

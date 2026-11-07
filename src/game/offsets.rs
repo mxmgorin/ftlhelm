@@ -181,6 +181,13 @@ pub const GAME_OVER_BUTTONS: usize = 32;
 /// GameOver::bShowStats and bShowingCredits: the score screen or the credits over it.
 pub const GAME_OVER_STATS: usize = 96;
 pub const GAME_OVER_CREDITS: usize = 216;
+/// OptionsScreen::soundVolume and musicVolume, the volume sliders, in that order.
+pub const OPTIONS_SLIDERS: [usize; 2] = [552, 612];
+/// SlideBar: its bar, its marker's left edge, and the least and most that edge takes.
+pub const SLIDER_BOX: usize = 0;
+pub const SLIDER_MARKER_X: usize = 20;
+pub const SLIDER_MIN: usize = 52;
+pub const SLIDER_MAX: usize = 56;
 /// OptionsScreen::bCustomizeControls: the hotkey screen over the whole frame.
 pub const OPTIONS_CUSTOMIZE_CONTROLS: usize = 672;
 /// OptionsScreen::controls, the hotkey screen.

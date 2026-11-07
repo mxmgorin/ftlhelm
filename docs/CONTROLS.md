@@ -37,7 +37,8 @@ it locks capitals.
 ## Zones
 
 The D-pad and the sticks move the cursor to the next zone that way: a room, a weapon or drone
-box, a button, an event choice, a beacon, a store slot, a menu item. A held direction repeats.
+box, a button, an event choice, a beacon, a store slot, a menu item, a volume slider. A held
+direction repeats.
 
 | Input | Effect |
 | --- | --- |
@@ -45,6 +46,7 @@ box, a button, an event choice, a beacon, a store slot, a menu item. A held dire
 | Y | select the next crew member |
 | A on a room | send the selected crew there; with none selected, select the room's crew one at a time, then all |
 | B | clear the selection |
+| D-pad left, right on a volume slider | volume down, up |
 
 ## Doors
 

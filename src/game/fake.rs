@@ -757,4 +757,18 @@ impl Game {
         door.set(DOOR_OPEN, open as u8);
         door
     }
+
+    /// Opens the game's options with one choice at `choice` and the sound slider's bar at
+    /// `bar`, its marker at the left end of a range the bar's width; returns the slider.
+    pub fn options_with_sound_slider(&mut self, choice: Rect, bar: Rect) -> Obj {
+        let options = self.gui.at(GUI_OPTIONS_BOX);
+        options.set(FOCUS_OPEN, 1u8);
+        self.arena.vector(options, CHOICE_RECTS, &[choice]);
+        let slider = options.at(OPTIONS_SLIDERS[0]);
+        slider.set(SLIDER_BOX, bar);
+        slider.set(SLIDER_MIN, bar.x);
+        slider.set(SLIDER_MAX, bar.x + bar.w);
+        slider.set(SLIDER_MARKER_X, bar.x);
+        slider
+    }
 }
