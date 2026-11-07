@@ -92,7 +92,8 @@ struct Setup {
 }
 
 static SETUP: OnceLock<Setup> = OnceLock::new();
-/// Set while a report runs or chains, so a signal raised meanwhile reports nothing.
+/// Set by the first report, so the signals after it, the game's handler's own included,
+/// report nothing.
 static REPORTED: AtomicBool = AtomicBool::new(false);
 
 extern "C" {
@@ -153,18 +154,13 @@ pub fn log_panics() {
 
 extern "C" fn handler(sig: c_int, info: *mut libc::siginfo_t, ctx: *mut c_void) {
     let setup = SETUP.get();
-    let reporting = setup.is_some() && !REPORTED.swap(true, Ordering::Relaxed);
-    if let (true, Some(setup)) = (reporting, setup) {
-        // SAFETY: the kernel passes an SA_SIGINFO handler its siginfo and ucontext.
-        unsafe { report(setup, sig, &*info, &*(ctx as *const libc::ucontext_t)) };
+    // SAFETY: the kernel passes an SA_SIGINFO handler its siginfo and ucontext.
+    let (info, ctx) = unsafe { (&*info, &*(ctx as *const libc::ucontext_t)) };
+    if let Some(setup) = setup.filter(|_| !REPORTED.swap(true, Ordering::Relaxed)) {
+        report(setup, sig, info, ctx);
     }
     let previous = setup.and_then(|s| SIGNALS.iter().position(|(s2, _)| *s2 == sig).map(|i| &s.previous[i]));
-    // SAFETY: the action that was in place, with the arguments this handler was given.
-    unsafe { chain(sig, previous, info, ctx) };
-    // The handler in place went on from the fault: the next one is reported anew.
-    if reporting {
-        REPORTED.store(false, Ordering::Relaxed);
-    }
+    chain(sig, previous, info);
 }
 
 fn report(setup: &Setup, sig: c_int, info: &libc::siginfo_t, ctx: &libc::ucontext_t) {
@@ -201,26 +197,18 @@ fn report(setup: &Setup, sig: c_int, info: &libc::siginfo_t, ctx: &libc::ucontex
     }
 }
 
-/// Hands the signal to the action in place before; a default or ignore is raised again.
-/// # Safety
-/// `info` and `ctx` must be what the kernel passed the handler for `sig`.
-unsafe fn chain(sig: c_int, previous: Option<&libc::sigaction>, info: *mut libc::siginfo_t, ctx: *mut c_void) {
-    let Some(prev) = previous.filter(|p| p.sa_sigaction != libc::SIG_DFL && p.sa_sigaction != libc::SIG_IGN) else {
-        let default = previous.copied().unwrap_or_else(|| {
-            let mut a: libc::sigaction = std::mem::zeroed();
-            a.sa_sigaction = libc::SIG_DFL;
-            a
-        });
-        libc::sigaction(sig, &default, std::ptr::null_mut());
-        libc::raise(sig);
-        return;
-    };
-    if prev.sa_flags & libc::SA_SIGINFO != 0 {
-        let f: extern "C" fn(c_int, *mut libc::siginfo_t, *mut c_void) = std::mem::transmute(prev.sa_sigaction);
-        f(sig, info, ctx);
-    } else {
-        let f: extern "C" fn(c_int) = std::mem::transmute(prev.sa_sigaction);
-        f(sig);
+/// Puts back the action in place before, `previous` or the default, and hands it the signal:
+/// a fault recurs when its instruction runs again, any other signal is raised again.
+fn chain(sig: c_int, previous: Option<&libc::sigaction>, info: &libc::siginfo_t) {
+    // SAFETY: sigaction is plain data; all zeroes with SIG_DFL is the default action.
+    let mut default: libc::sigaction = unsafe { std::mem::zeroed() };
+    default.sa_sigaction = libc::SIG_DFL;
+    // SAFETY: an action read by sigaction at install, or the default.
+    unsafe { libc::sigaction(sig, previous.unwrap_or(&default), std::ptr::null_mut()) };
+    // Only the kernel's own codes are positive.
+    if info.si_code <= 0 {
+        // SAFETY: raise has no preconditions; the signal waits until this handler returns.
+        unsafe { libc::raise(sig) };
     }
 }
 
@@ -234,8 +222,45 @@ mod tests {
     const CHILD_ENV: &str = "FTLHELM_CRASH_CHILD";
     /// Set in the child process the stack overflow test runs.
     const OVERFLOW_ENV: &str = "FTLHELM_OVERFLOW_CHILD";
+    /// Set in the child process that faults under a handler of its own.
+    const PREVIOUS_FAULT_ENV: &str = "FTLHELM_PREVIOUS_FAULT_CHILD";
+    /// Set in the child process that raises a signal under a handler of its own.
+    const PREVIOUS_RAISE_ENV: &str = "FTLHELM_PREVIOUS_RAISE_CHILD";
+    /// Set in the child process that faults under a one-shot handler of its own that returns.
+    const ONE_SHOT_ENV: &str = "FTLHELM_ONE_SHOT_CHILD";
+    /// Seconds before SIGALRM ends a child that loops instead of dying.
+    const CHILD_DEADLINE_S: u32 = 5;
     /// An address in the unmapped first page.
     const FAULT_ADDR: usize = 0x10;
+    /// The exit status of the handler the child had in place before the report.
+    const PREVIOUS_EXIT: i32 = 42;
+    const PREVIOUS_SAYS: &[u8] = b"previous handler ran\n";
+
+    /// Stands for the game's handler: says it ran and exits.
+    extern "C" fn previous_handler(_: c_int, _: *mut libc::siginfo_t, _: *mut c_void) {
+        // SAFETY: write and _exit are async-signal-safe.
+        unsafe {
+            libc::write(2, PREVIOUS_SAYS.as_ptr().cast(), PREVIOUS_SAYS.len());
+            libc::_exit(PREVIOUS_EXIT);
+        }
+    }
+
+    /// Stands for a handler that relies on SA_RESETHAND: says it ran and returns.
+    extern "C" fn one_shot_handler(_: c_int, _: *mut libc::siginfo_t, _: *mut c_void) {
+        // SAFETY: write is async-signal-safe.
+        unsafe { libc::write(2, PREVIOUS_SAYS.as_ptr().cast(), PREVIOUS_SAYS.len()) };
+    }
+
+    /// Installs `handler` with `flags` for SIGSEGV, then the report over it.
+    fn install_over(handler: extern "C" fn(c_int, *mut libc::siginfo_t, *mut c_void), flags: c_int) {
+        // SAFETY: sigaction is plain data; all zeroes is a valid value.
+        let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+        action.sa_sigaction = handler as *const () as usize;
+        action.sa_flags = libc::SA_SIGINFO | flags;
+        // SAFETY: an SA_SIGINFO handler of the matching type, with an empty mask.
+        unsafe { libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut()) };
+        install(0);
+    }
 
     /// Faults with the report installed, in the child process only.
     #[test]
@@ -245,6 +270,41 @@ mod tests {
         }
         install(0);
         let _phase = enter(Phase::OnLoop);
+        // SAFETY: none; the read faults on purpose, in a child process.
+        unsafe { std::ptr::read_volatile(std::ptr::without_provenance::<u8>(FAULT_ADDR)) };
+    }
+
+    /// Faults over a handler of its own, in the child process only.
+    #[test]
+    fn previous_fault_child() {
+        if std::env::var_os(PREVIOUS_FAULT_ENV).is_none() {
+            return;
+        }
+        install_over(previous_handler, 0);
+        // SAFETY: none; the read faults on purpose, in a child process.
+        unsafe { std::ptr::read_volatile(std::ptr::without_provenance::<u8>(FAULT_ADDR)) };
+    }
+
+    /// Raises SIGSEGV over a handler of its own, in the child process only.
+    #[test]
+    fn previous_raise_child() {
+        if std::env::var_os(PREVIOUS_RAISE_ENV).is_none() {
+            return;
+        }
+        install_over(previous_handler, 0);
+        // SAFETY: raise has no preconditions.
+        unsafe { libc::raise(libc::SIGSEGV) };
+    }
+
+    /// Faults over a one-shot handler that returns, in the child process only.
+    #[test]
+    fn one_shot_child() {
+        if std::env::var_os(ONE_SHOT_ENV).is_none() {
+            return;
+        }
+        // SAFETY: alarm has no preconditions.
+        unsafe { libc::alarm(CHILD_DEADLINE_S) };
+        install_over(one_shot_handler, libc::SA_RESETHAND);
         // SAFETY: none; the read faults on purpose, in a child process.
         unsafe { std::ptr::read_volatile(std::ptr::without_provenance::<u8>(FAULT_ADDR)) };
     }
@@ -294,6 +354,32 @@ mod tests {
         ] {
             assert!(log.contains(line), "no {line:?} in:\n{log}");
         }
+        assert_eq!(out.status.signal(), Some(libc::SIGSEGV), "{log}");
+    }
+
+    #[test]
+    fn a_fault_reaches_the_previous_handler_after_the_report() {
+        let out = child("core::crash::tests::previous_fault_child", PREVIOUS_FAULT_ENV);
+        let log = String::from_utf8_lossy(&out.stderr);
+        assert!(log.contains("crash: SIGSEGV at "), "{log}");
+        assert!(log.contains("previous handler ran"), "{log}");
+        assert_eq!(out.status.code(), Some(PREVIOUS_EXIT), "{log}");
+    }
+
+    #[test]
+    fn a_raised_signal_reaches_the_previous_handler_after_the_report() {
+        let out = child("core::crash::tests::previous_raise_child", PREVIOUS_RAISE_ENV);
+        let log = String::from_utf8_lossy(&out.stderr);
+        assert!(log.contains("crash: SIGSEGV raised"), "{log}");
+        assert!(log.contains("previous handler ran"), "{log}");
+        assert_eq!(out.status.code(), Some(PREVIOUS_EXIT), "{log}");
+    }
+
+    #[test]
+    fn a_one_shot_previous_handler_runs_once_then_the_fault_kills() {
+        let out = child("core::crash::tests::one_shot_child", ONE_SHOT_ENV);
+        let log = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(log.matches("previous handler ran").count(), 1, "{log}");
         assert_eq!(out.status.signal(), Some(libc::SIGSEGV), "{log}");
     }
 }
