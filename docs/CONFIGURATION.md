@@ -32,7 +32,7 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 | Key | Default | Range | Effect |
 | --- | --- | --- | --- |
 | `snap_dpad` | 1 | switch | the D-pad jumps between zones |
-| `flick_threshold` | 0.8 | 0.5 to 1 | stick push that steps to the next zone |
+| `flick_threshold` | 0.7 | 0.5 to 0.85 | stick push that steps to the next zone |
 | `focus_repeat` | 2 | 0 to 3 | repeat speed of a held direction: 0 off, 1 slow, 2 medium, 3 fast |
 | `focus_cone_narrow` | 30 | 5 to 89 | degrees either side searched first for the next zone |
 | `focus_cone_wide` | 60 | 5 to 89 | degrees either side searched next |

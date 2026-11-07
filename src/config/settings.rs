@@ -72,11 +72,13 @@ const CURSOR_CURVE_MAX: f32 = 4.0;
 const TAP_HOLD_S: f32 = 0.2;
 const HOLD_S_MIN: f32 = 0.05;
 const HOLD_S_MAX: f32 = 2.0;
-pub const FLICK_ON: f32 = 0.8;
+pub const FLICK_ON: f32 = 0.7;
 /// The level a stick re-arms its flick below: clear of the offset some sticks rest at.
 pub const FLICK_OFF: f32 = 0.4;
 /// The narrowest band a flick threshold keeps above the re-arm level.
 const FLICK_GAP: f32 = 0.1;
+/// The strongest flick threshold: short of full travel, which a stick seldom reaches along an axis.
+const FLICK_MAX: f32 = 0.85;
 /// Focus repeat levels: 0 is off, each level above picks a FOCUS_REPEAT_S interval.
 pub const FOCUS_REPEAT_KEY: &str = "focus_repeat";
 const FOCUS_REPEAT: i32 = 2;
@@ -291,7 +293,7 @@ const OPTIONS: &[(&str, Field)] = &[
     (RUMBLE_KEY, Field::Float(|c| &mut c.rumble, 0.0, RUMBLE_MAX)),
     (SWAP_BUTTONS_KEY, Field::Int(|c| &mut c.swap_buttons, 0.0, SWAP_ALL as f32)),
     (CANCEL_PAUSE_KEY, Field::Bool(|c| &mut c.cancel_pause)),
-    (FLICK_THRESHOLD_KEY, Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, 1.0)),
+    (FLICK_THRESHOLD_KEY, Field::Float(|c| &mut c.flick_threshold, FLICK_OFF + FLICK_GAP, FLICK_MAX)),
     (FOCUS_REPEAT_KEY, Field::Int(|c| &mut c.focus_repeat, 0.0, FOCUS_REPEAT_S.len() as f32)),
     (TAP_HOLD_KEY, Field::Float(|c| &mut c.tap_hold, HOLD_S_MIN, HOLD_S_MAX)),
     ("focus_cone_narrow", Field::Float(|c| &mut c.focus_cone_narrow, CONE_DEG_MIN, CONE_DEG_MAX)),
@@ -906,12 +908,12 @@ mod tests {
         cfg.cycle(hold);
         assert_eq!(cfg.tap_hold, TAP_HOLD_STEP, "its top cycles to its bottom");
         let flick = tunable(FLICK_THRESHOLD_KEY).expect("flick_threshold has a step");
-        let threshold = |cfg: &Settings| (cfg.flick_threshold * 10.0).round() / 10.0;
+        let tenths = |v: f32| (v * 10.0).round() / 10.0;
         cfg.step(flick, true);
-        assert_eq!(threshold(&cfg), FLICK_ON - FLICK_STEP, "a step up lowers it");
+        assert_eq!(tenths(cfg.flick_threshold), tenths(FLICK_ON - FLICK_STEP), "a step up lowers it");
         cfg.flick_threshold = FLICK_OFF + FLICK_GAP;
         cfg.cycle(flick);
-        assert_eq!(cfg.flick_threshold, 1.0, "past the most sensitive, the least");
+        assert_eq!(cfg.flick_threshold, FLICK_MAX, "past the most sensitive, the least");
     }
 
     #[test]

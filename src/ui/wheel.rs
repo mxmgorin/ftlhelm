@@ -1367,7 +1367,7 @@ mod tests {
             assert_eq!(glyphs, drawn.map(Some));
             let pips = |i: usize| (p[i].pips, p[i].pips_on);
             assert_eq!(pips(0), (3, 2), "repeat: medium of three");
-            assert_eq!(pips(1), (6, 3), "stick: lit as sensitivity, more for a lower threshold");
+            assert_eq!(pips(1), (5, 3), "stick: lit as sensitivity, more for a lower threshold");
             assert_eq!(pips(7), (5, 2), "hold time: a pip per step from the first");
             assert!(p[3].available, "no SDL mapping names the buttons");
             assert!(!p[4].available, "no touchscreen");
