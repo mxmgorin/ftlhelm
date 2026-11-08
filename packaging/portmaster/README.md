@@ -59,7 +59,7 @@ On a touchscreen:
 |--|--|
 | Tap | Click |
 | Hold, release | Right click |
-| Swipe up or down from a system icon or a weapon box | Add, take power |
+| Swipe up or down from a system icon or its power bars, or a weapon box | Add, take power |
 | Drag | Drag |
 | Two-finger tap | Pause or resume |
 | Pinch on the ship view | Zoom |

@@ -169,7 +169,7 @@ A touchscreen acts as the mouse. A touch next to a target snaps to it.
 | --- | --- |
 | tap | click |
 | hold, release | right click |
-| move up or down from a system icon or a weapon box | add or take power |
+| move up or down from a system icon or its power bars, or a weapon box | add or take power |
 | drag | drag |
 | two-finger tap | pause or resume |
 | pinch on the ship view | zoom; the view moves with the fingers |

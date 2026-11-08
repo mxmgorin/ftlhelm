@@ -47,7 +47,7 @@
 - **iPad icons**: use the larger icons from FTL's iPad edition for map beacons and crew station buttons, each controlled by its own switch
 - **Touch**: use the touchscreen as a mouse
   - **Tap** to click, **hold** to right-click, **drag** to select
-  - **Swipe** up or down on a system icon or weapon box to adjust its power
+  - **Swipe** up or down on a system icon, its power bars or a weapon box to adjust its power
   - **Two-finger tap** or the on-screen button to pause
   - **Pinch** to zoom and move the ship view
   - **Near misses** land on the closest button, room or icon

@@ -291,6 +291,12 @@ pub const SYSBOX_LOCATION: usize = 8;
 /// A system box takes clicks strictly between these offsets from its location, on both axes.
 pub const SYSBOX_CLICK_FROM: i32 = 21;
 pub const SYSBOX_CLICK_TO: i32 = 42;
+/// A system box's power bars stack up from its location: the lowest bar's top this far below
+/// it, each next bar a pitch higher.
+pub const SYSBOX_BAR_LOWEST: i32 = 8;
+pub const SYSBOX_BAR_PITCH: i32 = 8;
+/// The distance between neighbouring system boxes.
+pub const SYSBOX_PITCH: i32 = 36;
 pub const SYSBOX_SYSTEM: usize = 144;
 pub const SYSTEM_TYPE: usize = 64;
 /// ShipSystem::powerState is a pair: the power in use, then the capacity.

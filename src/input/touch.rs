@@ -50,6 +50,9 @@ const HOLD_RING_R: f32 = 52.0;
 const HOLD_RING_W: f32 = 8.0;
 /// The share of the long press a finger stays down before its ring shows: a tap shows none.
 const HOLD_RING_FROM: f32 = 0.5;
+/// The most sideways travel per upright travel a move from an armament box steps its power
+/// with; past it the box drags.
+const SWITCH_SWIPE_SLOPE: f32 = 2.0;
 /// The ring left where a touch clicked, in window pixels, and the seconds it takes to fade.
 const MARK_R: f32 = 16.0;
 const MARK_W: f32 = 4.0;
@@ -128,6 +131,8 @@ pub struct Limits {
     pub slop: f32,
     /// Window pixels a finger on a power box travels per bar; 0: it drags instead.
     pub step: f32,
+    /// Window pixels a finger on a power box travels to the first bar.
+    pub first_step: f32,
 }
 
 /// What a finger landed on.
@@ -323,6 +328,7 @@ impl Gestures {
                 };
                 let own = f.id == ev.id;
                 let drift = ((ev.x - start.0) as f32).hypot((ev.y - start.1) as f32);
+                let slop = if f.power.is_some() { limits.first_step } else { limits.slop };
                 match f.stage {
                     Stage::Pinch => self.due.extend(f.pinch()),
                     _ if drift > limits.slop && f.may_pinch() => {
@@ -331,9 +337,15 @@ impl Gestures {
                     }
                     Stage::Pair { .. } if drift > limits.slop => f.stage = Stage::Spent,
                     _ if !own => {}
-                    Stage::Pending | Stage::Held if drift > limits.slop => {
-                        let upright = (ev.y - start.1).abs() >= (ev.x - start.0).abs();
-                        if f.power.is_some() && limits.step > 0.0 && upright {
+                    Stage::Pending | Stage::Held if drift > slop => {
+                        let (across, along) = ((ev.x - start.0).abs() as f32, (ev.y - start.1).abs() as f32);
+                        // A system icon only steps; an armament box also drags sideways.
+                        let steps = match f.power {
+                            Some(PowerBox::Bars) => true,
+                            Some(PowerBox::Switch) => across <= along * SWITCH_SWIPE_SLOPE,
+                            None => false,
+                        };
+                        if steps && limits.step > 0.0 {
                             f.stage = Stage::Swipe { stepped: 0 };
                         } else {
                             f.stage = Stage::Drag;
@@ -344,7 +356,7 @@ impl Gestures {
                     _ => {}
                 }
                 if let Stage::Swipe { stepped } = f.stage {
-                    let steps = ((start.1 - ev.y) as f32 / limits.step).trunc() as i32;
+                    let steps = power_steps((start.1 - ev.y) as f32, slop, limits.step);
                     let steps = if f.power == Some(PowerBox::Switch) { steps.clamp(-1, 1) } else { steps };
                     let dir = (steps - stepped).signum();
                     self.due.extend(std::iter::repeat_n(Act::Step(dir), (steps - stepped).unsigned_abs() as usize));
@@ -401,6 +413,15 @@ impl Gestures {
         }
         out
     }
+}
+
+/// The bars a finger `travel` window pixels up from a power box steps, down negative: the
+/// first once it travels `first`, then one per `step`.
+fn power_steps(travel: f32, first: f32, step: f32) -> i32 {
+    if travel == 0.0 || travel.abs() < first {
+        return 0;
+    }
+    (travel.signum() * (travel.abs() / step).trunc().max(1.0)) as i32
 }
 
 /// The point a touch at frame point `at` acts on: `at` when a target holds it, else the
@@ -493,7 +514,12 @@ impl Layer {
     }
 
     fn touch_limits(&self) -> Limits {
-        Limits { long_press: self.cfg.touch_long_press as f64, slop: self.cfg.touch_slop, step: self.cfg.touch_step }
+        Limits {
+            long_press: self.cfg.touch_long_press as f64,
+            slop: self.cfg.touch_slop,
+            step: self.cfg.touch_step,
+            first_step: self.cfg.touch_first_step,
+        }
     }
 
     /// Runs the queued touch events through the gestures and applies the acts due at `now`.
@@ -567,12 +593,16 @@ impl Layer {
         self.touch.probe.is_some_and(|p| p.settle.is_some())
     }
 
-    /// The point a finger landing at frame point `at` would move to: the nearest target within
-    /// `touch_snap`, the zones and the HUD boxes `hud`.
+    /// The point a finger landing at frame point `at` would move to: the HUD box whose catch
+    /// holds it, else the nearest target within `touch_snap`, the zones and the HUD boxes `hud`.
     fn snap_touch(&self, at: (f32, f32), hud: &[HudBox]) -> (f32, f32) {
         let reach = self.cfg.touch_snap * self.frame_per_window();
         if reach <= 0.0 {
             return at;
+        }
+        let (x, y) = (at.0.floor() as i32, at.1.floor() as i32);
+        if let Some(b) = hud.iter().find(|b| b.catch.contains(x, y) && !b.rect.contains(x, y)) {
+            return b.rect.center();
         }
         let targets: Vec<Rect> = self.zones.list.iter().map(|z| z.rect).chain(hud.iter().map(|b| b.rect)).collect();
         snap(&targets, at, reach)
@@ -711,14 +741,14 @@ mod tests {
     use crate::game::offsets::{
         ARMAMENTBOX_HIT, ARMAMENTBOX_ITEM, ARMAMENT_BOXES, COMBAT_WEAPON_CONTROL, CREW_POTENTIAL, CREW_SELECTED,
         GAME_H, GAME_W, GUI_COMBAT_CONTROL, GUI_CREW_CONTROL, GUI_SYS_CONTROL, KEY_SPACE, MOUSE_VALID, PLAYER_SHIP_ID,
-        SYSBOX_LOCATION, SYSBOX_SYSTEM, SYSCTRL_BOXES, SYSCTRL_POSITION, WEAPON_POWERED,
+        SYSBOX_LOCATION, SYSBOX_SYSTEM, SYSCTRL_BOXES, SYSCTRL_POSITION, SYS_SHIELDS, WEAPON_POWERED,
     };
     use crate::game::zones::Zone;
     use crate::input::pad::PadFrame;
     use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
     use crate::ui::zoom::{View, ZOOM_MIN};
 
-    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0 };
+    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0, first_step: 5.0 };
     /// A frame step at the game's frame rate.
     const DT: f64 = 1.0 / 60.0;
 
@@ -815,9 +845,9 @@ mod tests {
         feed(&mut g, TouchPhase::Move, 0, (103, 165), 0.2);
         assert_eq!(g.frame(0.2, LIMITS), [Act::Step(1), Act::Step(1)]);
         feed(&mut g, TouchPhase::Move, 0, (100, 195), 0.3);
-        assert_eq!(g.frame(0.3, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)], "back down");
+        assert_eq!(g.frame(0.3, LIMITS), [Act::Step(-1), Act::Step(-1)], "back down to the first bar");
         feed(&mut g, TouchPhase::Move, 0, (100, 230), 0.4);
-        assert_eq!(g.frame(0.4, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)]);
+        assert_eq!(g.frame(0.4, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1), Act::Step(-1)]);
         assert_eq!(g.hold(0.4, LIMITS), None, "a swipe shows no ring");
         assert!(g.frame(1.0, LIMITS).is_empty(), "a swipe never long-presses");
         feed(&mut g, TouchPhase::Up, 0, (100, 230), 1.1);
@@ -836,10 +866,54 @@ mod tests {
         assert_eq!(g.frame(0.2, LIMITS), [Act::Step(-1), Act::Step(-1)]);
     }
 
+    /// Lands a finger at window point `at` and time `t` on an armament box.
+    fn land_on_switch(g: &mut Gestures, at: (i32, i32), t: f64) {
+        g.event(&ev(TouchPhase::Down, 0, at, t), (at.0 as f32, at.1 as f32), Landing::Power(PowerBox::Switch), LIMITS);
+    }
+
     #[test]
-    fn a_finger_moved_sideways_from_a_power_box_drags_as_one_moved_up_elsewhere_does() {
+    fn a_short_move_from_a_power_box_steps_one_bar_where_elsewhere_it_taps() {
         let mut g = Gestures::default();
         land_on_power(&mut g, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (100, 206), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(-1)], "past the first step, short of the slop");
+        let mut g = Gestures::default();
+        g.event(&ev(TouchPhase::Down, 0, (100, 200), 1.0), (100.0, 200.0), Landing::Open, LIMITS);
+        g.frame(1.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (100, 206), 1.1);
+        feed(&mut g, TouchPhase::Up, 0, (100, 206), 1.2);
+        assert_eq!(g.frame(1.2, LIMITS), [Act::Tap]);
+    }
+
+    #[test]
+    fn a_finger_moved_slantwise_from_a_system_icon_steps_its_power() {
+        let mut g = Gestures::default();
+        land_on_power(&mut g, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (115, 190), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(1)]);
+    }
+
+    #[test]
+    fn a_finger_moved_slantwise_from_an_armament_box_steps_within_the_slope() {
+        let mut g = Gestures::default();
+        land_on_switch(&mut g, (100, 200), 0.0);
+        g.frame(0.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (115, 190), 0.1);
+        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(1)]);
+        feed(&mut g, TouchPhase::Up, 0, (115, 190), 0.2);
+        g.frame(0.2, LIMITS);
+        land_on_switch(&mut g, (100, 200), 1.0);
+        g.frame(1.0, LIMITS);
+        feed(&mut g, TouchPhase::Move, 0, (130, 190), 1.1);
+        assert_eq!(g.frame(1.1, LIMITS), [Act::Press, Act::Move(130.0, 190.0)], "past the slope");
+    }
+
+    #[test]
+    fn a_finger_moved_sideways_from_an_armament_box_drags_as_one_moved_up_elsewhere_does() {
+        let mut g = Gestures::default();
+        land_on_switch(&mut g, (100, 200), 0.0);
         g.frame(0.0, LIMITS);
         feed(&mut g, TouchPhase::Move, 0, (120, 205), 0.1);
         assert_eq!(g.frame(0.1, LIMITS), [Act::Press, Act::Move(120.0, 205.0)]);
@@ -1138,23 +1212,47 @@ mod tests {
             let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
             g.player_manager();
             system_icon(g);
-            // The finger lands below the icon and snaps in.
+            // The finger lands below the icon, in its column, and moves onto its middle.
             l.queue_touch(TouchPhase::Down, 0, 60, 680);
             l.queue_touch(TouchPhase::Move, 0, 60, 690);
             l.queue_touch(TouchPhase::Move, 0, 60, 715);
             l.queue_touch(TouchPhase::Up, 0, 60, 715);
-            let right = |down| Call::Button(MouseButton::Right, down, 60, 669);
+            let right = |down| Call::Button(MouseButton::Right, down, 62, 662);
             assert_eq!(clicks(&mut l, 2 * TAP_FRAMES), [right(true), right(false), right(true), right(false)]);
         });
     }
 
-    /// Puts one system icon on the HUD.
-    fn system_icon(g: &mut crate::game::fake::Game) {
+    #[test]
+    fn a_finger_on_a_system_s_power_bars_steps_its_icon() {
+        with_game(|g| {
+            let mut l = Layer { touch: Touch { hooked: true, ..Touch::default() }, ..Layer::default() };
+            g.player_manager();
+            let sys_box = system_icon(g);
+            sys_box.set(SYSBOX_SYSTEM, g.system(SYS_SHIELDS, 3, 3).addr());
+            // A weapon box beside the column, nearer the finger than the icon is.
+            let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
+            let armament = g.arena.alloc(ARMAMENTBOX_ITEM + std::mem::size_of::<usize>());
+            armament.set(ARMAMENTBOX_HIT, Point { x: 80, y: 620 });
+            armament.set(ARMAMENTBOX_ITEM, g.arena.alloc(WEAPON_SIZE).addr());
+            g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(armament)]);
+            // Above the icon at 52,652 20x20: on the three bars, at the column's edge.
+            l.queue_touch(TouchPhase::Down, 0, 75, 630);
+            l.queue_touch(TouchPhase::Move, 0, 75, 640);
+            l.queue_touch(TouchPhase::Move, 0, 75, 665);
+            l.queue_touch(TouchPhase::Up, 0, 75, 665);
+            let right = |down| Call::Button(MouseButton::Right, down, 62, 662);
+            assert_eq!(clicks(&mut l, 2 * TAP_FRAMES), [right(true), right(false), right(true), right(false)]);
+        });
+    }
+
+    /// Puts one system icon on the HUD; returns its box.
+    fn system_icon(g: &mut crate::game::fake::Game) -> crate::game::mem::Obj {
         let control = g.gui.at(GUI_SYS_CONTROL);
         control.set(SYSCTRL_POSITION, Point { x: 10, y: 600 });
         let sys_box = g.arena.alloc(SYSBOX_SYSTEM + std::mem::size_of::<usize>());
         sys_box.set(SYSBOX_LOCATION, Point { x: 20, y: 30 });
         g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
+        sys_box
     }
 
     #[test]

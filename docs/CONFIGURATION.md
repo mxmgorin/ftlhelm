@@ -86,6 +86,7 @@ default; a value out of range is clamped. Changes made in the wheels are saved h
 | `touch_slop` | 12 | 0 to 100 | screen pixels a finger may move and still tap |
 | `touch_snap` | 32 | 0 to 100 | screen pixels a touch reaches for the nearest target; 0: none |
 | `touch_step` | 16 | 0 to 100 | screen pixels of finger travel per bar of power; 0: none |
+| `touch_first_step` | 6 | 0 to 100 | screen pixels of finger travel to the first bar of power |
 | `pause_button` | 1 | switch | the pause button after a touch |
 | `touch_marks` | 1 | switch | rings where a finger holds and taps |
 
