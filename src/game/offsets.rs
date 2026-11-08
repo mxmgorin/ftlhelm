@@ -295,6 +295,8 @@ pub const SYSBOX_CLICK_TO: i32 = 42;
 /// it, each next bar a pitch higher.
 pub const SYSBOX_BAR_LOWEST: i32 = 8;
 pub const SYSBOX_BAR_PITCH: i32 = 8;
+/// The most power bars a system box stacks.
+pub const SYSBOX_BARS_MOST: i32 = 8;
 /// The distance between neighbouring system boxes.
 pub const SYSBOX_PITCH: i32 = 36;
 pub const SYSBOX_SYSTEM: usize = 144;

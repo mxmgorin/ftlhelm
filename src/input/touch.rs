@@ -131,8 +131,6 @@ pub struct Limits {
     pub slop: f32,
     /// Window pixels a finger on a power box travels per bar; 0: it drags instead.
     pub step: f32,
-    /// Window pixels a finger on a power box travels to the first bar.
-    pub first_step: f32,
 }
 
 /// What a finger landed on.
@@ -328,7 +326,6 @@ impl Gestures {
                 };
                 let own = f.id == ev.id;
                 let drift = ((ev.x - start.0) as f32).hypot((ev.y - start.1) as f32);
-                let slop = if f.power.is_some() { limits.first_step } else { limits.slop };
                 match f.stage {
                     Stage::Pinch => self.due.extend(f.pinch()),
                     _ if drift > limits.slop && f.may_pinch() => {
@@ -337,7 +334,7 @@ impl Gestures {
                     }
                     Stage::Pair { .. } if drift > limits.slop => f.stage = Stage::Spent,
                     _ if !own => {}
-                    Stage::Pending | Stage::Held if drift > slop => {
+                    Stage::Pending | Stage::Held if drift > limits.slop => {
                         let (across, along) = ((ev.x - start.0).abs() as f32, (ev.y - start.1).abs() as f32);
                         // A system icon only steps; an armament box also drags sideways.
                         let steps = match f.power {
@@ -356,7 +353,7 @@ impl Gestures {
                     _ => {}
                 }
                 if let Stage::Swipe { stepped } = f.stage {
-                    let steps = power_steps((start.1 - ev.y) as f32, slop, limits.step);
+                    let steps = power_steps((start.1 - ev.y) as f32, limits.slop, limits.step);
                     let steps = if f.power == Some(PowerBox::Switch) { steps.clamp(-1, 1) } else { steps };
                     let dir = (steps - stepped).signum();
                     self.due.extend(std::iter::repeat_n(Act::Step(dir), (steps - stepped).unsigned_abs() as usize));
@@ -514,12 +511,7 @@ impl Layer {
     }
 
     fn touch_limits(&self) -> Limits {
-        Limits {
-            long_press: self.cfg.touch_long_press as f64,
-            slop: self.cfg.touch_slop,
-            step: self.cfg.touch_step,
-            first_step: self.cfg.touch_first_step,
-        }
+        Limits { long_press: self.cfg.touch_long_press as f64, slop: self.cfg.touch_slop, step: self.cfg.touch_step }
     }
 
     /// Runs the queued touch events through the gestures and applies the acts due at `now`.
@@ -748,7 +740,7 @@ mod tests {
     use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
     use crate::ui::zoom::{View, ZOOM_MIN};
 
-    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0, first_step: 5.0 };
+    const LIMITS: Limits = Limits { long_press: 0.5, slop: 10.0, step: 10.0 };
     /// A frame step at the game's frame rate.
     const DT: f64 = 1.0 / 60.0;
 
@@ -845,9 +837,9 @@ mod tests {
         feed(&mut g, TouchPhase::Move, 0, (103, 165), 0.2);
         assert_eq!(g.frame(0.2, LIMITS), [Act::Step(1), Act::Step(1)]);
         feed(&mut g, TouchPhase::Move, 0, (100, 195), 0.3);
-        assert_eq!(g.frame(0.3, LIMITS), [Act::Step(-1), Act::Step(-1)], "back down to the first bar");
+        assert_eq!(g.frame(0.3, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)], "back down");
         feed(&mut g, TouchPhase::Move, 0, (100, 230), 0.4);
-        assert_eq!(g.frame(0.4, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1), Act::Step(-1)]);
+        assert_eq!(g.frame(0.4, LIMITS), [Act::Step(-1), Act::Step(-1), Act::Step(-1)]);
         assert_eq!(g.hold(0.4, LIMITS), None, "a swipe shows no ring");
         assert!(g.frame(1.0, LIMITS).is_empty(), "a swipe never long-presses");
         feed(&mut g, TouchPhase::Up, 0, (100, 230), 1.1);
@@ -872,18 +864,13 @@ mod tests {
     }
 
     #[test]
-    fn a_short_move_from_a_power_box_steps_one_bar_where_elsewhere_it_taps() {
+    fn a_move_past_the_slop_from_a_power_box_steps_one_bar_short_of_a_step() {
+        let limits = Limits { step: 2.0 * LIMITS.slop, ..LIMITS };
         let mut g = Gestures::default();
         land_on_power(&mut g, (100, 200), 0.0);
-        g.frame(0.0, LIMITS);
-        feed(&mut g, TouchPhase::Move, 0, (100, 206), 0.1);
-        assert_eq!(g.frame(0.1, LIMITS), [Act::Step(-1)], "past the first step, short of the slop");
-        let mut g = Gestures::default();
-        g.event(&ev(TouchPhase::Down, 0, (100, 200), 1.0), (100.0, 200.0), Landing::Open, LIMITS);
-        g.frame(1.0, LIMITS);
-        feed(&mut g, TouchPhase::Move, 0, (100, 206), 1.1);
-        feed(&mut g, TouchPhase::Up, 0, (100, 206), 1.2);
-        assert_eq!(g.frame(1.2, LIMITS), [Act::Tap]);
+        g.frame(0.0, limits);
+        g.event(&ev(TouchPhase::Move, 0, (100, 212), 0.1), (100.0, 212.0), Landing::Open, limits);
+        assert_eq!(g.frame(0.1, limits), [Act::Step(-1)]);
     }
 
     #[test]

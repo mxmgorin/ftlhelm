@@ -93,14 +93,11 @@ const FOCUS_SIDE_WEIGHT: f32 = 2.0;
 const FOCUS_SIDE_WEIGHT_MAX: f32 = 10.0;
 const TOUCH_LONG_PRESS_S: f32 = 0.5;
 /// Window pixels a finger may drift and still tap.
-const TOUCH_SLOP: f32 = 12.0;
+const TOUCH_SLOP: f32 = 6.0;
 /// Window pixels a touch on nothing reaches for the nearest target.
 const TOUCH_SNAP: f32 = 32.0;
 /// Window pixels a finger on a power box travels per bar.
 const TOUCH_STEP: f32 = 16.0;
-/// Window pixels a finger on a power box travels to the first bar: a box near the screen's
-/// edge leaves little room to move.
-const TOUCH_FIRST_STEP: f32 = 6.0;
 const TOUCH_PX_MAX: f32 = 100.0;
 /// The longest interval between frame rate lines.
 const FPS_LOG_S_MAX: f32 = 60.0;
@@ -216,8 +213,6 @@ pub struct Settings {
     pub touch_snap: f32,
     /// Window pixels a finger moving up or down on a power box travels per bar; 0: none.
     pub touch_step: f32,
-    /// Window pixels a finger on a power box travels to the first bar.
-    pub touch_first_step: f32,
     /// The ship view shows a pause button while touch is in use.
     pub pause_button: bool,
     /// Rings mark a finger held toward a right click and the point a touch clicked.
@@ -267,7 +262,6 @@ impl Default for Settings {
             touch_slop: TOUCH_SLOP,
             touch_snap: TOUCH_SNAP,
             touch_step: TOUCH_STEP,
-            touch_first_step: TOUCH_FIRST_STEP,
             pause_button: true,
             touch_marks: true,
             fps_log: 0,
@@ -324,7 +318,6 @@ const OPTIONS: &[(&str, Field)] = &[
     ("touch_slop", Field::Float(|c| &mut c.touch_slop, 0.0, TOUCH_PX_MAX)),
     ("touch_snap", Field::Float(|c| &mut c.touch_snap, 0.0, TOUCH_PX_MAX)),
     ("touch_step", Field::Float(|c| &mut c.touch_step, 0.0, TOUCH_PX_MAX)),
-    ("touch_first_step", Field::Float(|c| &mut c.touch_first_step, 0.0, TOUCH_PX_MAX)),
     ("pause_button", Field::Bool(|c| &mut c.pause_button)),
     ("touch_marks", Field::Bool(|c| &mut c.touch_marks)),
     ("fps_log", Field::Int(|c| &mut c.fps_log, 0.0, FPS_LOG_S_MAX)),

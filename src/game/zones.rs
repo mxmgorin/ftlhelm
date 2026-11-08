@@ -195,8 +195,8 @@ fn open_rect(at: Point, w: i32, h: i32) -> Rect {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HudBox {
     pub rect: Rect,
-    /// Where a touch lands on the box: a system icon's column, from above its power bars to the
-    /// frame's bottom and to its neighbours; an armament box's rect.
+    /// Where a touch lands on the box: a system icon's column, from above a full stack of bars
+    /// to the frame's bottom and to its neighbours; an armament box's rect.
     pub catch: Rect,
     /// An armament box's item powered on or not; None for a system icon, whose power runs in
     /// bars.
@@ -219,8 +219,7 @@ pub fn hud_boxes() -> Vec<HudBox> {
             let location = Point { x: origin.x + at.x, y: origin.y + at.y };
             let from = Point { x: location.x + SYSBOX_CLICK_FROM, y: location.y + SYSBOX_CLICK_FROM };
             let rect = open_rect(from, side, side);
-            let bars = b.obj(SYSBOX_SYSTEM).map_or(0, |s| s.i32(SYSTEM_POWER_MAX));
-            HudBox { rect, catch: system_column(location, rect, bars), powered: None }
+            HudBox { rect, catch: system_column(location, rect), powered: None }
         })
         .collect();
     boxes.extend(armament_boxes().map(|(rect, _, powered)| HudBox { rect, catch: rect, powered: Some(powered) }));
@@ -231,11 +230,10 @@ pub fn hud_boxes() -> Vec<HudBox> {
 /// fingertip's slack.
 const SYSBOX_COLUMN_HEAD: i32 = 32;
 
-/// The column of a system box at `location` with icon `icon` and `bars` power bars: from
-/// above its top bar down to the frame's bottom, a pitch between boxes wide.
-fn system_column(location: Point, icon: Rect, bars: i32) -> Rect {
-    let top_bar = location.y + SYSBOX_BAR_LOWEST - SYSBOX_BAR_PITCH * (bars - 1);
-    let top = if bars > 0 { top_bar.min(icon.y) } else { icon.y } - SYSBOX_COLUMN_HEAD;
+/// The column of a system box at `location` with icon `icon`: from above the top of a full
+/// stack of bars down to the frame's bottom, a pitch between boxes wide.
+fn system_column(location: Point, icon: Rect) -> Rect {
+    let top = location.y + SYSBOX_BAR_LOWEST - SYSBOX_BAR_PITCH * (SYSBOX_BARS_MOST - 1) - SYSBOX_COLUMN_HEAD;
     Rect { x: icon.x + icon.w / 2 - SYSBOX_PITCH / 2, y: top, w: SYSBOX_PITCH, h: GAME_H - top }
 }
 
@@ -1238,8 +1236,6 @@ mod tests {
             control.set(SYSCTRL_POSITION, Point { x: 10, y: 600 });
             let sys_box = g.arena.alloc(SYSBOX_SYSTEM + size_of::<usize>());
             sys_box.set(SYSBOX_LOCATION, Point { x: 20, y: 30 });
-            let system = g.system(SYS_SHIELDS, 1, 3);
-            sys_box.set(SYSBOX_SYSTEM, system.addr());
             g.arena.ptr_vector(control.at(SYSCTRL_BOXES), 0, &[Some(sys_box)]);
             let weapons = g.gui.at(GUI_COMBAT_CONTROL + COMBAT_WEAPON_CONTROL);
             weapons.set(ARMAMENT_LOCATION, Point { x: 300, y: 640 });
@@ -1251,8 +1247,8 @@ mod tests {
             let empty = g.arena.alloc(ARMAMENTBOX_ITEM + size_of::<usize>());
             g.arena.ptr_vector(weapons, ARMAMENT_BOXES, &[Some(filled), Some(empty)]);
             let rect = Rect { x: 52, y: 652, w: 20, h: 20 };
-            // Three bars, the top one two pitches above the lowest, then the head over it.
-            let catch = Rect { x: 44, y: 590, w: 36, h: GAME_H - 590 };
+            // A full stack of bars, then the head over it.
+            let catch = Rect { x: 44, y: 550, w: 36, h: GAME_H - 550 };
             let icon = HudBox { rect, catch, powered: None };
             let rect = Rect { x: 306, y: 647, w: 94, h: 38 };
             let weapon = HudBox { rect, catch: rect, powered: Some(true) };
