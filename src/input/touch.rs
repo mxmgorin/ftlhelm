@@ -49,7 +49,7 @@ const TOUCH_ECHO_S: f64 = 0.25;
 const HOLD_RING_R: f32 = 52.0;
 const HOLD_RING_W: f32 = 8.0;
 /// The share of the long press a finger stays down before its ring shows: a tap shows none.
-const HOLD_RING_FROM: f32 = 0.25;
+const HOLD_RING_FROM: f32 = 0.5;
 /// The ring left where a touch clicked, in window pixels, and the seconds it takes to fade.
 const MARK_R: f32 = 16.0;
 const MARK_W: f32 = 4.0;
