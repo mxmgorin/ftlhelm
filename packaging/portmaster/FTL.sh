@@ -26,11 +26,15 @@ BINARY=FTL.amd64
 for installer in "$GAMEDATA"/*.sh; do
   [ -f "$installer" ] || continue
   pm_message "Unpacking $(basename "$installer"), this can take a few minutes..." --title "Please wait"
-  if ! python3 "$GAMEDIR/patches/unpack_gog.py" "$installer" "$GAMEDATA"; then
+  unpacked="$GAMEDATA/.gog"
+  gog_data="data/noarch/game/data"
+  if ! "$controlfolder/7zzs.$DEVICE_ARCH" x -tzip -aoa -o"$unpacked" "$installer" "$gog_data/*" "-x!$gog_data/FTL.x86" ||
+    [ ! -f "$unpacked/$gog_data/$BINARY" ]; then
+    rm -rf "$unpacked"
     pm_show_error "Could not unpack $(basename "$installer"). Check that it is the GOG Linux installer and that there is enough free space, then launch the game again." --title "Unpacking failed"
     exit 1
   fi
-  rm -f "$installer"
+  mv "$unpacked/$gog_data/"* "$GAMEDATA/" && rm -rf "$unpacked" "$installer"
 done
 # Accepts the data folder itself as well as its contents.
 if [ -d "$GAMEDATA/data" ] && [ -f "$GAMEDATA/data/$BINARY" ]; then
