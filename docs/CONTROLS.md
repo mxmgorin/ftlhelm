@@ -57,6 +57,13 @@ direction repeats.
 | L2 held | doors become the zones; A opens or closes the door under the cursor |
 | L2 tap | open or close all doors of the room |
 
+<table align="center">
+  <tr>
+    <td align="center"><img src="images/doors-held.gif" alt="L2 held on the Kestrel: DOOR CONTROL shows, the focus steps between doors, A opens two doors and closes them again" width="400"><br><sub><b>L2 held</b></sub></td>
+    <td align="center"><img src="images/doors-tap.gif" alt="L2 tapped on a room of the Kestrel: the first tap opens all its doors, the next closes them" width="400"><br><sub><b>L2 tap</b></sub></td>
+  </tr>
+</table>
+
 ## Weapons
 
 | Input | Effect |
