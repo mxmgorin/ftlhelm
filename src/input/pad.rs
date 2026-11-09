@@ -64,9 +64,10 @@ fn any_input(p: &PadFrame, deadzone: f32) -> bool {
 }
 
 pub struct PadState {
-    sdl: Option<SdlMap>,
-    /// The mapping resolved for one pad, keyed by SIL pad and input device.
-    resolved: Option<((i32, i32), Resolved)>,
+    /// The SDL mappings that name buttons.
+    sdl: Vec<SdlMap>,
+    /// The mapping resolved for one pad, None when none fits it, keyed by SIL pad and input device.
+    resolved: Option<((i32, i32), Option<Resolved>)>,
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
     pub held: [bool; INPUT_COUNT],
@@ -105,7 +106,7 @@ struct PadChange {
 impl Default for PadState {
     fn default() -> Self {
         PadState {
-            sdl: None,
+            sdl: Vec::new(),
             resolved: None,
             sil_mapping: None,
             held: [false; INPUT_COUNT],
@@ -221,17 +222,17 @@ fn read_stick(dev: i32, stick: i32) -> (f32, f32) {
 }
 
 impl PadState {
-    /// Reads the SDL mapping's button entries.
+    /// Reads the button entries of the SDL mappings.
     pub fn load_sdl_map(&mut self) {
-        self.sdl = std::env::var(SDL_MAP_ENV).ok().and_then(|m| sdl_map::parse(&m));
-        log!("sdl map: {}", if self.sdl.is_some() { "buttons named" } else { "none" });
+        self.sdl = std::env::var(SDL_MAP_ENV).map(|m| sdl_map::parse_all(&m)).unwrap_or_default();
+        log!("sdl map: {} naming buttons", self.sdl.len());
     }
 
-    /// Resolves the SDL mapping against the pad's key codes, once per pad and device.
+    /// Resolves the pad's SDL mapping against its key codes, once per pad and device.
     fn resolve_sdl_map(&mut self, dev: i32) {
-        let Some(map) = &self.sdl else {
+        if self.sdl.is_empty() {
             return;
-        };
+        }
         let a = api();
         let Some(joy) = joystick(dev) else {
             return;
@@ -240,6 +241,12 @@ impl PadState {
         if self.resolved.as_ref().is_some_and(|(k, _)| *k == (dev, event_dev)) {
             return;
         }
+        let (name, vendor, product) = identity(dev);
+        let Some(map) = sdl_map::select(&self.sdl, &name, vendor, product) else {
+            log!("sdl map on pad {dev}: none for {name}");
+            self.resolved = Some(((dev, event_dev), None));
+            return;
+        };
         // SAFETY: SIL's device table, indexed by the pad's device.
         let Some(info) = (unsafe { Obj::table_entry(a.sil_event_info, event_dev, EVDEV_INFO_SIZE) }) else {
             return;
@@ -261,7 +268,8 @@ impl PadState {
         let r = sdl_map::resolve(map, &codes, sil_button);
         let show = |i: Input| r.buttons[i as usize].unwrap_or(-1);
         log!(
-            "sdl map on pad {dev}: a={} b={} x={} y={} start={} back={}, {} order",
+            "sdl map on pad {dev}: {}, a={} b={} x={} y={} start={} back={}, {} order",
+            map.name,
             show(Input::FaceDown),
             show(Input::FaceRight),
             show(Input::FaceLeft),
@@ -270,7 +278,7 @@ impl PadState {
             show(Input::Select),
             if r.ascending { "ascending" } else { "gamepad-first" }
         );
-        self.resolved = Some(((dev, event_dev), r));
+        self.resolved = Some(((dev, event_dev), Some(r)));
     }
 
     /// Reads the engine's mapping of the pad's SIL buttons, once per pad and device.
@@ -380,13 +388,13 @@ impl Layer {
     /// Whether the A/B and X/Y swaps reach the active pad: not while an SDL mapping names its
     /// buttons.
     pub fn face_swaps_apply(&self) -> bool {
-        !self.pad.resolved.as_ref().is_some_and(|(k, _)| Some(k.0) == self.pad.index)
+        !self.pad.resolved.as_ref().is_some_and(|(k, r)| r.is_some() && Some(k.0) == self.pad.index)
     }
 
     fn read_pad(&self, dev: i32) -> PadFrame {
         let a = api();
         let mut p = PadFrame::default();
-        let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).map(|(_, r)| r);
+        let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).and_then(|(_, r)| r.as_ref());
         let mapping = self.pad.sil_mapping.filter(|(k, _)| k.0 == dev).map(|(_, m)| m);
         let raw_button = |b: usize| match sdl {
             Some(r) => r.buttons[b].unwrap_or(-1),

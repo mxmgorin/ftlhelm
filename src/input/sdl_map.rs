@@ -2,7 +2,9 @@
 //! all of its evdev key codes, SIL over the gamepad codes only, so an SDL index goes through
 //! its key code. SDL builds differ in the order they number the codes in: stock SDL puts
 //! the gamepad codes first, some firmware builds number every code in ascending order. The
-//! mapping's volume entries, when it has them, tell the two apart.
+//! mapping's volume entries, when it has them, tell the two apart. The variable may hold
+//! several mappings, one per line, of which a pad takes the one whose GUID carries its vendor
+//! and product, its own name breaking a tie; one whose GUID carries none serves any pad.
 
 use crate::config::layout::SIL_BUTTONS;
 
@@ -34,9 +36,19 @@ const BUTTON_LABELS: [&str; SIL_BUTTONS] = [
 const DPAD_LABELS: [&str; 4] = ["dpleft", "dpup", "dpright", "dpdown"];
 const VOLUME_LABELS: [&str; 2] = ["volumedown", "volumeup"];
 
-/// The SDL button indices a mapping names.
+/// Hex digits of an SDL GUID: bus, CRC, vendor, product and version as 16-bit words, little
+/// endian, a zero word after vendor and after product.
+const GUID_LEN: usize = 32;
+const GUID_VENDOR: usize = 8;
+const GUID_PRODUCT: usize = 16;
+const GUID_WORD_LEN: usize = 4;
+
+/// The SDL button indices a mapping names, with the pad it is for.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SdlMap {
+    pub name: String,
+    /// Vendor and product, None when the GUID does not carry them.
+    ids: Option<(u16, u16)>,
     buttons: [Option<u16>; SIL_BUTTONS],
     dpad: [Option<u16>; 4],
     volume: [Option<u16>; 2],
@@ -57,14 +69,45 @@ fn button_index(map: &str, label: &str) -> Option<u16> {
     digits.parse().ok()
 }
 
-/// Reads the button entries of a mapping string; None when it names no button.
+/// The vendor and product a GUID carries, None when it does not.
+fn guid_ids(guid: &str) -> Option<(u16, u16)> {
+    if guid.len() != GUID_LEN || !guid.is_ascii() {
+        return None;
+    }
+    let word = |at: usize| {
+        let hex = &guid[at..at + GUID_WORD_LEN];
+        u16::from_str_radix(hex, 16).ok().map(u16::swap_bytes)
+    };
+    let zero_after = |at: usize| word(at + GUID_WORD_LEN) == Some(0);
+    (zero_after(GUID_VENDOR) && zero_after(GUID_PRODUCT)).then_some((word(GUID_VENDOR)?, word(GUID_PRODUCT)?))
+}
+
+/// Reads one mapping line; None when it names no button.
 pub fn parse(map: &str) -> Option<SdlMap> {
+    let mut fields = map.splitn(3, ',');
+    let ids = guid_ids(fields.next().unwrap_or_default());
+    let name = fields.next().unwrap_or_default().to_string();
     let m = SdlMap {
+        name,
+        ids,
         buttons: BUTTON_LABELS.map(|l| button_index(map, l)),
         dpad: DPAD_LABELS.map(|l| button_index(map, l)),
         volume: VOLUME_LABELS.map(|l| button_index(map, l)),
     };
     (m.buttons.iter().chain(&m.dpad).any(Option::is_some)).then_some(m)
+}
+
+/// Reads every mapping line of the variable that names a button.
+pub fn parse_all(config: &str) -> Vec<SdlMap> {
+    config.lines().filter_map(parse).collect()
+}
+
+/// The mapping for a pad: of those for its vendor and product, the one under its name, else
+/// the first; with none for them, the first whose GUID carries no ids. None when none fits.
+pub fn select<'a>(maps: &'a [SdlMap], name: &str, vendor: u16, product: u16) -> Option<&'a SdlMap> {
+    let mut own = maps.iter().filter(|m| m.ids == Some((vendor, product))).peekable();
+    let first_own = own.peek().copied();
+    own.find(|m| m.name == name).or(first_own).or_else(|| maps.iter().find(|m| m.ids.is_none()))
 }
 
 /// The pad's key codes in SDL button order.
@@ -136,6 +179,60 @@ mod tests {
         assert!(!r.ascending);
         assert_eq!(r.buttons[Input::FaceDown as usize], Some(0));
         assert_eq!(r.buttons[Input::Start as usize], None);
+    }
+
+    /// Knulli on the TrimUI Smart Pro S: PortMaster puts an Xbox 360 mapping with the pad's
+    /// vendor and product, another version, above the pad's own.
+    const KNULLI_CONFIG: &str = "030000005e0400008e02000004010000,Microsoft Xbox 360,a:b0,b:b1,\
+        back:b6,guide:b8,start:b7,x:b2,y:b3,platform:Linux,\n\
+        030000005e0400008e02000014010000,TRIMUI Smart Pro S Controller,platform:Linux,a:b1,b:b0,\
+        back:b8,start:b9,x:b3,y:b2,guide:b10,";
+    const XBOX_IDS: (u16, u16) = (0x045e, 0x028e);
+
+    #[test]
+    fn a_pad_takes_the_mapping_under_its_name() {
+        let maps = parse_all(KNULLI_CONFIG);
+        assert_eq!(maps.len(), 2);
+        let m = select(&maps, "TRIMUI Smart Pro S Controller", XBOX_IDS.0, XBOX_IDS.1).expect("two mappings");
+        assert_eq!(m.name, "TRIMUI Smart Pro S Controller");
+        assert_eq!(m.buttons[Input::FaceDown as usize], Some(1));
+        assert_eq!(m.buttons[Input::FaceLeft as usize], Some(3));
+    }
+
+    #[test]
+    fn an_unnamed_pad_takes_the_first_mapping_for_its_ids() {
+        let maps = parse_all(KNULLI_CONFIG);
+        let m = select(&maps, "Xbox 360 Wireless Receiver", XBOX_IDS.0, XBOX_IDS.1).expect("two mappings");
+        assert_eq!(m.name, "Microsoft Xbox 360");
+    }
+
+    #[test]
+    fn muos_keys_take_the_mapping_for_their_ids_under_another_name() {
+        let maps = parse_all(MUOS_MAP);
+        let m = select(&maps, "muOS-Keys", 0x0001, 0x0001).expect("the muOS mapping");
+        assert_eq!(m.name, "Deeplay-keys");
+    }
+
+    #[test]
+    fn a_pad_takes_no_mapping_made_for_other_ids() {
+        let maps = parse_all(&format!("{MUOS_MAP}\n{KNULLI_CONFIG}"));
+        assert_eq!(select(&maps, "8BitDo Pro 2", 0x2dc8, 0x6003), None);
+    }
+
+    #[test]
+    fn a_mapping_without_ids_serves_any_pad() {
+        let config = format!("{KNULLI_CONFIG}\n0000000058626f782047616d65706100,Name hashed,a:b0,b:b1,");
+        let maps = parse_all(&config);
+        let m = select(&maps, "8BitDo Pro 2", 0x2dc8, 0x6003).expect("the mapping without ids");
+        assert_eq!(m.name, "Name hashed");
+    }
+
+    #[test]
+    fn a_guid_carries_vendor_and_product_only_beside_zero_words() {
+        assert_eq!(guid_ids("030000005e0400008e02000014010000"), Some(XBOX_IDS));
+        assert_eq!(guid_ids("05000000c82d00000161000000010000"), Some((0x2dc8, 0x6101)));
+        assert_eq!(guid_ids("030000005e0401008e02000014010000"), None);
+        assert_eq!(guid_ids("xinput"), None);
     }
 
     #[test]
