@@ -8,15 +8,16 @@
 
 use crate::core::layer::Layer;
 use crate::core::util::log;
-use crate::debug::evdev::EventNode;
 use crate::game::api::api;
-use crate::input::pad::STICK_KEY_ON;
+use crate::input::evdev::EventNode;
+use crate::input::pad::{PadFrame, STICK_KEY_ON};
+use crate::input::sdl_sticks::TRIGGER_REST;
 
-/// The sticks traced: both sticks, then the triggers as SIL reads them.
-const STICKS_TRACED: i32 = 3;
+/// The sticks traced: both sticks, then the triggers as one more.
+const STICKS_TRACED: usize = 3;
 /// Stick directions in bit order: x-, x+, y-, y+.
 const DIRECTIONS: [&str; 4] = ["left", "right", "up", "down"];
-const _: () = assert!(STICKS_TRACED as usize * DIRECTIONS.len() <= u16::BITS as usize, "a u16 holds every direction");
+const _: () = assert!(STICKS_TRACED * DIRECTIONS.len() <= u16::BITS as usize, "a u16 holds every direction");
 
 /// What one pad has logged so far.
 pub struct PadTrace {
@@ -26,8 +27,8 @@ pub struct PadTrace {
     /// Raw buttons with their key codes, and which have logged.
     buttons: Vec<(i32, u16)>,
     logged_buttons: Vec<bool>,
-    /// The pad's sticks, at most STICKS_TRACED.
-    sticks: i32,
+    /// The pad's sticks as last read, at most STICKS_TRACED.
+    sticks: usize,
     /// Sticks sampled once, one bit each.
     started: u8,
     /// Stick directions logged, one bit each, four per stick.
@@ -50,15 +51,13 @@ impl PadTrace {
             }
             None => log!("pad {dev}: no readable event node"),
         }
-        // SAFETY: the engine's stick count of a connected pad.
-        let sticks = unsafe { (api().joy_num_sticks)(dev) }.clamp(0, STICKS_TRACED);
         let logged_buttons = vec![false; buttons.len()];
-        PadTrace { key, node, buttons, logged_buttons, sticks, started: 0, logged_dirs: 0 }
+        PadTrace { key, node, buttons, logged_buttons, sticks: 0, started: 0, logged_dirs: 0 }
     }
 
     /// Whether every button and every direction of the traced sticks has logged.
     fn done(&self) -> bool {
-        let dirs = (1u32 << (self.sticks as usize * DIRECTIONS.len())) - 1;
+        let dirs = (1u32 << (self.sticks * DIRECTIONS.len())) - 1;
         self.logged_buttons.iter().all(|&b| b) && self.logged_dirs as u32 == dirs
     }
 }
@@ -84,12 +83,13 @@ fn newly_pushed(stick: usize, (x, y): (f32, f32), started: &mut u8, logged: &mut
 
 impl Layer {
     /// Logs what pad `dev` has not logged yet: the first press of each raw button and the
-    /// first push of each stick direction.
-    pub fn trace_pad(&mut self, dev: i32) {
+    /// first push of each stick direction in its frame `p`.
+    pub fn trace_pad(&mut self, dev: i32, p: &PadFrame) {
         let a = api();
         let Some(i) = self.pad.traces.iter().position(|t| t.key.0 == dev) else {
             return;
         };
+        self.pad.traces[i].sticks = self.pad.stick_count(dev, p).min(STICKS_TRACED);
         let t = &self.pad.traces[i];
         if t.done() {
             return;
@@ -106,12 +106,10 @@ impl Layer {
             log!("pad {dev}: key {code} (raw {raw}) -> {reached}");
             self.pad.traces[i].logged_buttons[n] = true;
         }
-        for stick in 0..self.pad.traces[i].sticks {
-            let (mut x, mut y) = (0.0, 0.0);
-            // SAFETY: the engine writes both axes of a stick below the count.
-            unsafe { (a.joy_read_stick)(dev, stick, &mut x, &mut y) };
+        let read = [p.stick[0], p.stick[1], p.triggers.unwrap_or([TRIGGER_REST; 2])];
+        for (stick, &[x, y]) in read.iter().enumerate().take(self.pad.traces[i].sticks) {
             let t = &mut self.pad.traces[i];
-            for d in newly_pushed(stick as usize, (x, y), &mut t.started, &mut t.logged_dirs) {
+            for d in newly_pushed(stick, (x, y), &mut t.started, &mut t.logged_dirs) {
                 let axes = match &t.node {
                     Some(n) => {
                         let moved: Vec<String> = n.moved().iter().map(|(c, v)| format!("{c}={v}")).collect();

@@ -1,5 +1,5 @@
-//! A pad's Linux event node, read for the log: its ids, its axes with their ranges, and the
-//! axes that moved from where they rested when the node opened. SIL numbers its device table
+//! A pad's Linux event node: its ids, its axes with their ranges and values, and the axes
+//! that moved from where they rested when the node opened. SIL numbers its device table
 //! by event node, so the node of SIL's device is tried first; its name must match SIL's, else
 //! the other nodes are searched for that name. The node is only queried, never grabbed or
 //! read for events.
@@ -102,6 +102,11 @@ impl EventNode {
         let mut node = EventNode { file, node, id, axes, rest: Vec::new() };
         node.rest = node.values();
         node
+    }
+
+    /// Axis `code`'s value now; None when it does not read.
+    pub fn value(&self, code: u16) -> Option<i32> {
+        abs_info(&self.file, code).map(|i| i[ABS_VALUE])
     }
 
     /// The axes' values, in `axes` order; an unreadable one reads as its minimum.

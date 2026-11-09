@@ -1,16 +1,28 @@
-//! PortMaster's per-device SDL mapping as SIL raw buttons. SDL numbers a pad's buttons over
-//! all of its evdev key codes, SIL over the gamepad codes only, so an SDL index goes through
-//! its key code. SDL builds differ in the order they number the codes in: stock SDL puts
-//! the gamepad codes first, some firmware builds number every code in ascending order. The
-//! mapping's volume entries, when it has them, tell the two apart. The variable may hold
-//! several mappings, one per line, of which a pad takes the one whose GUID carries its vendor
-//! and product, its own name breaking a tie; one whose GUID carries none serves any pad.
+//! PortMaster's per-device SDL mapping as SIL raw buttons and evdev axes. SDL numbers a pad's
+//! buttons over all of its evdev key codes, SIL over the gamepad codes only, so an SDL index
+//! goes through its key code. SDL builds differ in the order they number the codes in: stock
+//! SDL puts the gamepad codes first, some firmware builds number every code in ascending
+//! order. The order under which more of the mapping's entries land on the pad's keys is the
+//! build's; a tie keeps stock SDL's. SDL numbers axes over the evdev axis codes in ascending
+//! order, hats left out. The variable may hold several mappings, one per line, of which a pad
+//! takes the one whose GUID carries its vendor and product, its own name breaking a tie; one
+//! whose GUID carries none serves any pad.
+
+use std::ops::RangeInclusive;
 
 use crate::config::layout::SIL_BUTTONS;
 use crate::game::offsets::{SILJOY_KEYMAP_HIGH, SILJOY_KEYMAP_LOW};
 
 const KEY_VOLUMEDOWN: u16 = 114;
 const KEY_VOLUMEUP: u16 = 115;
+/// The volume keys, in VOLUME_LABELS order.
+const VOLUME_KEYS: [u16; 2] = [KEY_VOLUMEDOWN, KEY_VOLUMEUP];
+const ABS_X: u16 = 0x00;
+const ABS_Y: u16 = 0x01;
+const ABS_RX: u16 = 0x03;
+const ABS_RY: u16 = 0x04;
+/// ABS_HAT0X to ABS_HAT3Y, which SDL numbers as hats.
+const ABS_HATS: RangeInclusive<u16> = 0x10..=0x17;
 pub const BTN_JOYSTICK: u16 = 0x120;
 pub const BTN_TRIGGER_HAPPY: u16 = 0x2c0;
 /// SIL's key tables: raw buttons for the codes from BTN_JOYSTICK, then from BTN_TRIGGER_HAPPY.
@@ -47,6 +59,12 @@ const BUTTON_LABELS: [&str; SIL_BUTTONS] = [
 /// Mapping labels of D-pad buttons, in `Input` order: left, up, right, down.
 const DPAD_LABELS: [&str; 4] = ["dpleft", "dpup", "dpright", "dpdown"];
 const VOLUME_LABELS: [&str; 2] = ["volumedown", "volumeup"];
+pub const AXES: usize = 6;
+/// Mapping labels of the analog axes: both sticks' x and y, then the triggers.
+pub const AXIS_LABELS: [&str; AXES] = ["leftx", "lefty", "rightx", "righty", "lefttrigger", "righttrigger"];
+pub const STICK_AXES: usize = 4;
+/// The axes SIL reads both sticks from, in AXIS_LABELS order.
+const SIL_STICK_AXES: [u16; STICK_AXES] = [ABS_X, ABS_Y, ABS_RX, ABS_RY];
 
 /// Hex digits of an SDL GUID: bus, CRC, vendor, product and version as 16-bit words, little
 /// endian, a zero word after vendor and after product.
@@ -66,6 +84,21 @@ pub struct SdlMap {
     buttons: [Option<u16>; SIL_BUTTONS],
     dpad: [Option<u16>; 4],
     volume: [Option<u16>; 2],
+    axes: [Option<AxisEntry>; AXES],
+}
+
+/// An analog axis a mapping names: SDL's axis index, and whether the mapping inverts it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AxisEntry {
+    index: u16,
+    inverted: bool,
+}
+
+/// An analog axis as the pad's input device numbers it, and whether the mapping inverts it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MappedAxis {
+    pub code: u16,
+    pub inverted: bool,
 }
 
 /// A mapping resolved for one pad: SIL raw buttons, None where the mapping names none.
@@ -76,11 +109,21 @@ pub struct Resolved {
     pub ascending: bool,
 }
 
-fn button_index(map: &str, label: &str) -> Option<u16> {
-    let token = format!(",{label}:b");
+/// The index after `label` of kind `kind`, `b` for a button or `a` for an axis, with the
+/// text after it.
+fn entry<'a>(map: &'a str, label: &str, kind: char) -> Option<(u16, &'a str)> {
+    let token = format!(",{label}:{kind}");
     let at = map.find(&token)? + token.len();
-    let digits: String = map[at..].chars().take_while(char::is_ascii_digit).collect();
-    digits.parse().ok()
+    let digits = map[at..].chars().take_while(char::is_ascii_digit).count();
+    Some((map[at..at + digits].parse().ok()?, &map[at + digits..]))
+}
+
+fn button_index(map: &str, label: &str) -> Option<u16> {
+    entry(map, label, 'b').map(|(index, _)| index)
+}
+
+fn axis_entry(map: &str, label: &str) -> Option<AxisEntry> {
+    entry(map, label, 'a').map(|(index, rest)| AxisEntry { index, inverted: rest.starts_with('~') })
 }
 
 /// The vendor and product a GUID carries, None when it does not.
@@ -108,6 +151,7 @@ pub fn parse(map: &str) -> Option<SdlMap> {
         buttons: BUTTON_LABELS.map(|l| button_index(map, l)),
         dpad: DPAD_LABELS.map(|l| button_index(map, l)),
         volume: VOLUME_LABELS.map(|l| button_index(map, l)),
+        axes: AXIS_LABELS.map(|l| axis_entry(map, l)),
     };
     (m.buttons.iter().chain(&m.dpad).any(Option::is_some)).then_some(m)
 }
@@ -135,20 +179,42 @@ fn sdl_order(codes: &[u16], ascending: bool) -> Vec<u16> {
     sorted
 }
 
-/// Whether the mapping's volume entries land on the volume keys under the ascending order.
-fn numbers_ascending(map: &SdlMap, codes: &[u16]) -> bool {
-    let order = sdl_order(codes, true);
-    let lands = |idx: Option<u16>, key: u16| idx.and_then(|i| order.get(i as usize)) == Some(&key);
-    lands(map.volume[0], KEY_VOLUMEDOWN) && lands(map.volume[1], KEY_VOLUMEUP)
+/// How many of the mapping's entries land under an order: buttons and D-pad entries on a SIL
+/// button, volume entries on their keys.
+fn fits(map: &SdlMap, codes: &[u16], ascending: bool, sil_button: &impl Fn(u16) -> Option<i32>) -> usize {
+    let order = sdl_order(codes, ascending);
+    let code = |idx: &Option<u16>| idx.and_then(|i| order.get(i as usize).copied());
+    let buttons = (map.buttons.iter().chain(&map.dpad)).filter(|idx| code(idx).and_then(sil_button).is_some());
+    let volume = (map.volume.iter().zip(VOLUME_KEYS)).filter(|&(idx, key)| code(idx) == Some(key));
+    buttons.count() + volume.count()
 }
 
 /// Resolves the mapping for a pad with these key codes; `sil_button` gives SIL's raw button
 /// for a key code.
 pub fn resolve(map: &SdlMap, codes: &[u16], sil_button: impl Fn(u16) -> Option<i32>) -> Resolved {
-    let ascending = numbers_ascending(map, codes);
+    let ascending = fits(map, codes, true, &sil_button) > fits(map, codes, false, &sil_button);
     let order = sdl_order(codes, ascending);
     let raw = |idx: Option<u16>| idx.and_then(|i| order.get(i as usize)).and_then(|&c| sil_button(c));
     Resolved { buttons: map.buttons.map(raw), dpad: map.dpad.map(raw), ascending }
+}
+
+/// The mapping's analog axes on a device with axis codes `abs_codes`, ascending, in
+/// AXIS_LABELS order; None where the mapping names none or the device lacks it.
+pub fn resolve_axes(map: &SdlMap, abs_codes: &[u16]) -> [Option<MappedAxis>; AXES] {
+    let numbered: Vec<u16> = abs_codes.iter().copied().filter(|c| !ABS_HATS.contains(c)).collect();
+    let mapped = |e: AxisEntry| numbered.get(e.index as usize).map(|&code| MappedAxis { code, inverted: e.inverted });
+    map.axes.map(|e| e.and_then(mapped))
+}
+
+/// Whether the mapping names an analog axis.
+pub fn names_axes(map: &SdlMap) -> bool {
+    map.axes.iter().any(Option::is_some)
+}
+
+/// Whether mapped axes `axes` put a stick axis off the one SIL reads.
+pub fn moves_sticks(axes: &[Option<MappedAxis>; AXES]) -> bool {
+    let off = |(a, sil): (&Option<MappedAxis>, u16)| a.is_some_and(|a| a.code != sil || a.inverted);
+    axes[..STICK_AXES].iter().zip(SIL_STICK_AXES).any(off)
 }
 
 #[cfg(test)]
@@ -188,12 +254,82 @@ mod tests {
     }
 
     #[test]
-    fn without_volume_entries_gamepad_codes_come_first() {
+    fn gamepad_codes_come_first_when_more_entries_land_so() {
         let map = parse(",a:b0,b:b1,start:b11,").expect("the mapping names buttons");
         let r = resolve(&map, &MUOS_CODES, sil_button(&MUOS_CODES));
         assert!(!r.ascending);
         assert_eq!(r.buttons[Input::FaceDown as usize], Some(0));
         assert_eq!(r.buttons[Input::Start as usize], None);
+    }
+
+    #[test]
+    fn a_pad_with_gamepad_codes_only_keeps_them_first() {
+        let codes: Vec<u16> = (BTN_JOYSTICK..BTN_JOYSTICK + 4).collect();
+        let map = parse(",a:b0,b:b1,x:b2,y:b3,").expect("the mapping names buttons");
+        assert!(!resolve(&map, &codes, sil_button(&codes)).ascending);
+    }
+
+    /// Knulli on the RG35XX-H: no volume entries, the triggers and R3 past the gamepad codes
+    /// under stock SDL's order.
+    const RG35XXH_MAP: &str = "19000000010000000100000000010000,Anbernic RG35XX-H Controller,platform:Linux,\
+        b:b3,a:b4,dpdown:h0.4,leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:b13,leftstick:b12,dpleft:h0.8,\
+        rightshoulder:b8,leftshoulder:b7,righttrigger:b14,rightstick:b15,dpright:h0.2,back:b9,start:b10,\
+        dpup:h0.1,y:b6,x:b5,guide:b11,";
+    const RG35XXH_CODES: [u16; 17] =
+        [1, 114, 115, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 354];
+    const RG35XXH_AXES: [u16; 6] = [2, 3, 4, 5, 16, 17];
+
+    #[test]
+    fn knulli_numbers_every_code_in_ascending_order_without_volume_entries() {
+        let map = parse(RG35XXH_MAP).expect("the mapping names buttons");
+        let r = resolve(&map, &RG35XXH_CODES, sil_button(&RG35XXH_CODES));
+        assert!(r.ascending);
+        let raw = |i: Input| r.buttons[i as usize];
+        assert_eq!((raw(Input::FaceRight), raw(Input::FaceDown)), (Some(0), Some(1)));
+        assert_eq!((raw(Input::FaceLeft), raw(Input::FaceUp)), (Some(2), Some(3)));
+        assert_eq!((raw(Input::L1), raw(Input::R1)), (Some(4), Some(5)));
+        assert_eq!((raw(Input::Select), raw(Input::Start), raw(Input::Home)), (Some(6), Some(7), Some(8)));
+        assert_eq!(
+            (raw(Input::L3), raw(Input::L2), raw(Input::R2), raw(Input::R3)),
+            (Some(9), Some(10), Some(11), Some(12))
+        );
+    }
+
+    #[test]
+    fn axes_number_in_ascending_order_without_hats() {
+        let map = parse(RG35XXH_MAP).expect("the mapping names buttons");
+        let axes = resolve_axes(&map, &RG35XXH_AXES);
+        let codes: Vec<Option<u16>> = axes.iter().map(|a| a.map(|a| a.code)).collect();
+        assert_eq!(codes, [Some(2), Some(3), Some(4), Some(5), None, None], "the triggers are buttons");
+        assert!(moves_sticks(&axes));
+    }
+
+    #[test]
+    fn an_xbox_pad_keeps_its_sticks_on_sils_axes() {
+        let map = parse(
+            "030000005e0400008e02000014010000,Xbox,a:b0,leftx:a0,lefty:a1,lefttrigger:a2,\
+            rightx:a3,righty:a4,righttrigger:a5,",
+        )
+        .expect("the mapping names buttons");
+        let axes = resolve_axes(&map, &[0, 1, 2, 3, 4, 5, 16, 17]);
+        assert_eq!(axes[4], Some(MappedAxis { code: 2, inverted: false }));
+        assert!(!moves_sticks(&axes));
+    }
+
+    #[test]
+    fn an_inverted_axis_moves_its_stick() {
+        let map = parse(",a:b0,leftx:a0,lefty:a1~,").expect("the mapping names buttons");
+        let axes = resolve_axes(&map, &[0, 1]);
+        assert_eq!(axes[1], Some(MappedAxis { code: 1, inverted: true }));
+        assert!(moves_sticks(&axes));
+    }
+
+    #[test]
+    fn an_axis_the_device_lacks_is_none() {
+        let map = parse(",a:b0,leftx:a0,lefty:a1,rightx:a2,").expect("the mapping names buttons");
+        let axes = resolve_axes(&map, &[0, 1, 16, 17]);
+        assert_eq!(axes[2], None);
+        assert!(!moves_sticks(&axes));
     }
 
     /// Knulli on the TrimUI Smart Pro S: PortMaster puts an Xbox 360 mapping with the pad's

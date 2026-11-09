@@ -15,7 +15,9 @@ use crate::game::offsets::{
 };
 use crate::game::state;
 use crate::game::zones::ship_center;
-use crate::input::sdl_map::{self, Resolved, SdlMap};
+use crate::input::evdev::EventNode;
+use crate::input::sdl_map::{self, MappedAxis, Resolved, SdlMap, AXES, AXIS_LABELS};
+use crate::input::sdl_sticks::{Kept, SdlSticks};
 use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
 
 /// PortMaster's per-device SDL mapping.
@@ -72,6 +74,8 @@ const _: () = assert!(SIL_TABLE_LEN <= PadSet::BITS as usize, "a pad set holds e
 pub struct PadFrame {
     pub down: [bool; INPUT_COUNT],
     pub stick: [[f32; 2]; 2],
+    /// The triggers as one more stick, when the pad reads them so.
+    pub triggers: Option<[f32; 2]>,
     pub dpad: [i32; 2],
 }
 
@@ -87,6 +91,8 @@ pub struct PadState {
     resolved: Option<((i32, i32), Option<Resolved>)>,
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
+    /// The sticks of one pad read on its SDL mapping's axes, keyed the same way.
+    sticks: Option<((i32, i32), SdlSticks)>,
     /// What each connected pad has logged of its buttons and sticks.
     pub traces: Vec<PadTrace>,
     pub held: [bool; INPUT_COUNT],
@@ -128,6 +134,7 @@ impl Default for PadState {
             sdl: Vec::new(),
             resolved: None,
             sil_mapping: None,
+            sticks: None,
             traces: Vec::new(),
             held: [false; INPUT_COUNT],
             swaps: 0,
@@ -257,11 +264,46 @@ pub fn toggled_mode(slot: Slot, layout_mode: SlotMode, free_cursor: bool) -> Slo
     }
 }
 
-fn read_stick(dev: i32, stick: i32) -> (f32, f32) {
+fn read_stick(dev: i32, stick: i32) -> [f32; 2] {
     let (mut x, mut y) = (0.0f32, 0.0f32);
     // SAFETY: the engine writes both axes of a stick of a connected pad.
     unsafe { (api().joy_read_stick)(dev, stick, &mut x, &mut y) };
-    (x, y)
+    [x, y]
+}
+
+/// The mapped axes as `label=code`, `~` after an inverted one, -1 for none.
+fn axis_list(axes: &[Option<MappedAxis>; AXES]) -> String {
+    let entry = |(label, a): (&&str, &Option<MappedAxis>)| match a {
+        Some(a) => format!("{label}={}{}", a.code, if a.inverted { "~" } else { "" }),
+        None => format!("{label}=-1"),
+    };
+    AXIS_LABELS.iter().zip(axes).map(entry).collect::<Vec<_>>().join(" ")
+}
+
+/// Takes pad `dev`'s sticks over with mapping `map`'s axes on its event node, logging where
+/// they read from; None when SIL keeps them.
+fn sdl_sticks(dev: i32, event_dev: i32, name: &str, map: &SdlMap) -> Option<SdlSticks> {
+    let Some(node) = EventNode::open(event_dev, name) else {
+        log!("sdl map on pad {dev}: sticks as SIL reads them, no event node");
+        return None;
+    };
+    let codes: Vec<u16> = node.axes.iter().map(|a| a.code).collect();
+    let mapped = sdl_map::resolve_axes(map, &codes);
+    let list = axis_list(&mapped);
+    match SdlSticks::take_over(node, &mapped) {
+        Ok(s) => {
+            log!("sdl map on pad {dev}: {list}, read on event{}", s.event_node());
+            Some(s)
+        }
+        Err(Kept::SameAxes) => {
+            log!("sdl map on pad {dev}: {list}, as SIL reads them");
+            None
+        }
+        Err(Kept::OffCentre(code)) => {
+            log!("sdl map on pad {dev}: {list}, as SIL reads them, axis {code} off centre");
+            None
+        }
+    }
 }
 
 impl PadState {
@@ -292,6 +334,7 @@ impl PadState {
         if self.resolved.as_ref().is_some_and(|(k, _)| *k == (dev, event_dev)) {
             return;
         }
+        self.sticks = None;
         let (name, vendor, product) = identity(dev);
         let Some(map) = sdl_map::select(&self.sdl, &name, vendor, product) else {
             log!("sdl map on pad {dev}: none for {name}");
@@ -310,7 +353,34 @@ impl PadState {
             if r.ascending { "ascending" } else { "gamepad-first" }
         );
         log!("sdl map on pad {dev}: line {}", map.line);
+        if sdl_map::names_axes(map) {
+            self.sticks = sdl_sticks(dev, event_dev, &name, map).map(|s| ((dev, event_dev), s));
+        }
         self.resolved = Some(((dev, event_dev), Some(r)));
+    }
+
+    fn sticks_for(&self, dev: i32) -> Option<&SdlSticks> {
+        self.sticks.as_ref().filter(|(k, _)| k.0 == dev).map(|(_, s)| s)
+    }
+
+    /// Pad `dev`'s sticks, then its triggers as one more stick when it has them.
+    fn read_sticks(&self, dev: i32) -> ([[f32; 2]; 2], Option<[f32; 2]>) {
+        if let Some(s) = self.sticks_for(dev) {
+            return s.read();
+        }
+        // SAFETY: the engine's stick count of a connected pad.
+        let triggers = (unsafe { (api().joy_num_sticks)(dev) } > TRIGGER_STICK).then(|| read_stick(dev, TRIGGER_STICK));
+        ([read_stick(dev, LEFT_STICK), read_stick(dev, RIGHT_STICK)], triggers)
+    }
+
+    /// How many sticks of frame `p` pad `dev` has, its triggers counted as one.
+    pub fn stick_count(&self, dev: i32, p: &PadFrame) -> usize {
+        let sticks = match self.sticks_for(dev) {
+            Some(_) => p.stick.len(),
+            // SAFETY: the engine's stick count of a connected pad.
+            None => unsafe { (api().joy_num_sticks)(dev) }.clamp(0, p.stick.len() as i32) as usize,
+        };
+        sticks + p.triggers.is_some() as usize
     }
 
     /// The SDL mapping resolved for pad `dev`, when one names its buttons.
@@ -473,7 +543,7 @@ impl Layer {
         self.pad.resolve_sdl_map(dev);
         self.pad.resolve_sil_mapping(dev);
         let p = self.read_pad(dev);
-        self.trace_pad(dev);
+        self.trace_pad(dev, &p);
         if !FACE_BUTTONS.iter().any(|&b| p.down[b as usize]) {
             self.pad.swaps = self.cfg.swap_buttons;
         }
@@ -502,9 +572,9 @@ impl Layer {
                 p.down[self.pad.swapped(b)] = down;
             }
         }
-        // SAFETY: as above.
-        if unsafe { (a.joy_num_sticks)(dev) } > TRIGGER_STICK {
-            let (l2, r2) = read_stick(dev, TRIGGER_STICK);
+        let (sticks, triggers) = self.pad.read_sticks(dev);
+        p.triggers = triggers;
+        if let Some([l2, r2]) = triggers {
             for (input, value) in [(Input::L2, l2), (Input::R2, r2)] {
                 if raw_button(input as usize) < 0 {
                     p.down[input as usize] = value > TRIGGER_ON;
@@ -524,8 +594,8 @@ impl Layer {
             let axis = |neg: Input, pos: Input| p.down[pos as usize] as i32 - p.down[neg as usize] as i32;
             p.dpad = [axis(Input::DpadLeft, Input::DpadRight), axis(Input::DpadUp, Input::DpadDown)];
         }
-        for (k, (stick, first)) in [(LEFT_STICK, Input::LsLeft), (RIGHT_STICK, Input::RsLeft)].into_iter().enumerate() {
-            let (x, y) = read_stick(dev, stick);
+        for (k, first) in [Input::LsLeft, Input::RsLeft].into_iter().enumerate() {
+            let [x, y] = sticks[k];
             p.stick[k] = [x, y];
             let f = first as usize;
             let dirs = stick_directions(x, y, &self.pad.held[f..f + 4]);

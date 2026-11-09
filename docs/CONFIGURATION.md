@@ -181,4 +181,4 @@ under `img/` in `ftl.dat`, with `@X,Y,W,H` for a region of it.
 | `FTLHELM_LOG` | path to the log file; the previous run's log is kept as `.old.log` |
 | `FTLHELM_EXE` | path to `FTL.amd64`; default `/proc/self/exe` |
 | `FTLHELM_DEBUG` | set: log every press, wheel pick and D-pad step |
-| `SDL_GAMECONTROLLERCONFIG` | an SDL mapping that names the pad's buttons |
+| `SDL_GAMECONTROLLERCONFIG` | an SDL mapping that names the pad's buttons and sticks |
