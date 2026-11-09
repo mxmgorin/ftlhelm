@@ -4,29 +4,46 @@
 use crate::config::layout::{Input, Slot, SlotMode, INPUT_COUNT, SIL_BUTTONS, SLOT_COUNT};
 use crate::config::settings::{AUTOPAUSE_AIM, FLICK_OFF, SWAP_AB, SWAP_XY};
 use crate::core::layer::Layer;
-use crate::core::util::log;
+use crate::core::util::{log, nul_terminated};
+use crate::debug::pad_log::PadTrace;
 use crate::game::actions::{mouse_move, toggle_pause};
 use crate::game::api::api;
 use crate::game::mem::Obj;
 use crate::game::offsets::{
-    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, EVDEV_NAME, EVDEV_NAME_LEN, SILJOY_EVENT_DEV, SILJOY_KEYMAP_HIGH,
-    SILJOY_KEYMAP_LOW, SILJOY_NUM_BUTTONS, SILJOY_PRODUCT, SILJOY_SIZE, SILJOY_VENDOR, SIL_TABLE_LEN,
+    EVDEV_INFO_SIZE, EVDEV_KEY_BITS, EVDEV_KEY_CODES, EVDEV_NAME, EVDEV_NAME_LEN, SILJOY_EVENT_DEV, SILJOY_NUM_BUTTONS,
+    SILJOY_PRODUCT, SILJOY_SIZE, SILJOY_VENDOR, SIL_TABLE_LEN,
 };
 use crate::game::state;
 use crate::game::zones::ship_center;
-use crate::input::sdl_map::{
-    self, Resolved, SdlMap, BTN_JOYSTICK, BTN_TRIGGER_HAPPY, SIL_KEYMAP_HIGH_LEN, SIL_KEYMAP_LOW_LEN,
-};
+use crate::input::sdl_map::{self, Resolved, SdlMap};
 use crate::ui::overlay::{Notice, PAD_LOST_NOTICE};
 
 /// PortMaster's per-device SDL mapping.
 const SDL_MAP_ENV: &str = "SDL_GAMECONTROLLERCONFIG";
+/// SDL mappings named in the log at load; PortMaster's variable holds a few.
+const LOGGED_SDL_MAPS: usize = 8;
+/// SIL buttons in the order the log lists their raw buttons.
+const LOGGED_BUTTONS: [Input; SIL_BUTTONS] = [
+    Input::FaceDown,
+    Input::FaceRight,
+    Input::FaceLeft,
+    Input::FaceUp,
+    Input::L1,
+    Input::R1,
+    Input::L2,
+    Input::R2,
+    Input::L3,
+    Input::R3,
+    Input::Start,
+    Input::Select,
+    Input::Home,
+];
 /// The engine's pulse strength at `rumble` 1; `rumble` reaches the engine's full strength.
 pub const RUMBLE_STRENGTH: f32 = 0.4;
 pub const RUMBLE_MAX: f32 = 1.0 / RUMBLE_STRENGTH;
 /// A bump rumbles this many times as long as a buzz.
 const BUMP_TIMES: f32 = 3.0;
-const STICK_KEY_ON: f32 = 0.5;
+pub(crate) const STICK_KEY_ON: f32 = 0.5;
 const STICK_KEY_OFF: f32 = 0.3;
 /// SIL reports an analog trigger as a stick axis resting at -1.
 const TRIGGER_ON: f32 = 0.0;
@@ -70,6 +87,8 @@ pub struct PadState {
     resolved: Option<((i32, i32), Option<Resolved>)>,
     /// The engine's raw button behind each SIL button of one pad, keyed the same way.
     sil_mapping: Option<((i32, i32), [i32; SIL_BUTTONS])>,
+    /// What each connected pad has logged of its buttons and sticks.
+    pub traces: Vec<PadTrace>,
     pub held: [bool; INPUT_COUNT],
     /// The swap flags reads apply: the settings', taken up while no face button is down.
     swaps: i32,
@@ -109,6 +128,7 @@ impl Default for PadState {
             sdl: Vec::new(),
             resolved: None,
             sil_mapping: None,
+            traces: Vec::new(),
             held: [false; INPUT_COUNT],
             swaps: 0,
             dpad_spent: [false; 4],
@@ -162,6 +182,33 @@ fn joystick(dev: i32) -> Option<Obj> {
     unsafe { Obj::table_entry(api().sil_joysticks, dev, SILJOY_SIZE) }
 }
 
+/// The key codes of pad `joy`'s input device, ascending; empty when SIL has none.
+fn key_codes(joy: Obj) -> Vec<u16> {
+    // SAFETY: SIL's device table, indexed by the pad's device.
+    let Some(info) = (unsafe { Obj::table_entry(api().sil_event_info, joy.i32(SILJOY_EVENT_DEV), EVDEV_INFO_SIZE) })
+    else {
+        return Vec::new();
+    };
+    let bits: [u8; EVDEV_KEY_CODES / 8] = info.get(EVDEV_KEY_BITS);
+    (0..EVDEV_KEY_CODES as u16).filter(|&c| bits[c as usize / 8] >> (c % 8) & 1 != 0).collect()
+}
+
+/// SIL's raw button for key code `code` of pad `joy`; None for a code it gives none.
+fn sil_raw(joy: Obj, code: u16) -> Option<i32> {
+    let raw = joy.get::<i8>(sdl_map::keymap_slot(code)?);
+    (raw >= 0).then_some(raw as i32)
+}
+
+/// The raw buttons of pad `joy` among key codes `codes`, each with its code.
+fn raw_buttons(joy: Obj, codes: &[u16]) -> Vec<(i32, u16)> {
+    codes.iter().filter_map(|&c| sil_raw(joy, c).map(|raw| (raw, c))).collect()
+}
+
+/// The raw button behind each SIL button as `name=raw`, -1 for none.
+fn button_list(raw: impl Fn(Input) -> i32) -> String {
+    LOGGED_BUTTONS.iter().map(|&i| format!("{}={}", i.ini_name(), raw(i))).collect::<Vec<_>>().join(" ")
+}
+
 /// Whether pad `dev` is connected.
 fn pad_connected(dev: i32) -> bool {
     let a = api();
@@ -193,11 +240,7 @@ fn identity(dev: i32) -> (String, u16, u16) {
     };
     // SAFETY: SIL's device table, indexed by the pad's device.
     let info = unsafe { Obj::table_entry(api().sil_event_info, joy.i32(SILJOY_EVENT_DEV), EVDEV_INFO_SIZE) };
-    let name = info.map_or_else(String::new, |info| {
-        let bytes: [u8; EVDEV_NAME_LEN] = info.get(EVDEV_NAME);
-        let end = bytes.iter().position(|&b| b == 0).unwrap_or(EVDEV_NAME_LEN);
-        String::from_utf8_lossy(&bytes[..end]).into_owned()
-    });
+    let name = info.map_or_else(String::new, |info| nul_terminated(&info.get::<[u8; EVDEV_NAME_LEN]>(EVDEV_NAME)));
     (name, joy.get(SILJOY_VENDOR), joy.get(SILJOY_PRODUCT))
 }
 
@@ -226,6 +269,15 @@ impl PadState {
     pub fn load_sdl_map(&mut self) {
         self.sdl = std::env::var(SDL_MAP_ENV).map(|m| sdl_map::parse_all(&m)).unwrap_or_default();
         log!("sdl map: {} naming buttons", self.sdl.len());
+        for m in self.sdl.iter().take(LOGGED_SDL_MAPS) {
+            match m.ids {
+                Some((vendor, product)) => log!("sdl map: {} ({vendor:04x}:{product:04x})", m.name),
+                None => log!("sdl map: {} (no ids)", m.name),
+            }
+        }
+        if self.sdl.len() > LOGGED_SDL_MAPS {
+            log!("sdl map: {} more", self.sdl.len() - LOGGED_SDL_MAPS);
+        }
     }
 
     /// Resolves the pad's SDL mapping against its key codes, once per pad and device.
@@ -233,7 +285,6 @@ impl PadState {
         if self.sdl.is_empty() {
             return;
         }
-        let a = api();
         let Some(joy) = joystick(dev) else {
             return;
         };
@@ -247,38 +298,78 @@ impl PadState {
             self.resolved = Some(((dev, event_dev), None));
             return;
         };
-        // SAFETY: SIL's device table, indexed by the pad's device.
-        let Some(info) = (unsafe { Obj::table_entry(a.sil_event_info, event_dev, EVDEV_INFO_SIZE) }) else {
+        let codes = key_codes(joy);
+        if codes.is_empty() {
             return;
-        };
-        let bits: [u8; EVDEV_KEY_CODES / 8] = info.get(EVDEV_KEY_BITS);
-        let codes: Vec<u16> =
-            (0..EVDEV_KEY_CODES as u16).filter(|&c| bits[c as usize / 8] >> (c % 8) & 1 != 0).collect();
-        let sil_button = |code: u16| {
-            let slot = if (BTN_JOYSTICK..BTN_JOYSTICK + SIL_KEYMAP_LOW_LEN).contains(&code) {
-                SILJOY_KEYMAP_LOW + (code - BTN_JOYSTICK) as usize
-            } else if (BTN_TRIGGER_HAPPY..BTN_TRIGGER_HAPPY + SIL_KEYMAP_HIGH_LEN).contains(&code) {
-                SILJOY_KEYMAP_HIGH + (code - BTN_TRIGGER_HAPPY) as usize
-            } else {
-                return None;
-            };
-            let raw = joy.get::<i8>(slot);
-            (raw >= 0).then_some(raw as i32)
-        };
-        let r = sdl_map::resolve(map, &codes, sil_button);
-        let show = |i: Input| r.buttons[i as usize].unwrap_or(-1);
+        }
+        let r = sdl_map::resolve(map, &codes, |code| sil_raw(joy, code));
         log!(
-            "sdl map on pad {dev}: {}, a={} b={} x={} y={} start={} back={}, {} order",
+            "sdl map on pad {dev}: {}, {}, {} order",
             map.name,
-            show(Input::FaceDown),
-            show(Input::FaceRight),
-            show(Input::FaceLeft),
-            show(Input::FaceUp),
-            show(Input::Start),
-            show(Input::Select),
+            button_list(|i| r.buttons[i as usize].unwrap_or(-1)),
             if r.ascending { "ascending" } else { "gamepad-first" }
         );
+        log!("sdl map on pad {dev}: line {}", map.line);
         self.resolved = Some(((dev, event_dev), Some(r)));
+    }
+
+    /// The SDL mapping resolved for pad `dev`, when one names its buttons.
+    fn sdl_for(&self, dev: i32) -> Option<&Resolved> {
+        self.resolved.as_ref().filter(|(k, _)| k.0 == dev).and_then(|(_, r)| r.as_ref())
+    }
+
+    /// The raw button behind SIL button `b` of pad `dev`, -1 for none.
+    fn raw_for(&self, dev: i32, b: usize) -> i32 {
+        match self.sdl_for(dev) {
+            Some(r) => r.buttons[b].unwrap_or(-1),
+            None => self.sil_mapping.filter(|(k, _)| k.0 == dev).map_or(-1, |(_, m)| m[b]),
+        }
+    }
+
+    /// The input a read of SIL button `b` lands on under the face swaps.
+    fn swapped(&self, b: usize) -> usize {
+        for (flag, one, other) in
+            [(SWAP_AB, Input::FaceDown, Input::FaceRight), (SWAP_XY, Input::FaceLeft, Input::FaceUp)]
+        {
+            if self.swaps & flag == 0 {
+                continue;
+            }
+            if b == one as usize {
+                return other as usize;
+            }
+            if b == other as usize {
+                return one as usize;
+            }
+        }
+        b
+    }
+
+    /// The inputs a press of raw button `raw` on pad `dev` reaches.
+    pub fn inputs_of_raw(&self, dev: i32, raw: i32) -> Vec<Input> {
+        let sdl = self.sdl_for(dev);
+        let land = |b: usize| if sdl.is_some() { b } else { self.swapped(b) };
+        let mut out: Vec<Input> =
+            (0..SIL_BUTTONS).filter(|&b| self.raw_for(dev, b) == raw).map(|b| Input::ALL[land(b)]).collect();
+        if let Some(r) = sdl {
+            let dpad = r.dpad.iter().enumerate().filter(|(_, d)| **d == Some(raw));
+            out.extend(dpad.map(|(k, _)| Input::ALL[Input::DpadLeft as usize + k]));
+        }
+        out
+    }
+
+    /// Starts a trace for each connected pad without one for its pad and device.
+    fn follow_traces(&mut self, connected: PadSet) {
+        for dev in each(connected) {
+            let joy = joystick(dev);
+            let key = (dev, joy.map_or(-1, |j| j.i32(SILJOY_EVENT_DEV)));
+            if self.traces.iter().any(|t| t.key == key) {
+                continue;
+            }
+            self.traces.retain(|t| t.key.0 != dev);
+            let codes = joy.map_or_else(Vec::new, key_codes);
+            let buttons = joy.map_or_else(Vec::new, |j| raw_buttons(j, &codes));
+            self.traces.push(PadTrace::new(key, &identity(dev).0, &codes, buttons));
+        }
     }
 
     /// Reads the engine's mapping of the pad's SIL buttons, once per pad and device.
@@ -289,7 +380,8 @@ impl PadState {
         }
         let a = api();
         // SAFETY: the engine's button mapping on a connected pad.
-        let mapping = std::array::from_fn(|b| unsafe { (a.joy_button_mapping)(dev, b as i32) });
+        let mapping: [i32; SIL_BUTTONS] = std::array::from_fn(|b| unsafe { (a.joy_button_mapping)(dev, b as i32) });
+        log!("engine map on pad {dev}: {}", button_list(|i| mapping[i as usize]));
         self.sil_mapping = Some((key, mapping));
     }
 
@@ -324,7 +416,9 @@ impl PadState {
         }
         for dev in each(self.connected & !connected) {
             log!("pad {dev}: gone");
+            self.traces.retain(|t| t.key.0 != dev);
         }
+        self.follow_traces(connected);
         let pressed = down & !self.down;
         (self.connected, self.down) = (connected, down);
         change.pressed = pressed != 0;
@@ -379,6 +473,7 @@ impl Layer {
         self.pad.resolve_sdl_map(dev);
         self.pad.resolve_sil_mapping(dev);
         let p = self.read_pad(dev);
+        self.trace_pad(dev);
         if !FACE_BUTTONS.iter().any(|&b| p.down[b as usize]) {
             self.pad.swaps = self.cfg.swap_buttons;
         }
@@ -388,29 +483,23 @@ impl Layer {
     /// Whether the A/B and X/Y swaps reach the active pad: not while an SDL mapping names its
     /// buttons.
     pub fn face_swaps_apply(&self) -> bool {
-        !self.pad.resolved.as_ref().is_some_and(|(k, r)| r.is_some() && Some(k.0) == self.pad.index)
+        !self.pad.index.is_some_and(|dev| self.pad.sdl_for(dev).is_some())
     }
 
     fn read_pad(&self, dev: i32) -> PadFrame {
         let a = api();
         let mut p = PadFrame::default();
-        let sdl = self.pad.resolved.as_ref().filter(|(k, _)| k.0 == dev).and_then(|(_, r)| r.as_ref());
-        let mapping = self.pad.sil_mapping.filter(|(k, _)| k.0 == dev).map(|(_, m)| m);
-        let raw_button = |b: usize| match sdl {
-            Some(r) => r.buttons[b].unwrap_or(-1),
-            None => mapping.map_or(-1, |m| m[b]),
-        };
+        let sdl = self.pad.sdl_for(dev);
+        let raw_button = |b: usize| self.pad.raw_for(dev, b);
         // SAFETY: the engine's button queries on a connected pad.
         let pressed = |raw: i32| raw >= 0 && unsafe { (a.joy_button_state)(dev, raw) } != 0;
         for b in 0..SIL_BUTTONS {
             p.down[b] = pressed(raw_button(b));
         }
         if sdl.is_none() {
-            if self.pad.swaps & SWAP_AB != 0 {
-                p.down.swap(Input::FaceDown as usize, Input::FaceRight as usize);
-            }
-            if self.pad.swaps & SWAP_XY != 0 {
-                p.down.swap(Input::FaceLeft as usize, Input::FaceUp as usize);
+            let read = p.down;
+            for (b, &down) in read[..SIL_BUTTONS].iter().enumerate() {
+                p.down[self.pad.swapped(b)] = down;
             }
         }
         // SAFETY: as above.
@@ -799,6 +888,21 @@ mod tests {
             assert_eq!((p.stick, p.dpad), ([[-0.6, 0.1], [0.0, 0.9]], [1, 0]));
             l.pad.swaps = SWAP_AB;
             assert_eq!(held(&l.read_pad(1))[..2], [Input::Start, Input::FaceRight]);
+        });
+    }
+
+    #[test]
+    fn a_raw_button_reaches_the_input_its_read_lands_on() {
+        with_game(|_| {
+            let mapping: Vec<i32> = (0..SIL_BUTTONS as i32).map(|b| b + RAW_OFFSET).collect();
+            set_pad(FakePad { index: Some(0), mapping, ..FakePad::default() });
+            let mut l = Layer::default();
+            l.poll_pad(0.0);
+            assert_eq!(l.pad.inputs_of_raw(0, raw(Input::L2)), [Input::L2]);
+            l.pad.swaps = SWAP_AB | SWAP_XY;
+            assert_eq!(l.pad.inputs_of_raw(0, raw(Input::FaceDown)), [Input::FaceRight]);
+            assert_eq!(l.pad.inputs_of_raw(0, raw(Input::FaceUp)), [Input::FaceLeft]);
+            assert_eq!(l.pad.inputs_of_raw(0, RAW_OFFSET + SIL_BUTTONS as i32), [], "a raw button nothing reads");
         });
     }
 

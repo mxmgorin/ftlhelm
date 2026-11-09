@@ -60,6 +60,12 @@ impl FrameClock {
     }
 }
 
+/// The text of a NUL-terminated byte buffer; the whole buffer when no NUL ends it.
+pub fn nul_terminated(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).into_owned()
+}
+
 /// Clamps `v` to `lo..=hi`; returns `lo` for NaN and `hi` when the bounds cross.
 pub fn clampf(v: f32, lo: f32, hi: f32) -> f32 {
     v.max(lo).min(hi)

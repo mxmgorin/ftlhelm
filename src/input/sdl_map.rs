@@ -7,6 +7,7 @@
 //! and product, its own name breaking a tie; one whose GUID carries none serves any pad.
 
 use crate::config::layout::SIL_BUTTONS;
+use crate::game::offsets::{SILJOY_KEYMAP_HIGH, SILJOY_KEYMAP_LOW};
 
 const KEY_VOLUMEDOWN: u16 = 114;
 const KEY_VOLUMEUP: u16 = 115;
@@ -15,6 +16,17 @@ pub const BTN_TRIGGER_HAPPY: u16 = 0x2c0;
 /// SIL's key tables: raw buttons for the codes from BTN_JOYSTICK, then from BTN_TRIGGER_HAPPY.
 pub const SIL_KEYMAP_LOW_LEN: u16 = 32;
 pub const SIL_KEYMAP_HIGH_LEN: u16 = 40;
+
+/// SIL's keymap slot of key code `code`; None for a code outside its button windows.
+pub fn keymap_slot(code: u16) -> Option<usize> {
+    if (BTN_JOYSTICK..BTN_JOYSTICK + SIL_KEYMAP_LOW_LEN).contains(&code) {
+        Some(SILJOY_KEYMAP_LOW + (code - BTN_JOYSTICK) as usize)
+    } else if (BTN_TRIGGER_HAPPY..BTN_TRIGGER_HAPPY + SIL_KEYMAP_HIGH_LEN).contains(&code) {
+        Some(SILJOY_KEYMAP_HIGH + (code - BTN_TRIGGER_HAPPY) as usize)
+    } else {
+        None
+    }
+}
 
 /// Mapping labels of the SIL buttons, in `Input` order.
 const BUTTON_LABELS: [&str; SIL_BUTTONS] = [
@@ -46,9 +58,11 @@ const GUID_WORD_LEN: usize = 4;
 /// The SDL button indices a mapping names, with the pad it is for.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SdlMap {
+    /// The mapping line as given.
+    pub line: String,
     pub name: String,
     /// Vendor and product, None when the GUID does not carry them.
-    ids: Option<(u16, u16)>,
+    pub ids: Option<(u16, u16)>,
     buttons: [Option<u16>; SIL_BUTTONS],
     dpad: [Option<u16>; 4],
     volume: [Option<u16>; 2],
@@ -88,6 +102,7 @@ pub fn parse(map: &str) -> Option<SdlMap> {
     let ids = guid_ids(fields.next().unwrap_or_default());
     let name = fields.next().unwrap_or_default().to_string();
     let m = SdlMap {
+        line: map.to_string(),
         name,
         ids,
         buttons: BUTTON_LABELS.map(|l| button_index(map, l)),

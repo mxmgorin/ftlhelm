@@ -22,6 +22,7 @@ use super::api::{self, Api, CppVector, GlColor, Point, Ptr, Rect, SYMBOLS};
 use super::mem::Obj;
 use super::offsets::*;
 use super::state;
+use crate::input::sdl_map::keymap_slot;
 
 /// The layout the stand-in game takes: the first supported build's.
 const STAND_IN: &Layout = &BUILDS[0].layout;
@@ -171,6 +172,8 @@ pub struct FakePad {
     pub id: (u16, u16),
     /// The raw button behind each SIL button; none past the list's end.
     pub mapping: Vec<i32>,
+    /// The device's key codes, each with the raw button SIL's keymap gives it.
+    pub keys: Vec<(u16, i32)>,
     /// Raw buttons held down.
     pub held: Vec<i32>,
     /// Both sticks, then the triggers as one more stick.
@@ -278,6 +281,12 @@ pub fn set_pads(state: Vec<FakePad>) {
         let device = devices.at(dev as usize * EVDEV_INFO_SIZE);
         for (i, b) in pad.name.bytes().chain([0]).enumerate() {
             device.set(EVDEV_NAME + i, b);
+        }
+        device.set(EVDEV_KEY_BITS, [0u8; EVDEV_KEY_CODES / 8]);
+        for &(code, raw) in &pad.keys {
+            let byte = EVDEV_KEY_BITS + code as usize / 8;
+            device.set(byte, device.get::<u8>(byte) | 1 << (code % 8));
+            joy.set(keymap_slot(code).expect("a fake pad's key codes lie in SIL's button windows"), raw as i8);
         }
     }
     *pads() = state;
